@@ -1,0 +1,23 @@
+{
+  "name": "openagent",
+  "version": "0.1.0",
+  "type": "module",
+  "description": "Terminal code agent built on Pi SDK + OpenTUI",
+  "bin": {
+    "openagent": "src/index.tsx"
+  },
+  "scripts": {
+    "dev": "bun run src/index.tsx",
+    "start": "bun run src/index.tsx"
+  },
+  "dependencies": {
+    "@earendil-works/pi-coding-agent": "^0.79.9",
+    "@opentui/core": "^0.4.1",
+    "@opentui/react": "^0.4.1",
+    "react": "^19.0.0"
+  },
+  "devDependencies": {
+    "@types/react": "^19.0.0",
+    "typescript": "^5.7.0"
+  }
+}
