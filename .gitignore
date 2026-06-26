@@ -3,3 +3,9 @@ dist/
 .DS_Store
 *.log
 .env
+
+# npm lockfile (project standardizes on bun.lock)
+package-lock.json
+
+# opencode runtime artifacts
+.omo/

@@ -1,0 +1,13 @@
+# lefthook git hooks 配置 —— 提交前自动类型检查 + 格式化 + lint
+# 文档: https://lefthook.dev/configuration/
+pre-commit:
+  parallel: true
+  jobs:
+    - name: biome
+      glob: "*.{js,ts,tsx,jsx,json}"
+      # 仅对暂存文件做格式化 + 安全 lint 修复，然后重新加入暂存区
+      run: npx biome check --write --no-errors-on-unmatched --files-ignore-unknown=true "{staged_files}" && git add "{staged_files}"
+    - name: typecheck
+      glob: "*.{ts,tsx}"
+      # tsc 无法按文件增量，仅当有 TS/TSX 改动时跑全量类型检查
+      run: npx tsc --noEmit
