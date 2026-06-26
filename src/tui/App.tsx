@@ -16,6 +16,7 @@ import { StatusBar } from "./components/StatusBar.js"
 import { colors } from "./theme.js"
 import { type Mode, resolveKey } from "./keymap.js"
 import type { Config } from "../config.js"
+import { buildHelpText } from "./commands.js"
 
 interface AppProps {
 	session: AgentSession
@@ -187,20 +188,12 @@ export function App({ session, model, cwd, config }: AppProps) {
 						break
 					case "exit":
 						process.exit(0)
-					case "help":
-						setMessages((prev) => [
-							...prev,
-							createAssistantMessage(
-								"Available commands:\n" +
-								"  /clear        — Clear conversation history\n" +
-								"  /compact      — Compact context to save tokens\n" +
-								"  /model        — Switch to next model\n" +
-								"  /thinking     — Cycle thinking level\n" +
-								"  /exit         — Quit the application\n" +
-								"  /help         — Show this help",
-							),
-						])
-						break
+				case "help":
+					setMessages((prev) => [
+						...prev,
+						createAssistantMessage(buildHelpText()),
+					])
+					break
 					default:
 						setMessages((prev) => [
 							...prev,

@@ -166,23 +166,16 @@ export function InputBox({ disabled, mode, cwd, onSubmit }: InputBoxProps) {
 					</text>
 				</box>
 			)}
-			<box height={1} flexDirection="row" paddingLeft={1} paddingRight={1} marginTop={disabled ? 1 : 0}>
-				<text fg={colors.textMuted}>{icons.folder} </text>
-				<text fg={colors.textMuted}>{(() => {
-					const parts = cwd.replace(process.env.HOME ?? "", "~").split("/").filter(Boolean)
-					const pathStr = parts.length > 3 ? `…/${parts[parts.length - 1]}` : parts.join("/")
-					const branch = getGitBranch(cwd)
-					return branch ? `${pathStr}:${branch}` : pathStr
-				})()}</text>
-				<box flexGrow={1} />
-				<text fg={colors.textSubtle}>
-					{mode === "insert"
-						? disabled
-							? "Enter to queue · Esc: normal"
-							: "Enter to send · Shift+Enter newline · Esc: normal"
-						: "i: type · j/k: scroll · t: thinking"}
-				</text>
-			</box>
+		<box height={1} flexDirection="row" paddingLeft={1} paddingRight={1} marginTop={disabled ? 1 : 0}>
+			<text fg={colors.textMuted}>{icons.folder} </text>
+			<text fg={colors.textMuted}>{(() => {
+				const parts = cwd.replace(process.env.HOME ?? "", "~").split("/").filter(Boolean)
+				const pathStr = parts.length > 3 ? `…/${parts[parts.length - 1]}` : parts.join("/")
+				const branch = getGitBranch(cwd)
+				return branch ? `${pathStr}:${branch}` : pathStr
+			})()}</text>
+			<box flexGrow={1} />
+		</box>
 			<box
 				borderStyle="rounded"
 				border={["top", "right", "bottom", "left"]}

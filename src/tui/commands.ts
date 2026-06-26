@@ -19,3 +19,26 @@ export function matchCommands(input: string): SlashCommand[] {
 	if (!trimmed) return slashCommands
 	return slashCommands.filter((cmd) => cmd.name.startsWith(trimmed))
 }
+
+export function buildHelpText(): string {
+	const maxName = Math.max(...slashCommands.map((c) => c.name.length))
+	const commandLines = slashCommands
+		.map((c) => `  /${c.name.padEnd(maxName)}  — ${c.description}`)
+		.join("\n")
+	return [
+		"Available commands:",
+		commandLines,
+		"",
+		"Shortcuts:",
+		"  INSERT mode:",
+		"    Enter          Send message",
+		"    Shift+Enter    Insert newline",
+		"    Esc            Enter NORMAL mode",
+		"    Ctrl+C         Abort agent · press twice quickly to quit",
+		"  NORMAL mode:",
+		"    i · a · o      Enter INSERT mode",
+		"    j · k          Scroll down / up",
+		"    g · G          Scroll to top / bottom",
+		"    t              Toggle thinking collapse",
+	].join("\n")
+}
