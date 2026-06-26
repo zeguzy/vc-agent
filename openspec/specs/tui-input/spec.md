@@ -87,12 +87,12 @@
 
 #### Scenario: 命令执行
 - **WHEN** 用户在 `/` 开头时按 Enter
-- **THEN** 系统 SHALL 通过 `CommandRegistry.execute(name, args, ctx)` 执行命令，不发送给 Agent
-- **AND** `CommandRegistry` 是全局单例，命令可在启动时或运行时注册
+- **THEN** 系统 SHALL 执行匹配的选中命令（通过 `matchCommands` 解析），不发送给 Agent
+- **AND** 支持的命令：`/clear`、`/compact`、`/model`、`/thinking`、`/context`、`/exit`、`/help`、`/setting`
 
-#### Scenario: 未知命令处理
-- **WHEN** 用户输入 `/` 开头但命令名不在 CommandRegistry 中
-- **THEN** 系统 SHALL 显示 "Unknown command" 提示
+#### Scenario: /setting 打开设置页面
+- **WHEN** 用户执行 `/setting` 命令
+- **THEN** 系统 SHALL 触发 App 顶层 `view` 切换为 `"settings"`，整屏渲染设置页面（详见 `settings` capability 的 "/setting 设置页面" requirement）
 
 ### Requirement: CommandRegistry 命令注册表
 系统 SHALL 通过 `CommandRegistry` 类管理所有 slash 命令，支持运行时注册、注销和查询。
