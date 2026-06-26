@@ -2,6 +2,7 @@
 import { createCliRenderer } from "@opentui/core"
 import { createRoot } from "@opentui/react"
 import { createSession } from "./agent/session.js"
+import { loadConfig } from "./config.js"
 import { App } from "./tui/App.js"
 
 interface ParsedArgs {
@@ -35,12 +36,9 @@ openagent — 基于 Pi SDK 的全屏 TUI 代码 Agent
   --model, -m <name>    指定 LLM 模型 (如: claude-sonnet-4-20250514)
   --help, -h           显示帮助信息
 
-环境变量:
-  ANTHROPIC_API_KEY    Anthropic API 密钥
-  OPENAI_API_KEY       OpenAI API 密钥
-  DEEPSEEK_API_KEY     DeepSeek API 密钥
-  GOOGLE_API_KEY       Google AI API 密钥
-  MISTRAL_API_KEY      Mistral API 密钥
+配置:
+  全局配置: ~/.config/openagent/config.json
+  项目配置: .openagent/config.json
 
 示例:
   openagent
@@ -56,26 +54,13 @@ async function main(): Promise<void> {
     process.exit(0)
   }
 
-  const hasApiKey =
-    process.env.ANTHROPIC_API_KEY ||
-    process.env.OPENAI_API_KEY ||
-    process.env.GOOGLE_API_KEY ||
-    process.env.DEEPSEEK_API_KEY ||
-    process.env.MISTRAL_API_KEY
-  if (!hasApiKey) {
-    console.error(
-      "错误: 请设置 LLM API 密钥环境变量\n" +
-        "  ANTHROPIC_API_KEY / OPENAI_API_KEY / DEEPSEEK_API_KEY / GOOGLE_API_KEY / MISTRAL_API_KEY",
-    )
-    process.exit(1)
-  }
-
   const cwd = process.cwd()
-  const model = args.model
+  const config = loadConfig(cwd)
+  const model = args.model ?? config.model
 
   let session
   try {
-    session = await createSession({ cwd, model })
+    session = await createSession({ cwd, model, config })
   } catch (err) {
     console.error(
       "创建 Agent 会话失败:",
@@ -89,7 +74,7 @@ async function main(): Promise<void> {
   })
 
   const root = createRoot(renderer)
-  root.render(<App session={session} model={model || "default"} cwd={cwd} />)
+  root.render(<App session={session} model={model || "default"} cwd={cwd} config={config} />)
 }
 
 main().catch((err) => {

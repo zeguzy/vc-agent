@@ -1,21 +1,52 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
-import type { TextareaRenderable, KeyBinding as TextareaKeyBinding } from "@opentui/core"
+import { readFileSync, existsSync } from "fs"
+import { join } from "path"
+import type { TextareaRenderable, KeyBinding as TextareaKeyBinding, KeyEvent } from "@opentui/core"
 import { colors, icons } from "../theme.js"
 
 import { type Mode } from "../keymap.js"
+import { matchCommands } from "../commands.js"
+
+function getGitBranch(cwd: string): string {
+	try {
+		const gitHead = join(cwd, ".git", "HEAD")
+		if (!existsSync(gitHead)) return ""
+		const content = readFileSync(gitHead, "utf-8").trim()
+		const match = content.match(/^ref:\s*refs\/heads\/(.+)$/)
+		return match ? match[1] : ""
+	} catch {
+		return ""
+	}
+}
 
 interface InputBoxProps {
 	disabled: boolean
 	mode: Mode
+	cwd: string
 	onSubmit: (text: string) => void
 }
 
-export function InputBox({ disabled, mode, onSubmit }: InputBoxProps) {
+export function InputBox({ disabled, mode, cwd, onSubmit }: InputBoxProps) {
 	const [inputHeight, setInputHeight] = useState(2)
 	const [animationFrame, setAnimationFrame] = useState(0)
+	const [currentText, setCurrentText] = useState("")
+	const [selectedIndex, setSelectedIndex] = useState(0)
 	const textareaRef = useRef<TextareaRenderable | null>(null)
 	const spinnerFrames = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"]
 	const workingSuffix = ["   ", ".  ", ".. ", "..."]
+
+	const isSlashMode = currentText.startsWith("/")
+	const suggestions = useMemo(
+		() => (isSlashMode ? matchCommands(currentText) : []),
+		[isSlashMode, currentText],
+	)
+	const showSuggestions = isSlashMode && suggestions.length > 0 && mode === "insert"
+
+	useEffect(() => {
+		if (selectedIndex >= suggestions.length) {
+			setSelectedIndex(0)
+		}
+	}, [suggestions.length, selectedIndex])
 
 	const keyBindings = useMemo<TextareaKeyBinding[]>(
 		() => [
@@ -48,19 +79,49 @@ export function InputBox({ disabled, mode, onSubmit }: InputBoxProps) {
 	}, [])
 
 	const handleContentChange = useCallback(() => {
-		syncTextareaState()
-		},
-		[syncTextareaState],
-	)
+		const text = syncTextareaState()
+		setCurrentText(text)
+		setSelectedIndex(0)
+	}, [syncTextareaState])
 
 	const handleTextareaSubmit = useCallback(() => {
 		const currentValue = syncTextareaState()
-		handleSubmit(currentValue)
+		if (currentValue.startsWith("/")) {
+			const matched = matchCommands(currentValue)
+			if (matched.length > 0) {
+				const cmd = matched[Math.min(selectedIndex, matched.length - 1)]
+				handleSubmit(`/${cmd.name}`)
+			} else {
+				handleSubmit(currentValue)
+			}
+		} else {
+			handleSubmit(currentValue)
+		}
 		if (textareaRef.current) {
 			textareaRef.current.clear()
 		}
+		setCurrentText("")
+		setSelectedIndex(0)
 		setInputHeight(2)
-	}, [handleSubmit, syncTextareaState])
+	}, [handleSubmit, syncTextareaState, selectedIndex])
+
+	const handleKeyDown = useCallback(
+		(key: KeyEvent) => {
+			if (!showSuggestions) return
+			if (key.name === "up") {
+				setSelectedIndex((i) => Math.max(0, i - 1))
+			} else if (key.name === "down") {
+				setSelectedIndex((i) => Math.min(suggestions.length - 1, i + 1))
+			} else if (key.name === "tab") {
+				const cmd = suggestions[selectedIndex]
+				if (cmd && textareaRef.current) {
+					textareaRef.current.setText(`/${cmd.name} `)
+					setCurrentText(`/${cmd.name} `)
+				}
+			}
+		},
+		[showSuggestions, suggestions, selectedIndex],
+	)
 
 	useEffect(() => {
 		if (!disabled) {
@@ -80,17 +141,39 @@ export function InputBox({ disabled, mode, onSubmit }: InputBoxProps) {
 			flexDirection="column"
 			flexShrink={0}
 		>
-			<box height={1} flexDirection="row" paddingLeft={1} paddingRight={1}>
-				{disabled && (
-					<>
-						<text fg={colors.warning}>
-							{spinnerFrames[animationFrame % spinnerFrames.length]}{" "}
-						</text>
-						<text fg={colors.text}>
-							{`Working${workingSuffix[animationFrame % workingSuffix.length]}`}
-						</text>
-					</>
-				)}
+			{showSuggestions && (
+				<box flexDirection="column" paddingLeft={2} paddingRight={2} flexShrink={0}>
+					{suggestions.map((cmd, i) => (
+						<box key={cmd.name} flexDirection="row">
+							<text fg={i === selectedIndex ? colors.primary : colors.textSubtle}>
+								{i === selectedIndex ? "▶ " : "  "}
+							</text>
+							<text fg={i === selectedIndex ? colors.secondary : colors.text}>
+								/{cmd.name}
+							</text>
+							<text fg={colors.textMuted}> {cmd.description}</text>
+						</box>
+					))}
+				</box>
+			)}
+			{disabled && (
+				<box height={1} flexDirection="row" paddingLeft={1} paddingRight={1}>
+					<text fg={colors.warning}>
+						{spinnerFrames[animationFrame % spinnerFrames.length]}{" "}
+					</text>
+					<text fg={colors.text}>
+						{`Working${workingSuffix[animationFrame % workingSuffix.length]}`}
+					</text>
+				</box>
+			)}
+			<box height={1} flexDirection="row" paddingLeft={1} paddingRight={1} marginTop={disabled ? 1 : 0}>
+				<text fg={colors.textMuted}>{icons.folder} </text>
+				<text fg={colors.textMuted}>{(() => {
+					const parts = cwd.replace(process.env.HOME ?? "", "~").split("/").filter(Boolean)
+					const pathStr = parts.length > 3 ? `…/${parts[parts.length - 1]}` : parts.join("/")
+					const branch = getGitBranch(cwd)
+					return branch ? `${pathStr}:${branch}` : pathStr
+				})()}</text>
 				<box flexGrow={1} />
 				<text fg={colors.textSubtle}>
 					{mode === "insert"
@@ -132,8 +215,9 @@ export function InputBox({ disabled, mode, onSubmit }: InputBoxProps) {
 						focusedTextColor={colors.text}
 						cursorColor={colors.primary}
 						placeholderColor={colors.textMuted}
-						placeholder={disabled ? "Queue a message…" : mode === "insert" ? "Message openagent…" : "Press i to type"}
+						placeholder={disabled ? "Queue a message…" : mode === "insert" ? "Message openagent…  / for commands" : "Press i to type"}
 						keyBindings={keyBindings}
+						onKeyDown={handleKeyDown}
 						onContentChange={handleContentChange}
 						onSubmit={handleTextareaSubmit}
 					/>

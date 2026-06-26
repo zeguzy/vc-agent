@@ -4,12 +4,13 @@
 定义全屏 TUI 的主要区域、底部输入组合区和状态栏布局。
 
 ## Requirements
+
 ### Requirement: 全屏布局结构
 系统 SHALL 使用 OpenTUI 的 Box 组件构建全屏布局，将终端窗口划分为三个垂直区域：消息滚动区（顶部，弹性高度）、输入组合区（底部固定）、状态栏（最底部固定）。
 
 #### Scenario: 三区域布局
 - **WHEN** 应用启动并进入全屏模式
-- **THEN** 终端窗口从上到下显示：ScrollBox 消息区（占据剩余空间）、InputBox 输入组合区（状态提示 + 多行 Textarea）、StatusBar 状态栏（单行高度）
+- **THEN** 终端窗口从上到下显示：ScrollBox 消息区（占据剩余空间）、InputBox 输入组合区（状态行 + 圆角边框 Textarea）、StatusBar 状态栏（单行高度）
 
 #### Scenario: 弹性高度分配
 - **WHEN** 终端窗口大小为 height 行
@@ -20,15 +21,39 @@
 - **THEN** 输入组合区 SHALL 在 2 到 6 行 Textarea 范围内增长，消息区 SHALL 相应让出空间并保持滚动到底部
 
 ### Requirement: 底部状态栏职责
-系统 SHALL 将运行状态提示放在输入框上方，并将最底部状态栏限制为环境信息展示。
+系统 SHALL 将最底部状态栏限制为模式指示、模型信息和上下文用量展示。
 
-#### Scenario: 状态栏显示环境信息
+#### Scenario: 状态栏显示模式与模型
 - **WHEN** 应用渲染底部状态栏
-- **THEN** 状态栏 SHALL 显示当前 model 和 cwd 摘要，不显示 `Ready`、`Working` 或输入快捷键提示
+- **THEN** 状态栏 SHALL 显示当前模式（`-- INSERT --` 或 `-- NORMAL --`，颜色：insert=success绿、normal=primary蓝）、模型名称（从 `session.model?.name` 获取），右侧显示上下文用量指示器
 
-#### Scenario: 英文界面文案
+#### Scenario: 上下文用量指示器
+- **WHEN** 状态栏渲染上下文用量
+- **THEN** compact 模式 SHALL 显示 `◌ N%`，full 模式 SHALL 显示 `◌ tokens/window (N%)`，通过 `/context` 命令切换
+- **AND** 颜色 SHALL 按用量变化：<50% success绿、50-80% warning黄、>80% error红
+
+### Requirement: 输入组合区状态行
+系统 SHALL 在输入框上方显示状态行，包含工作目录路径和运行状态。
+
+#### Scenario: 空闲状态行
+- **WHEN** Agent 空闲（非运行中）
+- **THEN** 状态行 SHALL 显示 `󰝰 path:git_branch`（Nerd Font 文件夹图标 + 路径 + git 分支名，无 git 时省略分支），右侧显示模式快捷键提示
+
+#### Scenario: 运行状态行
+- **WHEN** Agent 正在响应或执行工具
+- **THEN** 状态行 SHALL 在路径行上方显示独立行 `⠹ Working...`（spinner 动画 + 省略号），与路径行之间有 marginTop=1 间距
+
+#### Scenario: 路径格式化
+- **WHEN** 渲染工作目录路径
+- **THEN** home 目录 SHALL 替换为 `~`，路径层级 >3 时 SHALL 显示 `…/last_dir`，≤3 时 SHALL 显示完整路径
+
+#### Scenario: Git 分支名获取
+- **WHEN** 渲染状态行
+- **THEN** 系统 SHALL 通过读取 `.git/HEAD` 文件解析当前分支名，无 `.git` 目录时 SHALL 省略分支显示
+
+### Requirement: 英文界面文案
 - **WHEN** 渲染输入组合区和状态栏
-- **THEN** 用户可见文案 SHALL 使用英文，例如 `Ready`、`Working`、`Message openagent…`、`Enter to send` 和 `Shift+Enter for newline`
+- **THEN** 用户可见文案 SHALL 使用英文，例如 `Working...`、`Message openagent…`、`Enter to send`、`Queue a message…`
 
 ### Requirement: 终端 Resize 处理
 系统 SHALL 在终端尺寸变化时（SIGWINCH）自动重新计算布局，保持三区域结构不变。

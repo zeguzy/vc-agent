@@ -15,20 +15,24 @@ import { InputBox } from "./components/InputBox.js"
 import { StatusBar } from "./components/StatusBar.js"
 import { colors } from "./theme.js"
 import { type Mode, resolveKey } from "./keymap.js"
+import type { Config } from "../config.js"
 
 interface AppProps {
 	session: AgentSession
 	model: string
 	cwd: string
+	config?: Config
 }
 
-export function App({ session, model, cwd }: AppProps) {
+export function App({ session, model, cwd, config }: AppProps) {
 	const [messages, setMessages] = useState<Message[]>([
 		createAssistantMessage("Hi, I'm openagent. I can read and edit files, and run commands."),
 	])
 	const [isRunning, setIsRunning] = useState(false)
 	const [mode, setMode] = useState<Mode>("insert")
-	const [thinkingCollapsed, setThinkingCollapsed] = useState(false)
+	const [thinkingCollapsed, setThinkingCollapsed] = useState(config?.thinking?.collapsed ?? false)
+	const [contextUsage, setContextUsage] = useState<{ tokens: number | null, window: number | null, percent: number | null }>({ tokens: null, window: null, percent: null })
+	const [contextDisplay, setContextDisplay] = useState<"compact" | "full">(config?.display?.contextMode ?? "compact")
 	const lastCtrlCRef = useRef<number>(0)
 	const toolCallIdToMsgId = useRef<Map<string, string>>(new Map())
 	const scrollRef = useRef<ScrollBoxRenderable>(null)
@@ -133,6 +137,14 @@ export function App({ session, model, cwd }: AppProps) {
 				case "agent_end":
 					setIsRunning(false)
 					setMessages((prev) => [...prev, createSeparator()])
+					{
+						const usage = session.getContextUsage()
+						setContextUsage({
+							tokens: usage?.tokens ?? null,
+							window: usage?.contextWindow ?? null,
+							percent: usage?.percent ?? null,
+						})
+					}
 					break
 			}
 		})
@@ -141,6 +153,62 @@ export function App({ session, model, cwd }: AppProps) {
 
 	const handlePrompt = useCallback(
 		(text: string) => {
+			if (text.startsWith("/")) {
+				const [cmd, ...args] = text.slice(1).split(/\s+/)
+				const argStr = args.join(" ").trim()
+				switch (cmd) {
+					case "clear":
+						setMessages([])
+						break
+					case "compact":
+						setMessages((prev) => [...prev, createUserMessage(text)])
+						session.compact(argStr || undefined).catch((err) => {
+							setMessages((prev) => [
+								...prev,
+								createAssistantMessage(`Compaction failed: ${err instanceof Error ? err.message : String(err)}`),
+							])
+						})
+						break
+					case "model":
+						session.cycleModel().then((result) => {
+							if (result) {
+								setMessages((prev) => [
+									...prev,
+									createAssistantMessage(`Switched to ${result.model.name}`),
+								])
+							}
+						}).catch(() => {})
+						break
+					case "thinking":
+						session.cycleThinkingLevel()
+						break
+					case "context":
+						setContextDisplay((d) => (d === "compact" ? "full" : "compact"))
+						break
+					case "exit":
+						process.exit(0)
+					case "help":
+						setMessages((prev) => [
+							...prev,
+							createAssistantMessage(
+								"Available commands:\n" +
+								"  /clear        — Clear conversation history\n" +
+								"  /compact      — Compact context to save tokens\n" +
+								"  /model        — Switch to next model\n" +
+								"  /thinking     — Cycle thinking level\n" +
+								"  /exit         — Quit the application\n" +
+								"  /help         — Show this help",
+							),
+						])
+						break
+					default:
+						setMessages((prev) => [
+							...prev,
+							createAssistantMessage(`Unknown command: /${cmd}. Type /help for available commands.`),
+						])
+				}
+				return
+			}
 			if (isRunningRef.current) {
 				const msg = createUserMessage(text)
 				msg.queued = true
@@ -238,8 +306,8 @@ export function App({ session, model, cwd }: AppProps) {
 				paddingTop={1}
 				paddingBottom={1}
 			>
-				<InputBox disabled={isRunning} mode={mode} onSubmit={handlePrompt} />
-				<StatusBar model={session.model?.name || session.model?.id || model} cwd={cwd} mode={mode} />
+				<InputBox disabled={isRunning} mode={mode} cwd={cwd} onSubmit={handlePrompt} />
+				<StatusBar model={session.model?.name || session.model?.id || model} mode={mode} contextPercent={contextUsage.percent} contextTokens={contextUsage.tokens} contextWindow={contextUsage.window} contextDisplay={contextDisplay} />
 			</box>
 		</box>
 	)

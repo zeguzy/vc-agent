@@ -1,0 +1,91 @@
+import { readFileSync, existsSync } from "fs"
+import { join } from "path"
+import { homedir } from "os"
+
+export interface CustomModel {
+	id: string
+	name: string
+	contextWindow?: number
+	maxTokens?: number
+}
+
+export interface ProviderConfig {
+	apiKey?: string
+	baseUrl?: string
+	api?: string
+	headers?: Record<string, string>
+	models?: CustomModel[]
+}
+
+export interface ThinkingConfig {
+	level?: string
+	collapsed?: boolean
+}
+
+export interface DisplayConfig {
+	contextMode?: "compact" | "full"
+}
+
+export interface CompactionConfig {
+	enabled?: boolean
+	threshold?: number
+}
+
+export interface Config {
+	model?: string
+	thinking?: ThinkingConfig
+	providers?: Record<string, ProviderConfig>
+	display?: DisplayConfig
+	compaction?: CompactionConfig
+}
+
+export const defaultConfig: Config = {}
+
+function readJsonFile(filePath: string): Record<string, unknown> | null {
+	if (!existsSync(filePath)) return null
+	try {
+		const content = readFileSync(filePath, "utf-8")
+		return JSON.parse(content)
+	} catch (err) {
+		console.error(`Warning: Failed to parse config at ${filePath}:`, err instanceof Error ? err.message : String(err))
+		return null
+	}
+}
+
+export function readConfig(cwd: string): Config {
+	const globalPath = join(homedir(), ".config", "openagent", "config.json")
+	const projectPath = join(cwd, ".openagent", "config.json")
+
+	const globalRaw = readJsonFile(globalPath)
+	const projectRaw = readJsonFile(projectPath)
+
+	if (!globalRaw && !projectRaw) return defaultConfig
+	if (!globalRaw) return projectRaw as Config
+	if (!projectRaw) return globalRaw as Config
+
+	return deepMerge(globalRaw as Config, projectRaw as Config)
+}
+
+export function deepMerge<T>(global: T, project: Partial<T>): T {
+	if (typeof global !== "object" || global === null) return (project ?? global) as T
+	if (typeof project !== "object" || project === null) return global
+
+	const result: any = Array.isArray(global) ? [...global] : { ...global }
+	for (const key of Object.keys(project)) {
+		const gVal = (global as any)[key]
+		const pVal = (project as any)[key]
+		if (
+			typeof gVal === "object" && gVal !== null && !Array.isArray(gVal) &&
+			typeof pVal === "object" && pVal !== null && !Array.isArray(pVal)
+		) {
+			result[key] = deepMerge(gVal, pVal)
+		} else if (pVal !== undefined) {
+			result[key] = pVal
+		}
+	}
+	return result as T
+}
+
+export function loadConfig(cwd: string): Config {
+	return readConfig(cwd)
+}

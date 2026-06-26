@@ -56,4 +56,5 @@ export const icons = {
 	separator: "─",
 	statusDot: "●",
 	assistant: "▣",
+	folder: "󰝰",
 } as const
