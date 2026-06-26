@@ -1,4 +1,4 @@
-import { existsSync, readFileSync } from "fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "fs";
 import { homedir } from "os";
 import { join } from "path";
 
@@ -105,4 +105,17 @@ export function deepMerge<T>(global: T, project: Partial<T>): T {
 
 export function loadConfig(cwd: string): Config {
 	return readConfig(cwd);
+}
+
+export function writeConfig(
+	cwd: string,
+	config: Config,
+	scope: "project" | "global" = "project",
+): void {
+	const path =
+		scope === "global"
+			? join(homedir(), ".config", "openagent", "config.json")
+			: join(cwd, ".openagent", "config.json");
+	mkdirSync(join(path, ".."), { recursive: true });
+	writeFileSync(path, `${JSON.stringify(config, null, 2)}\n`, "utf-8");
 }

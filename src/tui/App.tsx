@@ -5,6 +5,7 @@ import type { AgentSession, AgentSessionEvent } from "../agent/session.js";
 import { extractAssistantContent } from "../agent/session.js";
 import { commandRegistry } from "../commands/registry.js";
 import type { Config } from "../config.js";
+import type { SettingContext } from "../settings/types.js";
 import type { SkillManager } from "../skills/manager.js";
 import {
 	createAssistantMessage,
@@ -16,6 +17,7 @@ import {
 import { registerBuiltinCommands } from "./commands.js";
 import { InputBox } from "./components/InputBox.js";
 import { MessageList } from "./components/MessageList.js";
+import { SettingsPanel } from "./components/SettingsPanel.js";
 import { StatusBar } from "./components/StatusBar.js";
 import { type Mode, resolveKey } from "./keymap.js";
 import { colors } from "./theme.js";
@@ -43,6 +45,8 @@ export function App({ session, skillManager, model, cwd, config }: AppProps) {
 	const [contextDisplay, setContextDisplay] = useState<"compact" | "full">(
 		config?.display?.contextMode ?? "compact",
 	);
+	const [showSettings, setShowSettings] = useState(false);
+	const [configState, setConfigState] = useState<Config>(config ?? {});
 	const lastCtrlCRef = useRef<number>(0);
 	const toolCallIdToMsgId = useRef<Map<string, string>>(new Map());
 	const scrollRef = useRef<ScrollBoxRenderable>(null);
@@ -63,6 +67,22 @@ export function App({ session, skillManager, model, cwd, config }: AppProps) {
 	isRunningRef.current = isRunning;
 	const messagesRef = useRef(messages);
 	messagesRef.current = messages;
+	const showSettingsRef = useRef(showSettings);
+	showSettingsRef.current = showSettings;
+	const configRef = useRef(configState);
+	configRef.current = configState;
+
+	const settingCtx: SettingContext = {
+		session,
+		settingsManager: session.settingsManager,
+		modelRegistry: session.modelRegistry,
+		authStorage: session.modelRegistry.authStorage,
+		setUi: {
+			thinkingCollapsed: setThinkingCollapsed,
+			contextDisplay: setContextDisplay,
+		},
+		cwd,
+	};
 
 	useEffect(() => {
 		const unsubscribe = session.subscribe((event: AgentSessionEvent) => {
@@ -180,7 +200,6 @@ export function App({ session, skillManager, model, cwd, config }: AppProps) {
 				const [cmd, ...args] = text.slice(1).split(/\s+/);
 				const argStr = args.join(" ").trim();
 
-				// Build command context
 				const ctx = {
 					session,
 					skillManager,
@@ -190,6 +209,10 @@ export function App({ session, skillManager, model, cwd, config }: AppProps) {
 					setContextUsage,
 					setThinkingCollapsed,
 					setContextDisplay,
+					cwd,
+					setShowSettings,
+					getConfig: () => configRef.current,
+					setConfig: setConfigState,
 				};
 
 				commandRegistry.execute(cmd, argStr, ctx).then((handled) => {
@@ -225,11 +248,21 @@ export function App({ session, skillManager, model, cwd, config }: AppProps) {
 				setIsRunning(false);
 			});
 		},
-		[session, skillManager],
+		[session, skillManager, cwd],
 	);
 
 	useKeyboard((key) => {
 		const action = resolveKey(modeRef.current, key);
+		if (showSettingsRef.current) {
+			if (action === "ctrlC") {
+				const now = Date.now();
+				if (now - lastCtrlCRef.current < 1000) process.exit(0);
+				lastCtrlCRef.current = now;
+				if (isRunningRef.current) session.abort().catch(() => {});
+				else process.exit(0);
+			}
+			return;
+		}
 		if (!action) return;
 
 		switch (action) {
@@ -297,6 +330,13 @@ export function App({ session, skillManager, model, cwd, config }: AppProps) {
 					</box>
 				</box>
 			)}
+			{showSettings && (
+				<SettingsPanel
+					config={configState}
+					ctx={settingCtx}
+					onClose={() => setShowSettings(false)}
+				/>
+			)}
 			<box
 				flexDirection="column"
 				flexShrink={0}
@@ -305,7 +345,12 @@ export function App({ session, skillManager, model, cwd, config }: AppProps) {
 				paddingTop={1}
 				paddingBottom={1}
 			>
-				<InputBox disabled={isRunning} mode={mode} cwd={cwd} onSubmit={handlePrompt} />
+				<InputBox
+					disabled={isRunning}
+					mode={showSettings ? "normal" : mode}
+					cwd={cwd}
+					onSubmit={handlePrompt}
+				/>
 				<StatusBar
 					model={session.model?.name || session.model?.id || model}
 					mode={mode}
