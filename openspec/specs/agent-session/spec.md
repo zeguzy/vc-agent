@@ -1,14 +1,39 @@
 # agent-session Specification
 
 ## Purpose
-TBD - created by archiving change mvp-tui-agent. Update Purpose after archive.
+定义 Agent 会话的创建过程，包括 Provider 注册、Model 解析、Skill 自动发现和 ResourceLoader 配置。
 ## Requirements
+### Requirement: Skill 自动发现
+系统 SHALL 在创建 Agent 会话时自动扫描并加载技能（Skills），将可自动调用的技能注入到系统提示中。
+
+#### Scenario: 全局技能扫描
+- **WHEN** 系统启动
+- **THEN** 创建 `DefaultResourceLoader`，配置 `agentDir=~/.config/openagent`
+- **AND** 自动扫描 `~/.config/openagent/skills/` 目录下的 SKILL.md 文件
+
+#### Scenario: 项目技能扫描
+- **WHEN** 系统启动
+- **THEN** 自动扫描 `<cwd>/.openagent/skills/` 目录下的 SKILL.md 文件
+
+#### Scenario: 额外技能路径
+- **WHEN** `config.skills.paths` 配置了额外的路径
+- **THEN** 这些路径 SHALL 被加入 `additionalSkillPaths` 传入 `DefaultResourceLoader`
+
+#### Scenario: 禁用自动加载
+- **WHEN** `config.skills.autoLoad` 为 `false`
+- **THEN** 系统 SHALL 不扫描默认技能目录（但额外路径仍可配置）
+
+#### Scenario: 排除特定技能
+- **WHEN** `config.skills.disabled` 列出了技能名称
+- **THEN** 这些技能 SHALL 通过 `skillsOverride` 从加载结果中过滤掉
+
 ### Requirement: 创建 Pi SDK Agent 会话
-系统 SHALL 调用 Pi SDK 的 `createAgentSession()` 创建 Agent 会话，配置内置工具（read、bash、edit、write）和内存会话管理器。
+系统 SHALL 调用 Pi SDK 的 `createAgentSession()` 创建 Agent 会话，配置内置工具（read、bash、edit、write）、自定义 ResourceLoader 和内存会话管理器。
 
 #### Scenario: 成功创建会话
 - **WHEN** 系统启动且检测到有效的 LLM API Key（如 `ANTHROPIC_API_KEY`）
-- **THEN** 调用 `createAgentSession({ cwd, model, tools })` 返回可用的 `session` 对象
+- **THEN** 创建 `SkillManager` 并初始化 `DefaultResourceLoader`
+- **AND** 调用 `createAgentSession({ cwd, model, tools, resourceLoader })` 返回 `SessionResult` 包含 `session` 和 `skillManager`
 
 #### Scenario: 缺少 API Key
 - **WHEN** 系统启动但未检测到任何 LLM API Key

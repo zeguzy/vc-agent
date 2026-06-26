@@ -87,8 +87,53 @@
 
 #### Scenario: 命令执行
 - **WHEN** 用户在 `/` 开头时按 Enter
-- **THEN** 系统 SHALL 执行匹配的选中命令（通过 `matchCommands` 解析），不发送给 Agent
-- **AND** 支持的命令：`/clear`、`/compact`、`/model`、`/thinking`、`/context`、`/exit`、`/help`
+- **THEN** 系统 SHALL 通过 `CommandRegistry.execute(name, args, ctx)` 执行命令，不发送给 Agent
+- **AND** `CommandRegistry` 是全局单例，命令可在启动时或运行时注册
+
+#### Scenario: 未知命令处理
+- **WHEN** 用户输入 `/` 开头但命令名不在 CommandRegistry 中
+- **THEN** 系统 SHALL 显示 "Unknown command" 提示
+
+### Requirement: CommandRegistry 命令注册表
+系统 SHALL 通过 `CommandRegistry` 类管理所有 slash 命令，支持运行时注册、注销和查询。
+
+#### Scenario: 注册表单例
+- **WHEN** 应用启动
+- **THEN** 系统 SHALL 通过 `registerBuiltinCommands()` 将内置命令注册到全局 `commandRegistry`
+- **AND** 注册表 SHALL 通过 `get(name)` / `getAll()` / `match(input)` / `execute(name, args, ctx)` 提供查询和分发
+
+#### Scenario: 阻止重复注册
+- **WHEN** 尝试注册已存在的命令名
+- **THEN** `register()` SHALL 抛出 `Error`，除非使用 `registerOrReplace()`
+
+#### Scenario: 命令上下文
+- **WHEN** 执行命令 handler
+- **THEN** handler 接收 `CommandContext` 对象，包含 `session`、`skillManager`、`messages`、`setMessages`、`setIsRunning` 等
+
+### Requirement: 技能管理命令
+系统 SHALL 提供 `/skills`、`/load-skill`、`/unload-skill` 三个命令来管理技能生命周期。
+
+#### Scenario: 列出技能
+- **WHEN** 用户执行 `/skills`
+- **THEN** 输出 SHALL 分为 auto（自动加载）和 dynamic（动态加载）两组，显示技能名称、描述、调用方式
+- **AND** 显示默认的全局和项目技能目录路径
+
+#### Scenario: 动态加载技能
+- **WHEN** 用户执行 `/load-skill <path>` 且路径存在有效的 SKILL.md
+- **THEN** 系统 SHALL 通过 `SkillManager.loadDynamicSkill(path)` 加载技能并注入到 ResourceLoader
+- **AND** 返回技能名称、描述和调用方式
+
+#### Scenario: 加载无效路径
+- **WHEN** 用户执行 `/load-skill <path>` 但路径不存在或不包含 SKILL.md
+- **THEN** 系统 SHALL 显示明确错误信息
+
+#### Scenario: 卸载动态技能
+- **WHEN** 用户执行 `/unload-skill <name>` 且该技能之前通过动态加载
+- **THEN** 系统 SHALL 从 `SkillManager` 动态列表中移除该技能
+
+#### Scenario: 卸载不存在的技能
+- **WHEN** 用户执行 `/unload-skill <name>` 但该技能不存在或不是动态加载的
+- **THEN** 系统 SHALL 显示提示信息，并建议用 `/skills` 查看
 
 ### Requirement: 中断处理
 系统 SHALL 通过 `useKeyboard` 监听 Ctrl+C，在不同状态下产生不同行为。
@@ -132,12 +177,15 @@
 
 #### Scenario: 命令列表动态生成
 - **WHEN** 渲染 `/help` 输出的命令列表部分
-- **THEN** 系统 SHALL 从 `slashCommands` 数组（`src/tui/commands.ts`）动态遍历生成，而非硬编码字符串
-- **AND** 每条命令 SHALL 显示命令名与对应 description
+- **THEN** 系统 SHALL 从 `CommandRegistry（src/commands/registry.ts）` 动态遍历生成，而非硬编码字符串
+- **AND** 每条命令 SHALL 显示命令名、description 和 usage
 
 #### Scenario: 完整命令列表
 - **WHEN** 用户执行 `/help`
-- **THEN** 输出 SHALL 列出全部已注册命令：`/clear`、`/compact`、`/model`、`/thinking`、`/context`、`/exit`、`/help`
+- **THEN** 输出 SHALL 列出 `CommandRegistry.getAll()` 返回的全部已注册命令，包括：
+- 内置命令：`/clear`、`/compact`、`/model`、`/thinking`、`/context`、`/exit`、`/help`
+- 技能管理命令：`/skills`、`/load-skill`、`/unload-skill`
+- 后续由技能或插件动态注册的命令
 
 #### Scenario: 快捷键小节内容
 - **WHEN** 用户执行 `/help`

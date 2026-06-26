@@ -1,7 +1,7 @@
 #!/usr/bin/env bun
 import { createCliRenderer } from "@opentui/core";
 import { createRoot } from "@opentui/react";
-import { createSession } from "./agent/session.js";
+import { createSession, type SessionResult } from "./agent/session.js";
 import { loadConfig } from "./config.js";
 import { App } from "./tui/App.js";
 
@@ -58,20 +58,30 @@ async function main(): Promise<void> {
 	const config = loadConfig(cwd);
 	const model = args.model ?? config.model;
 
-	let session;
+	let sessionResult: SessionResult;
 	try {
-		session = await createSession({ cwd, model, config });
+		sessionResult = await createSession({ cwd, model, config });
 	} catch (err) {
 		console.error("创建 Agent 会话失败:", err instanceof Error ? err.message : String(err));
 		process.exit(1);
 	}
+
+	const { session, skillManager } = sessionResult;
 
 	const renderer = await createCliRenderer({
 		exitOnCtrlC: false,
 	});
 
 	const root = createRoot(renderer);
-	root.render(<App session={session} model={model || "default"} cwd={cwd} config={config} />);
+	root.render(
+		<App
+			session={session}
+			skillManager={skillManager}
+			model={model || "default"}
+			cwd={cwd}
+			config={config}
+		/>,
+	);
 }
 
 main().catch((err) => {

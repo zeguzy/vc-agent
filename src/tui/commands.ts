@@ -1,34 +1,226 @@
-export interface SlashCommand {
-	name: string;
-	description: string;
-	usage?: string;
-}
+import { type CommandContext, commandRegistry } from "../commands/registry.js";
+import { createAssistantMessage, createUserMessage } from "../store.js";
 
-export const slashCommands: SlashCommand[] = [
-	{ name: "clear", description: "Clear conversation history", usage: "/clear" },
-	{
+/**
+ * Register all built-in slash commands into the global CommandRegistry.
+ */
+export function registerBuiltinCommands(): void {
+	commandRegistry.register({
+		name: "clear",
+		description: "Clear conversation history",
+		usage: "/clear",
+		handler: (_args: string, ctx: CommandContext) => {
+			ctx.setMessages([]);
+		},
+	});
+
+	commandRegistry.register({
 		name: "compact",
 		description: "Compact context to save tokens",
 		usage: "/compact [instructions]",
-	},
-	{ name: "model", description: "Switch to next model", usage: "/model" },
-	{ name: "thinking", description: "Cycle thinking level", usage: "/thinking" },
-	{ name: "context", description: "Toggle context display (compact/full)", usage: "/context" },
-	{ name: "exit", description: "Quit the application", usage: "/exit" },
-	{ name: "help", description: "Show available commands", usage: "/help" },
-];
+		handler: (args: string, ctx: CommandContext) => {
+			ctx.setMessages((prev) => [...prev, createUserMessage(`/compact ${args}`.trim())]);
+			ctx.session.compact(args || undefined).catch((err) => {
+				ctx.setMessages((prev) => [
+					...prev,
+					createAssistantMessage(
+						`Compaction failed: ${err instanceof Error ? err.message : String(err)}`,
+					),
+				]);
+			});
+		},
+	});
 
-export function matchCommands(input: string): SlashCommand[] {
-	const trimmed = input.replace(/^\//, "");
-	if (!trimmed) return slashCommands;
-	return slashCommands.filter((cmd) => cmd.name.startsWith(trimmed));
+	commandRegistry.register({
+		name: "model",
+		description: "Switch to next model",
+		usage: "/model",
+		handler: (_args: string, ctx: CommandContext) => {
+			ctx.session
+				.cycleModel()
+				.then((result) => {
+					if (result) {
+						ctx.setMessages((prev) => [
+							...prev,
+							createAssistantMessage(`Switched to ${result.model.name}`),
+						]);
+					}
+				})
+				.catch(() => {});
+		},
+	});
+
+	commandRegistry.register({
+		name: "thinking",
+		description: "Cycle thinking level",
+		usage: "/thinking",
+		handler: (_args: string, ctx: CommandContext) => {
+			ctx.session.cycleThinkingLevel();
+		},
+	});
+
+	commandRegistry.register({
+		name: "context",
+		description: "Toggle context display (compact/full)",
+		usage: "/context",
+		handler: (_args: string, ctx: CommandContext) => {
+			ctx.setContextDisplay((d) => (d === "compact" ? "full" : "compact"));
+		},
+	});
+
+	commandRegistry.register({
+		name: "exit",
+		description: "Quit the application",
+		usage: "/exit",
+		handler: () => {
+			process.exit(0);
+		},
+	});
+
+	commandRegistry.register({
+		name: "help",
+		description: "Show available commands",
+		usage: "/help",
+		handler: (_args: string, ctx: CommandContext) => {
+			ctx.setMessages((prev) => [...prev, createAssistantMessage(buildHelpText())]);
+		},
+	});
+
+	// --- Skill management commands ---
+
+	commandRegistry.register({
+		name: "skills",
+		description: "List all loaded skills (auto + dynamic)",
+		usage: "/skills",
+		handler: (_args: string, ctx: CommandContext) => {
+			const result = ctx.skillManager.listSkills();
+			if (result.skills.length === 0) {
+				ctx.setMessages((prev) => [...prev, createAssistantMessage("No skills loaded.")]);
+				return;
+			}
+
+			const dirs = ctx.skillManager.getDefaultDirectories();
+			const header = [
+				"Loaded skills:",
+				`  Global dir: ${dirs.global}`,
+				`  Project dir: ${dirs.project}`,
+				"",
+			];
+
+			const lines: string[] = [];
+			for (const s of result.skills) {
+				const tag = s.source === "auto" ? "🔄 auto" : "⚡ dynamic";
+				const invocation = s.disableModelInvocation ? "  (manual only: /skill:name)" : "";
+				lines.push(`  ${tag}  ${s.name} — ${s.description}${invocation}`);
+			}
+
+			if (result.diagnostics.length > 0) {
+				lines.push("", "Diagnostics:");
+				for (const d of result.diagnostics) {
+					lines.push(`  ⚠ ${d.message}`);
+				}
+			}
+
+			ctx.setMessages((prev) => [
+				...prev,
+				createAssistantMessage([...header, ...lines].join("\n")),
+			]);
+		},
+	});
+
+	commandRegistry.register({
+		name: "load-skill",
+		description: "Dynamically load a skill from a file or directory",
+		usage: "/load-skill <path>",
+		handler: async (args: string, ctx: CommandContext) => {
+			const path = args.trim();
+			if (!path) {
+				ctx.setMessages((prev) => [
+					...prev,
+					createAssistantMessage(
+						"Usage: /load-skill <path>\nProvide a path to a SKILL.md file or a directory containing one.",
+					),
+				]);
+				return;
+			}
+			try {
+				const result = await ctx.skillManager.loadDynamicSkill(path);
+				const skill = result.skill;
+				ctx.setMessages((prev) => [
+					...prev,
+					createAssistantMessage(
+						`Loaded skill: ${skill.name} — ${skill.description}\n  Path: ${skill.filePath}` +
+							(skill.disableModelInvocation
+								? `\n  Invocation: /skill:${skill.name}`
+								: "\n  Invocation: auto (injected into system prompt)"),
+					),
+				]);
+			} catch (err) {
+				ctx.setMessages((prev) => [
+					...prev,
+					createAssistantMessage(
+						`Failed to load skill: ${err instanceof Error ? err.message : String(err)}`,
+					),
+				]);
+			}
+		},
+	});
+
+	commandRegistry.register({
+		name: "unload-skill",
+		description: "Unload a dynamically loaded skill",
+		usage: "/unload-skill <name>",
+		handler: (args: string, ctx: CommandContext) => {
+			const name = args.trim();
+			if (!name) {
+				ctx.setMessages((prev) => [
+					...prev,
+					createAssistantMessage(
+						"Usage: /unload-skill <skill-name>\nProvide the name of a dynamically loaded skill to unload.",
+					),
+				]);
+				return;
+			}
+			const removed = ctx.skillManager.unloadDynamicSkill(name);
+			if (removed) {
+				ctx.setMessages((prev) => [
+					...prev,
+					createAssistantMessage(`Unloaded dynamic skill: ${name}`),
+				]);
+			} else {
+				ctx.setMessages((prev) => [
+					...prev,
+					createAssistantMessage(
+						`Skill "${name}" not found or is not a dynamically loaded skill.\nUse /skills to see all loaded skills.`,
+					),
+				]);
+			}
+		},
+	});
 }
 
+/**
+ * Match commands for autocomplete.
+ * Delegates to the global commandRegistry.
+ */
+export function matchCommands(input: string): ReturnType<typeof commandRegistry.match> {
+	return commandRegistry.match(input);
+}
+
+/**
+ * Build the help text from all registered commands.
+ */
 export function buildHelpText(): string {
-	const maxName = Math.max(...slashCommands.map((c) => c.name.length));
-	const commandLines = slashCommands
-		.map((c) => `  /${c.name.padEnd(maxName)}  — ${c.description}`)
+	const commands = commandRegistry.getAll();
+	const maxName = Math.max(...commands.map((c) => c.name.length), 0);
+	const commandLines = commands
+		.map((c) => {
+			const name = `/${c.name}`.padEnd(maxName + 1);
+			const usage = c.usage ? ` (${c.usage})` : "";
+			return `  ${name}  — ${c.description}${usage}`;
+		})
 		.join("\n");
+
 	return [
 		"Available commands:",
 		commandLines,

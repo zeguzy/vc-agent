@@ -31,12 +31,22 @@ export interface CompactionConfig {
 	threshold?: number;
 }
 
+export interface SkillsConfig {
+	/** Additional skill directories/files to scan beyond defaults */
+	paths?: string[];
+	/** Whether to auto-discover and inject skills at startup (default: true) */
+	autoLoad?: boolean;
+	/** Skill names to exclude from auto-loading */
+	disabled?: string[];
+}
+
 export interface Config {
 	model?: string;
 	thinking?: ThinkingConfig;
 	providers?: Record<string, ProviderConfig>;
 	display?: DisplayConfig;
 	compaction?: CompactionConfig;
+	skills?: SkillsConfig;
 }
 
 export const defaultConfig: Config = {};

@@ -3,7 +3,9 @@ import { useKeyboard } from "@opentui/react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { AgentSession, AgentSessionEvent } from "../agent/session.js";
 import { extractAssistantContent } from "../agent/session.js";
+import { commandRegistry } from "../commands/registry.js";
 import type { Config } from "../config.js";
+import type { SkillManager } from "../skills/manager.js";
 import {
 	createAssistantMessage,
 	createSeparator,
@@ -11,7 +13,7 @@ import {
 	createUserMessage,
 	type Message,
 } from "../store.js";
-import { buildHelpText } from "./commands.js";
+import { registerBuiltinCommands } from "./commands.js";
 import { InputBox } from "./components/InputBox.js";
 import { MessageList } from "./components/MessageList.js";
 import { StatusBar } from "./components/StatusBar.js";
@@ -20,12 +22,13 @@ import { colors } from "./theme.js";
 
 interface AppProps {
 	session: AgentSession;
+	skillManager: SkillManager;
 	model: string;
 	cwd: string;
 	config?: Config;
 }
 
-export function App({ session, model, cwd, config }: AppProps) {
+export function App({ session, skillManager, model, cwd, config }: AppProps) {
 	const [messages, setMessages] = useState<Message[]>([
 		createAssistantMessage("Hi, I'm openagent. I can read and edit files, and run commands."),
 	]);
@@ -47,10 +50,19 @@ export function App({ session, model, cwd, config }: AppProps) {
 	const pendingThinkingRef = useRef<string | null>(null);
 	const flushTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+	// Register built-in commands once on mount
+	useEffect(() => {
+		if (commandRegistry.size === 0) {
+			registerBuiltinCommands();
+		}
+	}, []);
+
 	const modeRef = useRef<Mode>("insert");
 	modeRef.current = mode;
 	const isRunningRef = useRef(false);
 	isRunningRef.current = isRunning;
+	const messagesRef = useRef(messages);
+	messagesRef.current = messages;
 
 	useEffect(() => {
 		const unsubscribe = session.subscribe((event: AgentSessionEvent) => {
@@ -167,53 +179,29 @@ export function App({ session, model, cwd, config }: AppProps) {
 			if (text.startsWith("/")) {
 				const [cmd, ...args] = text.slice(1).split(/\s+/);
 				const argStr = args.join(" ").trim();
-				switch (cmd) {
-					case "clear":
-						setMessages([]);
-						break;
-					case "compact":
-						setMessages((prev) => [...prev, createUserMessage(text)]);
-						session.compact(argStr || undefined).catch((err) => {
-							setMessages((prev) => [
-								...prev,
-								createAssistantMessage(
-									`Compaction failed: ${err instanceof Error ? err.message : String(err)}`,
-								),
-							]);
-						});
-						break;
-					case "model":
-						session
-							.cycleModel()
-							.then((result) => {
-								if (result) {
-									setMessages((prev) => [
-										...prev,
-										createAssistantMessage(`Switched to ${result.model.name}`),
-									]);
-								}
-							})
-							.catch(() => {});
-						break;
-					case "thinking":
-						session.cycleThinkingLevel();
-						break;
-					case "context":
-						setContextDisplay((d) => (d === "compact" ? "full" : "compact"));
-						break;
-					case "exit":
-						process.exit(0);
-					case "help":
-						setMessages((prev) => [...prev, createAssistantMessage(buildHelpText())]);
-						break;
-					default:
+
+				// Build command context
+				const ctx = {
+					session,
+					skillManager,
+					messages: messagesRef.current,
+					setMessages,
+					setIsRunning,
+					setContextUsage,
+					setThinkingCollapsed,
+					setContextDisplay,
+				};
+
+				commandRegistry.execute(cmd, argStr, ctx).then((handled) => {
+					if (!handled) {
 						setMessages((prev) => [
 							...prev,
 							createAssistantMessage(
 								`Unknown command: /${cmd}. Type /help for available commands.`,
 							),
 						]);
-				}
+					}
+				});
 				return;
 			}
 			if (isRunningRef.current) {
@@ -237,7 +225,7 @@ export function App({ session, model, cwd, config }: AppProps) {
 				setIsRunning(false);
 			});
 		},
-		[session],
+		[session, skillManager],
 	);
 
 	useKeyboard((key) => {

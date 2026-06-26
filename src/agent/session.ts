@@ -8,6 +8,7 @@ import {
 	SettingsManager,
 } from "@earendil-works/pi-coding-agent";
 import type { Config, ProviderConfig } from "../config.js";
+import { SkillManager } from "../skills/manager.js";
 
 export interface SessionOptions {
 	cwd: string;
@@ -15,7 +16,12 @@ export interface SessionOptions {
 	config?: Config;
 }
 
-export async function createSession(options: SessionOptions): Promise<AgentSession> {
+export interface SessionResult {
+	session: AgentSession;
+	skillManager: SkillManager;
+}
+
+export async function createSession(options: SessionOptions): Promise<SessionResult> {
 	const authStorage = AuthStorage.create();
 	const modelRegistry = ModelRegistry.create(authStorage);
 
@@ -38,16 +44,21 @@ export async function createSession(options: SessionOptions): Promise<AgentSessi
 		settingsManager.setDefaultThinkingLevel(options.config.thinking.level as any);
 	}
 
+	// Initialize SkillManager with DefaultResourceLoader for skill discovery
+	const skillManager = new SkillManager();
+	const resourceLoader = await skillManager.initialize(options.cwd, options.config ?? {});
+
 	const result = await createAgentSession({
 		cwd: options.cwd,
 		authStorage,
 		modelRegistry,
 		...(model ? { model } : {}),
 		settingsManager,
+		resourceLoader,
 		tools: ["read", "bash", "edit", "write"],
 		sessionManager: SessionManager.inMemory(),
 	});
-	return result.session;
+	return { session: result.session, skillManager };
 }
 
 function registerCustomProvider(registry: ModelRegistry, name: string, config: ProviderConfig) {
@@ -107,7 +118,7 @@ export function extractAssistantText(content: unknown): string {
 export function summarizeArgs(args: unknown, maxLen = 50): string {
 	const str = typeof args === "string" ? args : JSON.stringify(args);
 	if (str.length <= maxLen) return str;
-	return str.slice(0, maxLen - 3) + "...";
+	return `${str.slice(0, maxLen - 3)}...`;
 }
 
 export type { AgentSession, AgentSessionEvent };
