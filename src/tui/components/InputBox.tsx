@@ -1,52 +1,52 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react"
-import { readFileSync, existsSync } from "fs"
-import { join } from "path"
-import type { TextareaRenderable, KeyBinding as TextareaKeyBinding, KeyEvent } from "@opentui/core"
-import { colors, icons } from "../theme.js"
+import type { KeyEvent, KeyBinding as TextareaKeyBinding, TextareaRenderable } from "@opentui/core";
+import { existsSync, readFileSync } from "fs";
+import { join } from "path";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { matchCommands } from "../commands.js";
 
-import { type Mode } from "../keymap.js"
-import { matchCommands } from "../commands.js"
+import type { Mode } from "../keymap.js";
+import { colors, icons } from "../theme.js";
 
 function getGitBranch(cwd: string): string {
 	try {
-		const gitHead = join(cwd, ".git", "HEAD")
-		if (!existsSync(gitHead)) return ""
-		const content = readFileSync(gitHead, "utf-8").trim()
-		const match = content.match(/^ref:\s*refs\/heads\/(.+)$/)
-		return match ? match[1] : ""
+		const gitHead = join(cwd, ".git", "HEAD");
+		if (!existsSync(gitHead)) return "";
+		const content = readFileSync(gitHead, "utf-8").trim();
+		const match = content.match(/^ref:\s*refs\/heads\/(.+)$/);
+		return match ? match[1] : "";
 	} catch {
-		return ""
+		return "";
 	}
 }
 
 interface InputBoxProps {
-	disabled: boolean
-	mode: Mode
-	cwd: string
-	onSubmit: (text: string) => void
+	disabled: boolean;
+	mode: Mode;
+	cwd: string;
+	onSubmit: (text: string) => void;
 }
 
 export function InputBox({ disabled, mode, cwd, onSubmit }: InputBoxProps) {
-	const [inputHeight, setInputHeight] = useState(2)
-	const [animationFrame, setAnimationFrame] = useState(0)
-	const [currentText, setCurrentText] = useState("")
-	const [selectedIndex, setSelectedIndex] = useState(0)
-	const textareaRef = useRef<TextareaRenderable | null>(null)
-	const spinnerFrames = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"]
-	const workingSuffix = ["   ", ".  ", ".. ", "..."]
+	const [inputHeight, setInputHeight] = useState(2);
+	const [animationFrame, setAnimationFrame] = useState(0);
+	const [currentText, setCurrentText] = useState("");
+	const [selectedIndex, setSelectedIndex] = useState(0);
+	const textareaRef = useRef<TextareaRenderable | null>(null);
+	const spinnerFrames = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
+	const workingSuffix = ["   ", ".  ", ".. ", "..."];
 
-	const isSlashMode = currentText.startsWith("/")
+	const isSlashMode = currentText.startsWith("/");
 	const suggestions = useMemo(
 		() => (isSlashMode ? matchCommands(currentText) : []),
 		[isSlashMode, currentText],
-	)
-	const showSuggestions = isSlashMode && suggestions.length > 0 && mode === "insert"
+	);
+	const showSuggestions = isSlashMode && suggestions.length > 0 && mode === "insert";
 
 	useEffect(() => {
 		if (selectedIndex >= suggestions.length) {
-			setSelectedIndex(0)
+			setSelectedIndex(0);
 		}
-	}, [suggestions.length, selectedIndex])
+	}, [suggestions.length, selectedIndex]);
 
 	const keyBindings = useMemo<TextareaKeyBinding[]>(
 		() => [
@@ -60,87 +60,84 @@ export function InputBox({ disabled, mode, cwd, onSubmit }: InputBoxProps) {
 			{ name: "kpenter", meta: true, action: "submit" },
 		],
 		[],
-	)
+	);
 
 	const handleSubmit = useCallback(
 		(submitted: string) => {
-			const trimmed = submitted.trim()
-			if (!trimmed) return
-			onSubmit(trimmed)
+			const trimmed = submitted.trim();
+			if (!trimmed) return;
+			onSubmit(trimmed);
 		},
 		[onSubmit],
-	)
+	);
 
 	const syncTextareaState = useCallback(() => {
-		const nextValue = textareaRef.current?.plainText ?? ""
-		const nextHeight = Math.min(6, Math.max(2, nextValue.split("\n").length))
-		setInputHeight(nextHeight)
-		return nextValue
-	}, [])
+		const nextValue = textareaRef.current?.plainText ?? "";
+		const nextHeight = Math.min(6, Math.max(2, nextValue.split("\n").length));
+		setInputHeight(nextHeight);
+		return nextValue;
+	}, []);
 
 	const handleContentChange = useCallback(() => {
-		const text = syncTextareaState()
-		setCurrentText(text)
-		setSelectedIndex(0)
-	}, [syncTextareaState])
+		const text = syncTextareaState();
+		setCurrentText(text);
+		setSelectedIndex(0);
+	}, [syncTextareaState]);
 
 	const handleTextareaSubmit = useCallback(() => {
-		const currentValue = syncTextareaState()
+		const currentValue = syncTextareaState();
 		if (currentValue.startsWith("/")) {
-			const matched = matchCommands(currentValue)
+			const matched = matchCommands(currentValue);
 			if (matched.length > 0) {
-				const cmd = matched[Math.min(selectedIndex, matched.length - 1)]
-				handleSubmit(`/${cmd.name}`)
+				const cmd = matched[Math.min(selectedIndex, matched.length - 1)];
+				handleSubmit(`/${cmd.name}`);
 			} else {
-				handleSubmit(currentValue)
+				handleSubmit(currentValue);
 			}
 		} else {
-			handleSubmit(currentValue)
+			handleSubmit(currentValue);
 		}
 		if (textareaRef.current) {
-			textareaRef.current.clear()
+			textareaRef.current.clear();
 		}
-		setCurrentText("")
-		setSelectedIndex(0)
-		setInputHeight(2)
-	}, [handleSubmit, syncTextareaState, selectedIndex])
+		setCurrentText("");
+		setSelectedIndex(0);
+		setInputHeight(2);
+	}, [handleSubmit, syncTextareaState, selectedIndex]);
 
 	const handleKeyDown = useCallback(
 		(key: KeyEvent) => {
-			if (!showSuggestions) return
+			if (!showSuggestions) return;
 			if (key.name === "up") {
-				setSelectedIndex((i) => Math.max(0, i - 1))
+				setSelectedIndex((i) => Math.max(0, i - 1));
 			} else if (key.name === "down") {
-				setSelectedIndex((i) => Math.min(suggestions.length - 1, i + 1))
+				setSelectedIndex((i) => Math.min(suggestions.length - 1, i + 1));
 			} else if (key.name === "tab") {
-				const cmd = suggestions[selectedIndex]
+				const cmd = suggestions[selectedIndex];
 				if (cmd && textareaRef.current) {
-					textareaRef.current.setText(`/${cmd.name} `)
-					setCurrentText(`/${cmd.name} `)
+					textareaRef.current.setText(`/${cmd.name} `);
+					setCurrentText(`/${cmd.name} `);
 				}
 			}
 		},
 		[showSuggestions, suggestions, selectedIndex],
-	)
+	);
 
 	useEffect(() => {
 		if (!disabled) {
-			setAnimationFrame(0)
-			return
+			setAnimationFrame(0);
+			return;
 		}
 
 		const interval = setInterval(() => {
-			setAnimationFrame((frame) => frame + 1)
-		}, 120)
+			setAnimationFrame((frame) => frame + 1);
+		}, 120);
 
-		return () => clearInterval(interval)
-	}, [disabled])
+		return () => clearInterval(interval);
+	}, [disabled]);
 
 	return (
-		<box
-			flexDirection="column"
-			flexShrink={0}
-		>
+		<box flexDirection="column" flexShrink={0}>
 			{showSuggestions && (
 				<box flexDirection="column" paddingLeft={2} paddingRight={2} flexShrink={0}>
 					{suggestions.map((cmd, i) => (
@@ -148,9 +145,7 @@ export function InputBox({ disabled, mode, cwd, onSubmit }: InputBoxProps) {
 							<text fg={i === selectedIndex ? colors.primary : colors.textSubtle}>
 								{i === selectedIndex ? "▶ " : "  "}
 							</text>
-							<text fg={i === selectedIndex ? colors.secondary : colors.text}>
-								/{cmd.name}
-							</text>
+							<text fg={i === selectedIndex ? colors.secondary : colors.text}>/{cmd.name}</text>
 							<text fg={colors.textMuted}> {cmd.description}</text>
 						</box>
 					))}
@@ -158,24 +153,33 @@ export function InputBox({ disabled, mode, cwd, onSubmit }: InputBoxProps) {
 			)}
 			{disabled && (
 				<box height={1} flexDirection="row" paddingLeft={1} paddingRight={1}>
-					<text fg={colors.warning}>
-						{spinnerFrames[animationFrame % spinnerFrames.length]}{" "}
-					</text>
+					<text fg={colors.warning}>{spinnerFrames[animationFrame % spinnerFrames.length]} </text>
 					<text fg={colors.text}>
 						{`Working${workingSuffix[animationFrame % workingSuffix.length]}`}
 					</text>
 				</box>
 			)}
-		<box height={1} flexDirection="row" paddingLeft={1} paddingRight={1} marginTop={disabled ? 1 : 0}>
-			<text fg={colors.textMuted}>{icons.folder} </text>
-			<text fg={colors.textMuted}>{(() => {
-				const parts = cwd.replace(process.env.HOME ?? "", "~").split("/").filter(Boolean)
-				const pathStr = parts.length > 3 ? `…/${parts[parts.length - 1]}` : parts.join("/")
-				const branch = getGitBranch(cwd)
-				return branch ? `${pathStr}:${branch}` : pathStr
-			})()}</text>
-			<box flexGrow={1} />
-		</box>
+			<box
+				height={1}
+				flexDirection="row"
+				paddingLeft={1}
+				paddingRight={1}
+				marginTop={disabled ? 1 : 0}
+			>
+				<text fg={colors.textMuted}>{icons.folder} </text>
+				<text fg={colors.textMuted}>
+					{(() => {
+						const parts = cwd
+							.replace(process.env.HOME ?? "", "~")
+							.split("/")
+							.filter(Boolean);
+						const pathStr = parts.length > 3 ? `…/${parts[parts.length - 1]}` : parts.join("/");
+						const branch = getGitBranch(cwd);
+						return branch ? `${pathStr}:${branch}` : pathStr;
+					})()}
+				</text>
+				<box flexGrow={1} />
+			</box>
 			<box
 				borderStyle="rounded"
 				border={["top", "right", "bottom", "left"]}
@@ -190,7 +194,12 @@ export function InputBox({ disabled, mode, cwd, onSubmit }: InputBoxProps) {
 					backgroundColor={colors.backgroundInset}
 					alignItems="flex-start"
 				>
-					<text width={2} fg={mode === "insert" ? (disabled ? colors.textMuted : colors.primary) : colors.textMuted}>
+					<text
+						width={2}
+						fg={
+							mode === "insert" ? (disabled ? colors.textMuted : colors.primary) : colors.textMuted
+						}
+					>
 						{icons.user}
 					</text>
 					<textarea
@@ -208,7 +217,13 @@ export function InputBox({ disabled, mode, cwd, onSubmit }: InputBoxProps) {
 						focusedTextColor={colors.text}
 						cursorColor={colors.primary}
 						placeholderColor={colors.textMuted}
-						placeholder={disabled ? "Queue a message…" : mode === "insert" ? "Message openagent…  / for commands" : "Press i to type"}
+						placeholder={
+							disabled
+								? "Queue a message…"
+								: mode === "insert"
+									? "Message openagent…  / for commands"
+									: "Press i to type"
+						}
 						keyBindings={keyBindings}
 						onKeyDown={handleKeyDown}
 						onContentChange={handleContentChange}
@@ -217,5 +232,5 @@ export function InputBox({ disabled, mode, cwd, onSubmit }: InputBoxProps) {
 				</box>
 			</box>
 		</box>
-	)
+	);
 }
