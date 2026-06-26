@@ -42,13 +42,20 @@ function resolveModel(registry: ModelRegistry, modelStr?: string) {
   return undefined
 }
 
+export function extractAssistantContent(content: unknown): { text: string, thinking: string } {
+  if (typeof content === "string") return { text: content, thinking: "" }
+  if (!Array.isArray(content)) return { text: "", thinking: "" }
+  let text = ""
+  let thinking = ""
+  for (const c of content as any[]) {
+    if (c?.type === "text" && typeof c.text === "string") text += c.text
+    else if (c?.type === "thinking" && typeof c.thinking === "string") thinking += c.thinking
+  }
+  return { text, thinking }
+}
+
 export function extractAssistantText(content: unknown): string {
-  if (typeof content === "string") return content
-  if (!Array.isArray(content)) return ""
-  return content
-    .filter((c: any) => c?.type === "text")
-    .map((c: any) => c.text as string)
-    .join("")
+  return extractAssistantContent(content).text
 }
 
 export function summarizeArgs(args: unknown, maxLen = 50): string {

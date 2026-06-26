@@ -4,9 +4,12 @@ export interface Message {
   id: string
   role: MessageRole
   content: string
+  thinking?: string
   toolName?: string
   toolArgs?: unknown
   toolStatus?: "running" | "done" | "error"
+  toolResult?: unknown
+  queued?: boolean
 }
 
 let _idCounter = 0

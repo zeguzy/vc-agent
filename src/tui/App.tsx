@@ -1,7 +1,8 @@
 import { useState, useEffect, useRef, useCallback } from "react"
 import { useKeyboard } from "@opentui/react"
+import type { ScrollBoxRenderable } from "@opentui/core"
 import type { AgentSession, AgentSessionEvent } from "../agent/session.js"
-import { extractAssistantText } from "../agent/session.js"
+import { extractAssistantContent } from "../agent/session.js"
 import {
 	type Message,
 	createUserMessage,
@@ -13,6 +14,7 @@ import { MessageList } from "./components/MessageList.js"
 import { InputBox } from "./components/InputBox.js"
 import { StatusBar } from "./components/StatusBar.js"
 import { colors } from "./theme.js"
+import { type Mode, resolveKey } from "./keymap.js"
 
 interface AppProps {
 	session: AgentSession
@@ -22,22 +24,36 @@ interface AppProps {
 
 export function App({ session, model, cwd }: AppProps) {
 	const [messages, setMessages] = useState<Message[]>([
-		createAssistantMessage("你好！我是 openagent，可以帮你读写文件、运行命令。"),
+		createAssistantMessage("Hi, I'm openagent. I can read and edit files, and run commands."),
 	])
 	const [isRunning, setIsRunning] = useState(false)
+	const [mode, setMode] = useState<Mode>("insert")
+	const [thinkingCollapsed, setThinkingCollapsed] = useState(false)
 	const lastCtrlCRef = useRef<number>(0)
 	const toolCallIdToMsgId = useRef<Map<string, string>>(new Map())
+	const scrollRef = useRef<ScrollBoxRenderable>(null)
+	const pendingTextRef = useRef<string | null>(null)
+	const pendingThinkingRef = useRef<string | null>(null)
+	const flushTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+	const modeRef = useRef<Mode>("insert")
+	modeRef.current = mode
+	const isRunningRef = useRef(false)
+	isRunningRef.current = isRunning
 
 	useEffect(() => {
 		const unsubscribe = session.subscribe((event: AgentSessionEvent) => {
 			switch (event.type) {
 				case "agent_start":
 					setIsRunning(true)
+					setMessages((prev) => prev.map((m) => (m.queued ? { ...m, queued: false } : m)))
 					break
 				case "message_start": {
 					const msg = event.message as any
 					if (msg?.role === "assistant") {
-						const newMsg = createAssistantMessage()
+						const { text, thinking } = extractAssistantContent(msg.content)
+						const newMsg = createAssistantMessage(text)
+						if (thinking) newMsg.thinking = thinking
 						setMessages((prev) => [...prev, newMsg])
 					}
 					break
@@ -45,12 +61,48 @@ export function App({ session, model, cwd }: AppProps) {
 				case "message_update": {
 					const msg = event.message as any
 					if (msg?.role === "assistant") {
-						const text = extractAssistantText(msg.content)
+						const { text, thinking } = extractAssistantContent(msg.content)
+						pendingTextRef.current = text
+						pendingThinkingRef.current = thinking
+						if (!flushTimerRef.current) {
+							flushTimerRef.current = setTimeout(() => {
+								flushTimerRef.current = null
+								const pending = pendingTextRef.current
+								const pendingThinking = pendingThinkingRef.current
+								if (pending !== null) {
+									pendingTextRef.current = null
+									pendingThinkingRef.current = null
+									setMessages((prev) => {
+										const updated = [...prev]
+										for (let i = updated.length - 1; i >= 0; i--) {
+											if (updated[i].role === "assistant") {
+												updated[i] = { ...updated[i], content: pending, thinking: pendingThinking ?? undefined }
+												break
+											}
+										}
+										return updated
+									})
+								}
+							}, 120)
+						}
+					}
+					break
+				}
+				case "message_end": {
+					if (flushTimerRef.current) {
+						clearTimeout(flushTimerRef.current)
+						flushTimerRef.current = null
+					}
+					pendingTextRef.current = null
+					pendingThinkingRef.current = null
+					const msg = event.message as any
+					if (msg?.role === "assistant") {
+						const { text, thinking } = extractAssistantContent(msg.content)
 						setMessages((prev) => {
 							const updated = [...prev]
 							for (let i = updated.length - 1; i >= 0; i--) {
 								if (updated[i].role === "assistant") {
-									updated[i] = { ...updated[i], content: text }
+									updated[i] = { ...updated[i], content: text, thinking: thinking || undefined }
 									break
 								}
 							}
@@ -71,7 +123,7 @@ export function App({ session, model, cwd }: AppProps) {
 						setMessages((prev) =>
 							prev.map((m) =>
 								m.id === msgId
-									? { ...m, toolStatus: event.isError ? "error" : "done" }
+									? { ...m, toolStatus: event.isError ? "error" : "done", toolResult: event.result }
 									: m,
 							),
 						)
@@ -89,6 +141,18 @@ export function App({ session, model, cwd }: AppProps) {
 
 	const handlePrompt = useCallback(
 		(text: string) => {
+			if (isRunningRef.current) {
+				const msg = createUserMessage(text)
+				msg.queued = true
+				setMessages((prev) => [...prev, msg])
+				session.followUp(text).catch((err) => {
+					setMessages((prev) => [
+						...prev,
+						createAssistantMessage(`Error: ${err instanceof Error ? err.message : String(err)}`),
+					])
+				})
+				return
+			}
 			setMessages((prev) => [...prev, createUserMessage(text)])
 			session.prompt(text).catch((err) => {
 				setMessages((prev) => [
@@ -102,25 +166,81 @@ export function App({ session, model, cwd }: AppProps) {
 	)
 
 	useKeyboard((key) => {
-		if (key.name === "c" && key.ctrl) {
-			const now = Date.now()
-			if (now - lastCtrlCRef.current < 1000) {
-				process.exit(0)
+		const action = resolveKey(modeRef.current, key)
+		if (!action) return
+
+		switch (action) {
+			case "toNormal":
+				setMode("normal")
+				return
+			case "toInsert":
+				setMode("insert")
+				return
+			case "scrollDown":
+				scrollRef.current?.scrollBy(2)
+				return
+			case "scrollUp":
+				scrollRef.current?.scrollBy(-2)
+				return
+			case "scrollTop":
+				scrollRef.current?.scrollTo(0)
+				return
+			case "scrollBottom": {
+				const sb = scrollRef.current
+				if (sb) sb.scrollTo(sb.scrollHeight)
+				return
 			}
-			lastCtrlCRef.current = now
-			if (isRunning) {
-				session.abort().catch(() => {})
-			} else {
-				process.exit(0)
+			case "toggleThinking":
+				setThinkingCollapsed((v) => !v)
+				return
+			case "ctrlC": {
+				const now = Date.now()
+				if (now - lastCtrlCRef.current < 1000) {
+					process.exit(0)
+				}
+				lastCtrlCRef.current = now
+				if (isRunningRef.current) {
+					session.abort().catch(() => {})
+				} else {
+					process.exit(0)
+				}
+				return
 			}
 		}
 	})
 
+	const queuedMsg = messages.find((m) => m.queued)
+
 	return (
 		<box flexDirection="column" height={"100%"} backgroundColor={colors.background}>
-			<MessageList messages={messages} />
-			<InputBox disabled={isRunning} onSubmit={handlePrompt} />
-			<StatusBar model={model} cwd={cwd} />
+			<MessageList messages={messages.filter((m) => !m.queued)} scrollRef={scrollRef} thinkingCollapsed={thinkingCollapsed} />
+			{queuedMsg && (
+				<box flexShrink={0} paddingLeft={3} paddingRight={3}>
+					<box
+						borderStyle="rounded"
+						border={["top", "right", "bottom", "left"]}
+						borderColor={colors.borderSoft}
+						backgroundColor={colors.backgroundInset}
+						paddingLeft={1}
+						paddingRight={1}
+						flexDirection="row"
+					>
+						<text fg={colors.secondary}>Queued → </text>
+						<text fg={colors.textMuted}>{queuedMsg.content}</text>
+					</box>
+				</box>
+			)}
+			<box
+				flexDirection="column"
+				flexShrink={0}
+				paddingLeft={1}
+				paddingRight={1}
+				paddingTop={1}
+				paddingBottom={1}
+			>
+				<InputBox disabled={isRunning} mode={mode} onSubmit={handlePrompt} />
+				<StatusBar model={session.model?.name || session.model?.id || model} cwd={cwd} mode={mode} />
+			</box>
 		</box>
 	)
 }
