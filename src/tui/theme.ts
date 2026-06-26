@@ -34,6 +34,7 @@ export const colors = {
 	syntaxNumber: "#FFD60A",
 	syntaxType: "#64D2FF",
 	syntaxOperator: "#BF5AF2",
+	syntaxPunctuation: "#EDEDED",
 
 	markdownHeading: "#BF5AF2",
 	markdownLink: "#64D2FF",
@@ -41,6 +42,9 @@ export const colors = {
 	markdownCode: "#30D158",
 	markdownEmph: "#FFD60A",
 	markdownStrong: "#FF453A",
+	markdownBlockQuote: "#FFD60A",
+	markdownListItem: "#64D2FF",
+	markdownListEnumeration: "#30D158",
 
 	diffAdded: "#30D158",
 	diffRemoved: "#FF453A",
