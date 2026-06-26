@@ -1,19 +1,19 @@
 {
-  "compilerOptions": {
-    "target": "ESNext",
-    "module": "ESNext",
-    "moduleResolution": "bundler",
-    "strict": true,
-    "lib": ["ESNext", "DOM"],
-    "skipLibCheck": true,
-    "forceConsistentCasingInFileNames": true,
-    "resolveJsonModule": true,
-    "allowImportingTsExtensions": true,
-    "noEmit": true,
-    "jsx": "react-jsx",
-    "jsxImportSource": "@opentui/react",
-    "types": ["react"]
-  },
-  "include": ["src/**/*"],
-  "exclude": ["node_modules", "openspec"]
+	"compilerOptions": {
+		"target": "ESNext",
+		"module": "ESNext",
+		"moduleResolution": "bundler",
+		"strict": true,
+		"lib": ["ESNext", "DOM"],
+		"skipLibCheck": true,
+		"forceConsistentCasingInFileNames": true,
+		"resolveJsonModule": true,
+		"allowImportingTsExtensions": true,
+		"noEmit": true,
+		"jsx": "react-jsx",
+		"jsxImportSource": "@opentui/react",
+		"types": ["react"]
+	},
+	"include": ["src/**/*"],
+	"exclude": ["node_modules", "openspec"]
 }

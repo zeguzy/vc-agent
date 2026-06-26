@@ -1,45 +1,45 @@
-export type MessageRole = "user" | "assistant" | "tool" | "separator"
+export type MessageRole = "user" | "assistant" | "tool" | "separator";
 
 export interface Message {
-  id: string
-  role: MessageRole
-  content: string
-  thinking?: string
-  toolName?: string
-  toolArgs?: unknown
-  toolStatus?: "running" | "done" | "error"
-  toolResult?: unknown
-  queued?: boolean
+	id: string;
+	role: MessageRole;
+	content: string;
+	thinking?: string;
+	toolName?: string;
+	toolArgs?: unknown;
+	toolStatus?: "running" | "done" | "error";
+	toolResult?: unknown;
+	queued?: boolean;
 }
 
-let _idCounter = 0
+let _idCounter = 0;
 export function nextId(): string {
-  return `msg-${++_idCounter}`
+	return `msg-${++_idCounter}`;
 }
 
 export function createUserMessage(text: string): Message {
-  return { id: nextId(), role: "user", content: text }
+	return { id: nextId(), role: "user", content: text };
 }
 
 export function createAssistantMessage(text: string = ""): Message {
-  return { id: nextId(), role: "assistant", content: text }
+	return { id: nextId(), role: "assistant", content: text };
 }
 
 export function createToolMessage(
-  toolName: string,
-  toolArgs: unknown,
-  status: "running" | "done" | "error" = "running",
+	toolName: string,
+	toolArgs: unknown,
+	status: "running" | "done" | "error" = "running",
 ): Message {
-  return {
-    id: nextId(),
-    role: "tool",
-    content: "",
-    toolName,
-    toolArgs,
-    toolStatus: status,
-  }
+	return {
+		id: nextId(),
+		role: "tool",
+		content: "",
+		toolName,
+		toolArgs,
+		toolStatus: status,
+	};
 }
 
 export function createSeparator(): Message {
-  return { id: nextId(), role: "separator", content: "" }
+	return { id: nextId(), role: "separator", content: "" };
 }

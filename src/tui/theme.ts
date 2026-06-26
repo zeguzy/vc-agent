@@ -46,7 +46,7 @@ export const colors = {
 	diffRemoved: "#FF453A",
 
 	agent: "#0A84FF",
-} as const
+} as const;
 
 export const icons = {
 	user: ">",
@@ -57,4 +57,4 @@ export const icons = {
 	statusDot: "●",
 	assistant: "▣",
 	folder: "󰝰",
-} as const
+} as const;

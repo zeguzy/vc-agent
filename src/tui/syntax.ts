@@ -1,5 +1,5 @@
-import { SyntaxStyle } from "@opentui/core"
-import { colors } from "./theme.js"
+import { SyntaxStyle } from "@opentui/core";
+import { colors } from "./theme.js";
 
 export const syntaxStyle = SyntaxStyle.fromStyles({
 	comment: { fg: colors.syntaxComment },
@@ -10,4 +10,4 @@ export const syntaxStyle = SyntaxStyle.fromStyles({
 	type: { fg: colors.syntaxType },
 	function: { fg: colors.syntaxFunction },
 	operator: { fg: colors.syntaxOperator },
-})
+});
