@@ -37,6 +37,43 @@ openagent —— 基于 Pi SDK 的全屏 TUI 代码 Agent。
 
 ---
 
+## 工作树隔离开发（git worktree）
+
+每个新需求（OpenSpec change 或独立任务）在独立的 git worktree 中开发，与 main 物理隔离。完成后合并回 main 并清理，不在本地堆积长期分支。
+
+### 流程
+
+1. **创建**（基于最新 main）：
+   ```bash
+   git fetch origin
+   git worktree add ../vc-agent-<change> -b change/<change-id> origin/main
+   ```
+   worktree 放项目同级目录（`../vc-agent-<change>`），不嵌套进主目录。
+
+2. **开发**：进入 worktree，按 OpenSpec 流程（propose → apply）或直接实现；期间正常 `bun run check` 验证、提交到 `change/<change-id>` 分支。
+
+3. **合并**（回主 worktree）：
+   ```bash
+   git checkout main && git pull --ff-only
+   git merge --no-ff change/<change-id>
+   bun run check
+   ```
+
+4. **清理**（合并通过后）：
+   ```bash
+   git worktree remove ../vc-agent-<change>
+   git branch -d change/<change-id>
+   ```
+
+### 约定
+
+- 分支命名：`change/<openspec-change-id>`；无 OpenSpec 时用 `feat|fix|chore/<slug>`
+- 一个 worktree 对应一个需求，用完即删；禁止复用旧 worktree 跑新需求
+- 所有 worktree 共享同一 `.git`，不要重复 clone
+- 每个 worktree 的 `node_modules` 独立，需各自 `bun install`
+
+---
+
 ## 开发工具链（Harness）
 
 | 命令 | 作用 |
