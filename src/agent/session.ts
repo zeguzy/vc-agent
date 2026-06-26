@@ -39,10 +39,7 @@ export async function createSession(options: SessionOptions): Promise<SessionRes
 	const modelStr = options.model ?? options.config?.model;
 	const model = resolveModel(modelRegistry, modelStr);
 
-	const settingsManager = SettingsManager.create(options.cwd);
-	if (options.config?.thinking?.level) {
-		settingsManager.setDefaultThinkingLevel(options.config.thinking.level as any);
-	}
+	const settingsManager = SettingsManager.inMemory(convertConfigToSettings(options.config));
 
 	// Initialize SkillManager with DefaultResourceLoader for skill discovery
 	const skillManager = new SkillManager();
@@ -59,6 +56,17 @@ export async function createSession(options: SessionOptions): Promise<SessionRes
 		sessionManager: SessionManager.inMemory(),
 	});
 	return { session: result.session, skillManager };
+}
+
+function convertConfigToSettings(config?: Config): Record<string, unknown> {
+	const settings: Record<string, unknown> = {};
+	if (config?.thinking?.level) {
+		settings.defaultThinkingLevel = config.thinking.level;
+	}
+	if (config?.compaction?.enabled !== undefined) {
+		settings.compaction = { enabled: config.compaction.enabled };
+	}
+	return settings;
 }
 
 function registerCustomProvider(registry: ModelRegistry, name: string, config: ProviderConfig) {

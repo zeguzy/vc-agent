@@ -1,4 +1,7 @@
 import { type CommandContext, commandRegistry } from "../commands/registry.js";
+import { writeConfig } from "../config.js";
+import { modelSetting } from "../settings/model.js";
+import { thinkingLevelSetting } from "../settings/thinking-level.js";
 import { createAssistantMessage, createUserMessage } from "../store.js";
 
 /**
@@ -44,6 +47,18 @@ export function registerBuiltinCommands(): void {
 							...prev,
 							createAssistantMessage(`Switched to ${result.model.name}`),
 						]);
+						const newConfig = modelSetting.persist(ctx.getConfig(), result.model.id);
+						ctx.setConfig(newConfig);
+						try {
+							writeConfig(ctx.cwd, newConfig, "project");
+						} catch (err) {
+							ctx.setMessages((prev) => [
+								...prev,
+								createAssistantMessage(
+									`Applied but not saved: ${err instanceof Error ? err.message : String(err)}`,
+								),
+							]);
+						}
 					}
 				})
 				.catch(() => {});
@@ -55,7 +70,21 @@ export function registerBuiltinCommands(): void {
 		description: "Cycle thinking level",
 		usage: "/thinking",
 		handler: (_args: string, ctx: CommandContext) => {
-			ctx.session.cycleThinkingLevel();
+			const newLevel = ctx.session.cycleThinkingLevel();
+			if (newLevel) {
+				const newConfig = thinkingLevelSetting.persist(ctx.getConfig(), newLevel);
+				ctx.setConfig(newConfig);
+				try {
+					writeConfig(ctx.cwd, newConfig, "project");
+				} catch (err) {
+					ctx.setMessages((prev) => [
+						...prev,
+						createAssistantMessage(
+							`Applied but not saved: ${err instanceof Error ? err.message : String(err)}`,
+						),
+					]);
+				}
+			}
 		},
 	});
 
@@ -74,6 +103,15 @@ export function registerBuiltinCommands(): void {
 		usage: "/exit",
 		handler: () => {
 			process.exit(0);
+		},
+	});
+
+	commandRegistry.register({
+		name: "setting",
+		description: "Open settings panel",
+		usage: "/setting",
+		handler: (_args: string, ctx: CommandContext) => {
+			ctx.setShowSettings(true);
 		},
 	});
 

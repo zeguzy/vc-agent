@@ -1,4 +1,5 @@
 import type { AgentSession } from "../agent/session.js";
+import type { Config } from "../config.js";
 import type { SkillManager } from "../skills/manager.js";
 
 /**
@@ -24,6 +25,10 @@ export interface CommandContext {
 	setContextDisplay: (
 		display: "compact" | "full" | ((prev: "compact" | "full") => "compact" | "full"),
 	) => void;
+	cwd: string;
+	setShowSettings: (v: boolean) => void;
+	getConfig: () => Config;
+	setConfig: (updater: Config | ((prev: Config) => Config)) => void;
 }
 
 /**
