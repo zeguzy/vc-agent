@@ -1,6 +1,7 @@
 import type { ScrollBoxRenderable } from "@opentui/core";
 import { memo } from "react";
 import type { Message } from "../../store.js";
+import { splitStreamingText } from "../streaming.js";
 import { syntaxStyle } from "../syntax.js";
 import { colors, icons } from "../theme.js";
 
@@ -63,6 +64,7 @@ function AssistantMessageView({
 }) {
 	const hasThinking = message.thinking && message.thinking.trim();
 	const collapsed = thinkingCollapsed && hasThinking;
+	const split = splitStreamingText(message.content);
 	return (
 		<box paddingLeft={3} marginTop={1} flexShrink={0} flexDirection="column">
 			{hasThinking && (
@@ -83,14 +85,29 @@ function AssistantMessageView({
 				</box>
 			)}
 			{message.content && (
-				<box marginTop={hasThinking && !collapsed ? 1 : 0}>
-					<markdown
-						syntaxStyle={syntaxStyle}
-						streaming={true}
-						content={message.content}
-						fg={colors.markdownText}
-						bg={colors.background}
-					/>
+				<box marginTop={hasThinking && !collapsed ? 1 : 0} flexDirection="column">
+					{split.tail ? (
+						<>
+							{split.head && (
+								<markdown
+									syntaxStyle={syntaxStyle}
+									streaming={false}
+									content={split.head}
+									fg={colors.markdownText}
+									bg={colors.background}
+								/>
+							)}
+							<text fg={colors.markdownText}>{split.tail}</text>
+						</>
+					) : (
+						<markdown
+							syntaxStyle={syntaxStyle}
+							streaming={true}
+							content={message.content}
+							fg={colors.markdownText}
+							bg={colors.background}
+						/>
+					)}
 				</box>
 			)}
 		</box>
