@@ -168,3 +168,45 @@ openagent — your terminal coding assistant.
 
 1. **当前工作目录**：用 `pwd` 显示完整路径，让用户确认在正确的 worktree 内
 2. **验证命令**：给出可执行的验证命令（如 `bun run check`、`bun run test`），让用户能自行跑一遍确认通过
+
+---
+
+## 自定义命令（Custom Commands）
+
+启动时自动扫描以下目录中的命令文件，注册为 `/` 开头的 slash command：
+
+| 目录 | 作用域 |
+|---|---|
+| `~/.config/openagent/commands/` | 全局（所有项目可用） |
+| `.openagent/commands/` | 项目级（仅当前项目） |
+
+项目命令会覆盖同名的全局命令。
+
+### 命令文件格式
+
+`.ts` / `.js` / `.mts` / `.mjs` 文件，默认导出一个符合 `Command` 接口的对象：
+
+```typescript
+// ~/.config/openagent/commands/demo.ts 示例
+export default {
+  // name 可选，不写则用文件名（去扩展名）
+  name: "demo",
+  description: "演示命令",
+  usage: "/demo [args]",        // 可选，显示在 /help 中
+  handler: (args: string, ctx: CommandContext) => {
+    ctx.setMessages(prev => [...prev, createAssistantMessage(`Demo: ${args || "no args"}`)]);
+  },
+};
+```
+
+### handler 参数
+
+- `args` — `/` 后的参数字符串（不含命令名），如 `/demo hello world` → `"hello world"`
+- `ctx` — `CommandContext`，提供完整的运行时上下文：
+  - `ctx.session` — 当前 `AgentSession`
+  - `ctx.messages` / `ctx.setMessages()` — 消息列表读写
+  - `ctx.skillManager` — Skill 管理器
+  - `ctx.setIsRunning()` / `ctx.setContextUsage()` / `ctx.setThinkingCollapsed()` — UI 状态控制
+  - `ctx.getConfig()` / `ctx.setConfig()` — 配置读写
+  - `ctx.cwd` — 当前工作目录
+  - 详见 `src/commands/registry.ts` 中的 `CommandContext` 接口
