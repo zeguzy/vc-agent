@@ -239,8 +239,12 @@ function convertConfigToSettings(config?: Config): Record<string, unknown> {
 	if (config?.thinking?.level) {
 		settings.defaultThinkingLevel = config.thinking.level;
 	}
-	if (config?.compaction?.enabled !== undefined) {
-		settings.compaction = { enabled: config.compaction.enabled };
+	if (config?.compaction) {
+		settings.compaction = {
+			enabled: config.compaction.enabled,
+			reserveTokens: config.compaction.reserveTokens,
+			keepRecentTokens: config.compaction.keepRecentTokens,
+		};
 	}
 	return settings;
 }

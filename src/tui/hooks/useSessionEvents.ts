@@ -17,7 +17,8 @@ interface SessionEventsState {
  * Subscribes to AgentSession events and maps them to TUI message state updates.
  *
  * Handles: agent_start, message_start, message_update (via StreamingBuffer),
- * message_end, tool_execution_start, tool_execution_end, agent_end.
+ * message_end, tool_execution_start, tool_execution_end, agent_end,
+ * compaction_start, compaction_end.
  *
  * The subscription is rebuilt whenever `session` changes (e.g. on hot-switch).
  */
@@ -35,11 +36,21 @@ export function useSessionEvents(
 	const toolCallIdToMsgId = useRef<Map<string, string>>(new Map());
 
 	useEffect(() => {
+		function refreshContextUsage() {
+			const usage = session.getContextUsage();
+			setContextUsage({
+				tokens: usage?.tokens ?? null,
+				window: usage?.contextWindow ?? null,
+				percent: usage?.percent ?? null,
+			});
+		}
+
 		const unsubscribe = session.subscribe((event: AgentSessionEvent) => {
 			switch (event.type) {
 				case "agent_start":
 					setIsRunning(true);
 					setMessages((prev) => prev.map((m) => (m.queued ? { ...m, queued: false } : m)));
+					refreshContextUsage();
 					break;
 
 				case "message_start": {
@@ -99,20 +110,37 @@ export function useSessionEvents(
 							),
 						);
 					}
+					refreshContextUsage();
+					break;
+				}
+
+				case "compaction_start":
+					setMessages((prev) => [...prev, createAssistantMessage("Compacting context…")]);
+					break;
+
+				case "compaction_end": {
+					if (event.aborted) {
+						setMessages((prev) => [...prev, createAssistantMessage("Compaction aborted")]);
+					} else if (event.errorMessage) {
+						setMessages((prev) => [
+							...prev,
+							createAssistantMessage(`Compaction failed: ${event.errorMessage}`),
+						]);
+					} else if (event.result) {
+						const r = event.result;
+						const afterPart =
+							r.estimatedTokensAfter != null ? ` → ${r.estimatedTokensAfter} tokens` : "";
+						const msg = `Context compacted: ${r.tokensBefore} tokens${afterPart}\n${r.summary}`;
+						setMessages((prev) => [...prev, createAssistantMessage(msg)]);
+					}
+					refreshContextUsage();
 					break;
 				}
 
 				case "agent_end":
 					setIsRunning(false);
 					setMessages((prev) => [...prev, createSeparator()]);
-					{
-						const usage = session.getContextUsage();
-						setContextUsage({
-							tokens: usage?.tokens ?? null,
-							window: usage?.contextWindow ?? null,
-							percent: usage?.percent ?? null,
-						});
-					}
+					refreshContextUsage();
 					break;
 			}
 		});
