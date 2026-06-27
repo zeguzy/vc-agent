@@ -392,9 +392,7 @@ export function App({ runtime, skillManager, model, cwd, config, initialResumeLi
 				return;
 			case "ctrlC": {
 				const now = Date.now();
-				if (now - lastCtrlCRef.current < 1000) {
-					process.exit(0);
-				}
+				if (now - lastCtrlCRef.current < 1000) process.exit(0);
 				lastCtrlCRef.current = now;
 				if (isRunningRef.current) {
 					session.abort().catch(() => {});

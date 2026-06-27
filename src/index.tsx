@@ -111,6 +111,10 @@ async function main(): Promise<void> {
 		exitOnCtrlC: false,
 	});
 
+	process.on("exit", () => {
+		renderer.destroy();
+	});
+
 	const root = createRoot(renderer);
 	root.render(
 		<App
