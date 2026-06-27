@@ -21,7 +21,7 @@ import { useSessionEvents } from "./hooks/useSessionEvents.js";
 import { useSessionPicker } from "./hooks/useSessionPicker.js";
 import { useStreamingBuffer } from "./hooks/useStreamingBuffer.js";
 import { type Mode, resolveKey } from "./keymap.js";
-import { getGitBranch } from "./utils/git.js";
+import { getGitBranch, getGitDirty } from "./utils/git.js";
 import { copySelection } from "./utils/selection.js";
 import { colors } from "./utils/theme.js";
 
@@ -98,8 +98,10 @@ export function App({ runtime, skillManager, model, cwd, config, initialResumeLi
 
 	useEffect(() => {
 		pollManagerRef.current.register("git-branch", () => getGitBranch(cwd), 3000);
+		pollManagerRef.current.register("git-dirty", () => getGitDirty(cwd), 3000);
 		return () => {
 			pollManagerRef.current.unregister("git-branch");
+			pollManagerRef.current.unregister("git-dirty");
 		};
 	}, [cwd]);
 

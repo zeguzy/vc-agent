@@ -25,6 +25,8 @@ export function InputBox({ disabled, mode, cwd, pollManager, onSubmit }: InputBo
 	const workingSuffix = ["   ", ".  ", ".. ", "..."];
 
 	const branch = usePollState<string>("git-branch", pollManager);
+	const dirty = usePollState<boolean>("git-dirty", pollManager);
+	const gitColor = dirty ? colors.warning : colors.success;
 	const pathDisplay = useMemo(() => {
 		const parts = cwd
 			.replace(process.env.HOME ?? "", "~")
@@ -165,7 +167,11 @@ export function InputBox({ disabled, mode, cwd, pollManager, onSubmit }: InputBo
 				marginTop={disabled ? 1 : 0}
 			>
 				<text fg={colors.textMuted}>{icons.folder} </text>
-				<text fg={colors.textMuted}>{branch ? `${pathDisplay}:${branch}` : pathDisplay}</text>
+				<text fg={colors.textMuted}>
+					{pathDisplay}
+					{branch ? ":" : ""}
+				</text>
+				{branch ? <text fg={gitColor}>{branch}</text> : null}
 				<box flexGrow={1} />
 			</box>
 			<box
