@@ -1,11 +1,12 @@
 import type { ScrollBoxRenderable } from "@opentui/core";
 import { useKeyboard, useRenderer } from "@opentui/react";
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { AgentSession, AgentSessionEvent } from "../agent/session.js";
+import type { AgentSession, AgentSessionEvent, AgentSessionRuntime } from "../agent/session.js";
 import { extractAssistantContent } from "../agent/session.js";
 import { commandRegistry } from "../commands/registry.js";
 import type { Config } from "../config.js";
-import type { McpManager } from "../mcp/manager.js";
+import { renameSessionFile, type SessionInfo } from "../session/list.js";
+import { mapSdkMessagesToTui } from "../session/render.js";
 import type { SettingContext } from "../settings/types.js";
 import type { SkillManager } from "../skills/manager.js";
 import {
@@ -17,30 +18,35 @@ import {
 } from "../store.js";
 import { registerBuiltinCommands } from "./commands.js";
 import { InputBox } from "./components/InputBox.js";
-import { McpPanel } from "./components/McpPanel.js";
 import { MessageList } from "./components/MessageList.js";
+import { SessionPicker } from "./components/SessionPicker.js";
 import { SettingsPanel } from "./components/SettingsPanel.js";
 import { StatusBar } from "./components/StatusBar.js";
 import { type Mode, resolveKey } from "./keymap.js";
 import { copySelection } from "./selection.js";
 import { colors } from "./theme.js";
 
+const WELCOME_MESSAGE = createAssistantMessage(
+	"Hi! I'm openagent, your terminal coding assistant. What can I help with?",
+);
+
 interface AppProps {
-	session: AgentSession;
+	runtime: AgentSessionRuntime;
 	skillManager: SkillManager;
-	mcpManager: McpManager;
 	model: string;
 	cwd: string;
 	config?: Config;
+	/** When true (CLI `-r/--resume`), open the session list once commands are registered. */
+	initialResumeList?: boolean;
 }
 
-export function App({ session, skillManager, mcpManager, model, cwd, config }: AppProps) {
+export function App({ runtime, skillManager, model, cwd, config, initialResumeList }: AppProps) {
 	const renderer = useRenderer();
-	const [messages, setMessages] = useState<Message[]>([
-		createAssistantMessage(
-			"Hi! I'm openagent, your terminal coding assistant. What can I help with?",
-		),
-	]);
+	const [session, setSession] = useState<AgentSession>(runtime.session);
+	const initialMapped = mapSdkMessagesToTui(runtime.session.messages);
+	const [messages, setMessages] = useState<Message[]>(
+		initialMapped.length > 0 ? initialMapped : [WELCOME_MESSAGE],
+	);
 	const [isRunning, setIsRunning] = useState(false);
 	const [mode, setMode] = useState<Mode>("insert");
 	const [thinkingCollapsed, setThinkingCollapsed] = useState(config?.thinking?.collapsed ?? false);
@@ -53,7 +59,8 @@ export function App({ session, skillManager, mcpManager, model, cwd, config }: A
 		config?.display?.contextMode ?? "compact",
 	);
 	const [showSettings, setShowSettings] = useState(false);
-	const [showMcp, setShowMcp] = useState(false);
+	const [showSessionPicker, setShowSessionPicker] = useState(false);
+	const [pickerSessions, setPickerSessions] = useState<SessionInfo[]>([]);
 	const [configState, setConfigState] = useState<Config>(config ?? {});
 	const [copyFeedback, setCopyFeedback] = useState<{ ts: number } | null>(null);
 	const lastCtrlCRef = useRef<number>(0);
@@ -70,6 +77,24 @@ export function App({ session, skillManager, mcpManager, model, cwd, config }: A
 		}
 	}, []);
 
+	// Register the runtime rebind hook once: on every switchSession/newSession
+	// the SDK calls this with the new AgentSession. We update the session state
+	// (which re-runs the subscribe effect below) and re-render history.
+	useEffect(() => {
+		runtime.setRebindSession(async (newSession) => {
+			const mapped = mapSdkMessagesToTui(newSession.messages);
+			setSession(newSession);
+			setMessages(mapped.length > 0 ? mapped : [WELCOME_MESSAGE]);
+			setIsRunning(false);
+			toolCallIdToMsgId.current.clear();
+			setContextUsage({ tokens: null, window: null, percent: null });
+			setTimeout(() => {
+				const sb = scrollRef.current;
+				if (sb) sb.scrollTo(sb.scrollHeight);
+			}, 0);
+		});
+	}, [runtime]);
+
 	const modeRef = useRef<Mode>("insert");
 	modeRef.current = mode;
 	const isRunningRef = useRef(false);
@@ -78,10 +103,11 @@ export function App({ session, skillManager, mcpManager, model, cwd, config }: A
 	messagesRef.current = messages;
 	const showSettingsRef = useRef(showSettings);
 	showSettingsRef.current = showSettings;
-	const showMcpRef = useRef(showMcp);
-	showMcpRef.current = showMcp;
+	const showSessionPickerRef = useRef(showSessionPicker);
+	showSessionPickerRef.current = showSessionPicker;
 	const configRef = useRef(configState);
 	configRef.current = configState;
+	const resumeListDoneRef = useRef(false);
 
 	const settingCtx: SettingContext = {
 		session,
@@ -94,6 +120,67 @@ export function App({ session, skillManager, mcpManager, model, cwd, config }: A
 		},
 		cwd,
 	};
+
+	const openSessionPicker = useCallback((sessions: SessionInfo[]) => {
+		setPickerSessions(sessions);
+		setShowSessionPicker(true);
+	}, []);
+
+	const handlePickerSelect = useCallback(
+		async (path: string) => {
+			setShowSessionPicker(false);
+			try {
+				await runtime.switchSession(path);
+			} catch (err) {
+				setMessages((prev) => [
+					...prev,
+					createAssistantMessage(
+						`切换会话失败: ${err instanceof Error ? err.message : String(err)}`,
+					),
+				]);
+			}
+		},
+		[runtime],
+	);
+
+	const closeSessionPicker = useCallback(() => setShowSessionPicker(false), []);
+
+	const handlePickerRename = useCallback(
+		(path: string, name: string) => {
+			try {
+				renameSessionFile(path, name);
+				if (path === runtime.session.sessionFile) {
+					runtime.session.setSessionName(name);
+				}
+				setPickerSessions((prev) => prev.map((s) => (s.path === path ? { ...s, name } : s)));
+			} catch (err) {
+				setMessages((prev) => [
+					...prev,
+					createAssistantMessage(`重命名失败: ${err instanceof Error ? err.message : String(err)}`),
+				]);
+			}
+		},
+		[runtime],
+	);
+
+	const buildCommandCtx = useCallback(() => {
+		return {
+			session,
+			runtime,
+			skillManager,
+			messages: messagesRef.current,
+			setMessages,
+			setIsRunning,
+			setContextUsage,
+			setThinkingCollapsed,
+			setContextDisplay,
+			cwd,
+			setShowSettings,
+			getConfig: () => configRef.current,
+			setConfig: setConfigState,
+			openSessionPicker,
+		};
+	}, [session, runtime, skillManager, cwd, openSessionPicker]);
 
 	useEffect(() => {
 		const unsubscribe = session.subscribe((event: AgentSessionEvent) => {
@@ -205,30 +292,21 @@ export function App({ session, skillManager, mcpManager, model, cwd, config }: A
 		return unsubscribe;
 	}, [session]);
 
+	// `-r/--resume`: open the session list once after commands are registered.
+	useEffect(() => {
+		if (!initialResumeList || resumeListDoneRef.current) return;
+		if (commandRegistry.size === 0) return;
+		resumeListDoneRef.current = true;
+		commandRegistry.execute("sessions", "", buildCommandCtx()).catch(() => {});
+	}, [initialResumeList, buildCommandCtx]);
+
 	const handlePrompt = useCallback(
 		(text: string) => {
 			if (text.startsWith("/")) {
 				const [cmd, ...args] = text.slice(1).split(/\s+/);
 				const argStr = args.join(" ").trim();
 
-				const ctx = {
-					session,
-					skillManager,
-					mcpManager,
-					messages: messagesRef.current,
-					setMessages,
-					setIsRunning,
-					setContextUsage,
-					setThinkingCollapsed,
-					setContextDisplay,
-					cwd,
-					setShowSettings,
-					setShowMcp,
-					getConfig: () => configRef.current,
-					setConfig: setConfigState,
-				};
-
-				commandRegistry.execute(cmd, argStr, ctx).then((handled) => {
+				commandRegistry.execute(cmd, argStr, buildCommandCtx()).then((handled) => {
 					if (!handled) {
 						setMessages((prev) => [
 							...prev,
@@ -261,7 +339,7 @@ export function App({ session, skillManager, mcpManager, model, cwd, config }: A
 				setIsRunning(false);
 			});
 		},
-		[session, skillManager, mcpManager, cwd],
+		[session, buildCommandCtx],
 	);
 
 	useKeyboard((key) => {
@@ -276,7 +354,7 @@ export function App({ session, skillManager, mcpManager, model, cwd, config }: A
 		}
 
 		const action = resolveKey(modeRef.current, key);
-		if (showSettingsRef.current || showMcpRef.current) {
+		if (showSettingsRef.current || showSessionPickerRef.current) {
 			if (action === "ctrlC") {
 				const now = Date.now();
 				if (now - lastCtrlCRef.current < 1000) process.exit(0);
@@ -360,7 +438,15 @@ export function App({ session, skillManager, mcpManager, model, cwd, config }: A
 					onClose={() => setShowSettings(false)}
 				/>
 			)}
-			{showMcp && <McpPanel mcpManager={mcpManager} onClose={() => setShowMcp(false)} />}
+			{showSessionPicker && (
+				<SessionPicker
+					sessions={pickerSessions}
+					currentId={session.sessionId}
+					onSelect={handlePickerSelect}
+					onClose={closeSessionPicker}
+					onRename={handlePickerRename}
+				/>
+			)}
 			<box
 				flexDirection="column"
 				flexShrink={0}
@@ -371,7 +457,7 @@ export function App({ session, skillManager, mcpManager, model, cwd, config }: A
 			>
 				<InputBox
 					disabled={isRunning}
-					mode={showSettings || showMcp ? "normal" : mode}
+					mode={showSettings || showSessionPicker ? "normal" : mode}
 					cwd={cwd}
 					onSubmit={handlePrompt}
 				/>

@@ -1,6 +1,6 @@
-import type { AgentSession } from "../agent/session.js";
+import type { AgentSession, AgentSessionRuntime } from "../agent/session.js";
 import type { Config } from "../config.js";
-import type { McpManager } from "../mcp/manager.js";
+import type { SessionInfo } from "../session/list.js";
 import type { SkillManager } from "../skills/manager.js";
 
 /**
@@ -9,8 +9,8 @@ import type { SkillManager } from "../skills/manager.js";
  */
 export interface CommandContext {
 	session: AgentSession;
+	runtime: AgentSessionRuntime;
 	skillManager: SkillManager;
-	mcpManager: McpManager;
 	messages: import("../store.js").Message[];
 	setMessages: (
 		updater:
@@ -29,9 +29,9 @@ export interface CommandContext {
 	) => void;
 	cwd: string;
 	setShowSettings: (v: boolean) => void;
-	setShowMcp: (v: boolean) => void;
 	getConfig: () => Config;
 	setConfig: (updater: Config | ((prev: Config) => Config)) => void;
+	openSessionPicker: (sessions: SessionInfo[]) => void;
 }
 
 /**
