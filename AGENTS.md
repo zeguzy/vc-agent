@@ -159,3 +159,12 @@ openagent — your terminal coding assistant.
 - 包管理器：**Bun**。`bun.lock` 是唯一被跟踪的 lockfile
 - `package-lock.json` 已加入 `.gitignore` —— **不要提交它**
 - 安装依赖优先 `bun add`；若 Bun 网络异常临时改用 npm，产出的 `package-lock.json` 不得提交，并在事后用 `bun install` 同步 `bun.lock`
+
+---
+
+## 验收规范
+
+每次让用户验收变更时，**必须**告知以下信息：
+
+1. **当前工作目录**：用 `pwd` 显示完整路径，让用户确认在正确的 worktree 内
+2. **验证命令**：给出可执行的验证命令（如 `bun run check`、`bun run test`），让用户能自行跑一遍确认通过
