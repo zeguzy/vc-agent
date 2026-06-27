@@ -5,6 +5,7 @@ import type { AgentSession, AgentSessionEvent } from "../agent/session.js";
 import { extractAssistantContent } from "../agent/session.js";
 import { commandRegistry } from "../commands/registry.js";
 import type { Config } from "../config.js";
+import type { McpManager } from "../mcp/manager.js";
 import type { SettingContext } from "../settings/types.js";
 import type { SkillManager } from "../skills/manager.js";
 import {
@@ -16,6 +17,7 @@ import {
 } from "../store.js";
 import { registerBuiltinCommands } from "./commands.js";
 import { InputBox } from "./components/InputBox.js";
+import { McpPanel } from "./components/McpPanel.js";
 import { MessageList } from "./components/MessageList.js";
 import { SettingsPanel } from "./components/SettingsPanel.js";
 import { StatusBar } from "./components/StatusBar.js";
@@ -25,12 +27,13 @@ import { colors } from "./theme.js";
 interface AppProps {
 	session: AgentSession;
 	skillManager: SkillManager;
+	mcpManager: McpManager;
 	model: string;
 	cwd: string;
 	config?: Config;
 }
 
-export function App({ session, skillManager, model, cwd, config }: AppProps) {
+export function App({ session, skillManager, mcpManager, model, cwd, config }: AppProps) {
 	const [messages, setMessages] = useState<Message[]>([
 		createAssistantMessage(
 			"Hi! I'm openagent, your terminal coding assistant. What can I help with?",
@@ -48,6 +51,7 @@ export function App({ session, skillManager, model, cwd, config }: AppProps) {
 		config?.display?.contextMode ?? "compact",
 	);
 	const [showSettings, setShowSettings] = useState(false);
+	const [showMcp, setShowMcp] = useState(false);
 	const [configState, setConfigState] = useState<Config>(config ?? {});
 	const lastCtrlCRef = useRef<number>(0);
 	const toolCallIdToMsgId = useRef<Map<string, string>>(new Map());
@@ -71,6 +75,8 @@ export function App({ session, skillManager, model, cwd, config }: AppProps) {
 	messagesRef.current = messages;
 	const showSettingsRef = useRef(showSettings);
 	showSettingsRef.current = showSettings;
+	const showMcpRef = useRef(showMcp);
+	showMcpRef.current = showMcp;
 	const configRef = useRef(configState);
 	configRef.current = configState;
 
@@ -205,6 +211,7 @@ export function App({ session, skillManager, model, cwd, config }: AppProps) {
 				const ctx = {
 					session,
 					skillManager,
+					mcpManager,
 					messages: messagesRef.current,
 					setMessages,
 					setIsRunning,
@@ -213,6 +220,7 @@ export function App({ session, skillManager, model, cwd, config }: AppProps) {
 					setContextDisplay,
 					cwd,
 					setShowSettings,
+					setShowMcp,
 					getConfig: () => configRef.current,
 					setConfig: setConfigState,
 				};
@@ -250,12 +258,12 @@ export function App({ session, skillManager, model, cwd, config }: AppProps) {
 				setIsRunning(false);
 			});
 		},
-		[session, skillManager, cwd],
+		[session, skillManager, mcpManager, cwd],
 	);
 
 	useKeyboard((key) => {
 		const action = resolveKey(modeRef.current, key);
-		if (showSettingsRef.current) {
+		if (showSettingsRef.current || showMcpRef.current) {
 			if (action === "ctrlC") {
 				const now = Date.now();
 				if (now - lastCtrlCRef.current < 1000) process.exit(0);
@@ -339,6 +347,7 @@ export function App({ session, skillManager, model, cwd, config }: AppProps) {
 					onClose={() => setShowSettings(false)}
 				/>
 			)}
+			{showMcp && <McpPanel mcpManager={mcpManager} onClose={() => setShowMcp(false)} />}
 			<box
 				flexDirection="column"
 				flexShrink={0}
@@ -349,7 +358,7 @@ export function App({ session, skillManager, model, cwd, config }: AppProps) {
 			>
 				<InputBox
 					disabled={isRunning}
-					mode={showSettings ? "normal" : mode}
+					mode={showSettings || showMcp ? "normal" : mode}
 					cwd={cwd}
 					onSubmit={handlePrompt}
 				/>
