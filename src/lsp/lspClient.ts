@@ -1,5 +1,5 @@
-import { type ChildProcess, spawn } from "child_process";
-import { join } from "path";
+import { type ChildProcess, spawn } from "node:child_process";
+import { join } from "node:path";
 import { formatError } from "../utils/formatError.js";
 
 // ── JSON-RPC types ────────────────────────────────────────────
@@ -95,7 +95,7 @@ export class LspClient {
 
 			// Read JSON-RPC messages from stdout (LSP header/body protocol)
 			let outBuffer = "";
-			this.process.stdout!.on("data", (chunk: Buffer) => {
+			this.process.stdout?.on("data", (chunk: Buffer) => {
 				outBuffer += chunk.toString("utf-8");
 				while (true) {
 					const headerEnd = outBuffer.indexOf("\r\n\r\n");

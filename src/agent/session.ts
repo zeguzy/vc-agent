@@ -1,3 +1,6 @@
+import { existsSync } from "node:fs";
+import { homedir } from "node:os";
+import { join } from "node:path";
 import {
 	type AgentSession,
 	type AgentSessionEvent,
@@ -11,9 +14,6 @@ import {
 	SessionManager,
 	SettingsManager,
 } from "@earendil-works/pi-coding-agent";
-import { existsSync } from "fs";
-import { homedir } from "os";
-import { join } from "path";
 import type { Config, ProviderConfig } from "../config.js";
 import { createLspToolDefinitions, LspClient } from "../lsp/index.js";
 import { listSessions, resolveSessionRef } from "../session/list.js";

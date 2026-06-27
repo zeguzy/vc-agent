@@ -9,7 +9,7 @@ export function extractAssistantContent(content: unknown): { text: string; think
 	if (!Array.isArray(content)) return { text: "", thinking: "" };
 	let text = "";
 	let thinking = "";
-	for (const c of content as any[]) {
+	for (const c of content) {
 		if (c?.type === "text" && typeof c.text === "string") text += c.text;
 		else if (c?.type === "thinking" && typeof c.thinking === "string") thinking += c.thinking;
 	}

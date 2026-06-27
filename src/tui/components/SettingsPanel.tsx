@@ -169,7 +169,7 @@ export function SettingsPanel({ config: initialConfig, ctx, onClose }: SettingsP
 									<box flexDirection="column" paddingLeft={2}>
 										{selectEdit.options.map((opt, oi) => (
 											<text
-												key={oi}
+												key={String(opt)}
 												fg={oi === selectEdit.optionIdx ? colors.secondary : colors.textMuted}
 											>
 												{oi === selectEdit.optionIdx ? "▶ " : "  "}

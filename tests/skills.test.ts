@@ -1,9 +1,8 @@
 import { describe, expect, it } from "bun:test";
+import { mkdir, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { SettingsManager } from "@earendil-works/pi-coding-agent";
-import { existsSync } from "fs";
-import { mkdir, writeFile } from "fs/promises";
-import { tmpdir } from "os";
-import { join } from "path";
 import { SkillManager } from "../src/skills/manager.js";
 
 const inMemorySettings = SettingsManager.inMemory();
@@ -22,16 +21,16 @@ describe("SkillManager", () => {
 	});
 
 	it("throws when loading non-existent path", async () => {
-		const tmp = join(tmpdir(), "skill-test-nonexistent-" + Date.now());
+		const tmp = join(tmpdir(), `skill-test-nonexistent-${Date.now()}`);
 		const mgr = new SkillManager();
 		// We need initialized state to test this
-		const cwd = join(tmpdir(), "skill-test-cwd-" + Date.now());
+		const cwd = join(tmpdir(), `skill-test-cwd-${Date.now()}`);
 		await mkdir(cwd, { recursive: true });
 		try {
 			await mgr.initialize(cwd, {}, inMemorySettings);
 			await expect(mgr.loadDynamicSkill(tmp)).rejects.toThrow("Skill path does not exist");
 		} finally {
-			await import("fs/promises").then((m) => m.rm(cwd, { recursive: true, force: true }));
+			await import("node:fs/promises").then((m) => m.rm(cwd, { recursive: true, force: true }));
 		}
 	});
 
@@ -43,7 +42,7 @@ describe("SkillManager", () => {
 	});
 
 	it("can load a valid SKILL.md file dynamically", async () => {
-		const cwd = join(tmpdir(), "skill-test-load-" + Date.now());
+		const cwd = join(tmpdir(), `skill-test-load-${Date.now()}`);
 		const skillDir = join(cwd, "test-skill");
 		const skillFile = join(skillDir, "SKILL.md");
 
@@ -73,12 +72,12 @@ Hello, this is a test skill.
 			expect(dynamic).toHaveLength(1);
 			expect(dynamic[0].name).toBe("test-skill");
 		} finally {
-			await import("fs/promises").then((m) => m.rm(cwd, { recursive: true, force: true }));
+			await import("node:fs/promises").then((m) => m.rm(cwd, { recursive: true, force: true }));
 		}
 	});
 
 	it("can unload a dynamically loaded skill", async () => {
-		const cwd = join(tmpdir(), "skill-test-unload-" + Date.now());
+		const cwd = join(tmpdir(), `skill-test-unload-${Date.now()}`);
 		const skillDir = join(cwd, "unload-skill");
 		const skillFile = join(skillDir, "SKILL.md");
 
@@ -109,12 +108,12 @@ Goodbye test.
 			// Unloading non-existent returns false
 			expect(mgr.unloadDynamicSkill("nonexistent")).toBe(false);
 		} finally {
-			await import("fs/promises").then((m) => m.rm(cwd, { recursive: true, force: true }));
+			await import("node:fs/promises").then((m) => m.rm(cwd, { recursive: true, force: true }));
 		}
 	});
 
 	it("rejects duplicate dynamic skill name", async () => {
-		const cwd = join(tmpdir(), "skill-test-dup-" + Date.now());
+		const cwd = join(tmpdir(), `skill-test-dup-${Date.now()}`);
 		const skillDir1 = join(cwd, "skill1");
 		const skillDir2 = join(cwd, "skill2");
 		const skillFile1 = join(skillDir1, "SKILL.md");
@@ -131,7 +130,7 @@ Goodbye test.
 			await mgr.loadDynamicSkill(skillDir1);
 			await expect(mgr.loadDynamicSkill(skillDir2)).rejects.toThrow("is already loaded");
 		} finally {
-			await import("fs/promises").then((m) => m.rm(cwd, { recursive: true, force: true }));
+			await import("node:fs/promises").then((m) => m.rm(cwd, { recursive: true, force: true }));
 		}
 	});
 });

@@ -1,3 +1,6 @@
+import { existsSync } from "node:fs";
+import { homedir } from "node:os";
+import { join } from "node:path";
 import {
 	DefaultResourceLoader,
 	type LoadSkillsResult,
@@ -6,9 +9,6 @@ import {
 	type SettingsManager,
 	type Skill,
 } from "@earendil-works/pi-coding-agent";
-import { existsSync } from "fs";
-import { homedir } from "os";
-import { join } from "path";
 import type { Config } from "../config.js";
 
 export interface SkillListEntry {

@@ -1,6 +1,6 @@
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "fs";
-import { homedir } from "os";
-import { join } from "path";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { homedir } from "node:os";
+import { join } from "node:path";
 import { formatError } from "./utils/formatError.js";
 
 export interface CustomModel {
@@ -79,10 +79,10 @@ export function deepMerge<T>(global: T, project: Partial<T>): T {
 	if (typeof global !== "object" || global === null) return (project ?? global) as T;
 	if (typeof project !== "object" || project === null) return global;
 
-	const result: any = Array.isArray(global) ? [...global] : { ...global };
-	for (const key of Object.keys(project)) {
-		const gVal = (global as any)[key];
-		const pVal = (project as any)[key];
+	const result = (Array.isArray(global) ? [...global] : { ...global }) as Record<string, unknown>;
+	for (const key of Object.keys(project as Record<string, unknown>)) {
+		const gVal = (global as Record<string, unknown>)[key];
+		const pVal = (project as Record<string, unknown>)[key];
 		if (
 			typeof gVal === "object" &&
 			gVal !== null &&
@@ -91,7 +91,7 @@ export function deepMerge<T>(global: T, project: Partial<T>): T {
 			pVal !== null &&
 			!Array.isArray(pVal)
 		) {
-			result[key] = deepMerge(gVal, pVal);
+			result[key] = deepMerge(gVal, pVal as Record<string, unknown>);
 		} else if (pVal !== undefined) {
 			result[key] = pVal;
 		}

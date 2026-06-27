@@ -62,7 +62,7 @@ function AssistantMessageView({
 	message: Message;
 	thinkingCollapsed?: boolean;
 }) {
-	const hasThinking = message.thinking && message.thinking.trim();
+	const hasThinking = message.thinking?.trim();
 	const collapsed = thinkingCollapsed && hasThinking;
 	const split = splitStreamingText(message.content);
 	return (
@@ -72,11 +72,12 @@ function AssistantMessageView({
 					<text fg={colors.warning}>{collapsed ? "+ Thinking …" : "- Thinking"}</text>
 					{!collapsed && (
 						<box flexDirection="column" marginTop={0}>
-							{message
-								.thinking!.split("\n")
+							{message.thinking
+								?.split("\n")
 								.filter((l) => l.trim())
+								// biome-ignore lint/suspicious/noArrayIndexKey: split text lines have no stable IDs
 								.map((line, i) => (
-									<text key={i} fg={colors.textSubtle}>
+									<text key={`think-${i}`} fg={colors.textSubtle}>
 										{line}
 									</text>
 								))}
@@ -129,7 +130,7 @@ function formatToolDetail(toolName: string, args: unknown): { label: string; lin
 		}
 		case "bash": {
 			const cmd = String(a.command ?? "");
-			return { label: "bash", lines: [cmd.length > 100 ? cmd.slice(0, 97) + "..." : cmd] };
+			return { label: "bash", lines: [cmd.length > 100 ? `${cmd.slice(0, 97)}...` : cmd] };
 		}
 		case "edit": {
 			const fp = String(a.path ?? a.filePath ?? "");
@@ -235,7 +236,7 @@ function formatToolResult(result: unknown): string[] {
 
 function truncate(s: string, max: number): string {
 	const firstLine = s.split("\n")[0];
-	return firstLine.length > max ? firstLine.slice(0, max - 3) + "..." : firstLine;
+	return firstLine.length > max ? `${firstLine.slice(0, max - 3)}...` : firstLine;
 }
 
 const ToolMessageView = memo(function ToolMessageView({ message }: { message: Message }) {
@@ -283,20 +284,23 @@ const ToolMessageView = memo(function ToolMessageView({ message }: { message: Me
 			</box>
 			{lines.length > 0 && (
 				<box flexDirection="column" paddingLeft={3} paddingRight={1} paddingBottom={0}>
-					{lines.map((line, i) => (
-						<text
-							key={i}
-							fg={
-								line.startsWith("-")
-									? colors.error
-									: line.startsWith("+")
-										? colors.success
-										: colors.textSubtle
-							}
-						>
-							{line}
-						</text>
-					))}
+					{
+						// biome-ignore lint/suspicious/noArrayIndexKey: diff lines have no stable IDs
+						lines.map((line, i) => (
+							<text
+								key={`diff-${i}`}
+								fg={
+									line.startsWith("-")
+										? colors.error
+										: line.startsWith("+")
+											? colors.success
+											: colors.textSubtle
+								}
+							>
+								{line}
+							</text>
+						))
+					}
 				</box>
 			)}
 			{resultLines.length > 0 && (
@@ -307,11 +311,17 @@ const ToolMessageView = memo(function ToolMessageView({ message }: { message: Me
 					paddingBottom={0}
 					marginTop={0}
 				>
-					{resultLines.map((line, i) => (
-						<text key={i} fg={message.toolStatus === "error" ? colors.error : colors.textMuted}>
-							{line}
-						</text>
-					))}
+					{
+						// biome-ignore lint/suspicious/noArrayIndexKey: tool result lines have no stable IDs
+						resultLines.map((line, i) => (
+							<text
+								key={`result-${i}`}
+								fg={message.toolStatus === "error" ? colors.error : colors.textMuted}
+							>
+								{line}
+							</text>
+						))
+					}
 				</box>
 			)}
 		</box>
@@ -439,9 +449,9 @@ export function MessageList({
 		>
 			<box flexDirection="column" paddingLeft={2} paddingRight={2} paddingBottom={1}>
 				<box height={1} />
-				{items.map((item, i) => {
+				{items.map((item) => {
 					if (item.type === "readGroup") {
-						return <ReadGroupView key={i} reads={item.messages} />;
+						return <ReadGroupView key={`rg-${item.startIndex}`} reads={item.messages} />;
 					}
 					const msg = item.message;
 					if (msg.role === "separator") return <SeparatorView key={msg.id} />;

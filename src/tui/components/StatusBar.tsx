@@ -66,14 +66,18 @@ export function StatusBar({
 					◌ {contextPercent !== null ? `${contextPercent.toFixed(0)}%` : "?"}
 				</text>
 			)}
-			{!showCopy && hasContext && contextDisplay === "full" && (
-				<>
-					<text fg={ctxColor}>
-						◌ {fmtTokens(contextTokens!)}/{fmtTokens(contextWindow!)}
-					</text>
-					{contextPercent !== null && <text fg={ctxColor}> ({contextPercent.toFixed(0)}%)</text>}
-				</>
-			)}
+			{!showCopy &&
+				hasContext &&
+				contextDisplay === "full" &&
+				contextTokens !== null &&
+				contextWindow !== null && (
+					<>
+						<text fg={ctxColor}>
+							◌ {fmtTokens(contextTokens)}/{fmtTokens(contextWindow)}
+						</text>
+						{contextPercent !== null && <text fg={ctxColor}> ({contextPercent.toFixed(0)}%)</text>}
+					</>
+				)}
 		</box>
 	);
 }

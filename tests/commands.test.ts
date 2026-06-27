@@ -22,9 +22,9 @@ describe("CommandRegistry", () => {
 		expect(registry.size).toBe(1);
 		const cmd = registry.get("test");
 		expect(cmd).toBeDefined();
-		expect(cmd!.name).toBe("test");
-		expect(cmd!.description).toBe("A test command");
-		expect(cmd!.handler).toBe(handler);
+		expect(cmd?.name).toBe("test");
+		expect(cmd?.description).toBe("A test command");
+		expect(cmd?.handler).toBe(handler);
 	});
 
 	it("throws on duplicate registration", () => {
@@ -42,7 +42,7 @@ describe("CommandRegistry", () => {
 		registry.register({ name: "x", description: "first", handler: h1 });
 		registry.registerOrReplace({ name: "x", description: "second", handler: h2 });
 		expect(registry.size).toBe(1);
-		expect(registry.get("x")!.handler).toBe(h2);
+		expect(registry.get("x")?.handler).toBe(h2);
 	});
 
 	it("returns undefined for unregistered command", () => {

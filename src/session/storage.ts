@@ -1,6 +1,6 @@
-import { mkdirSync } from "fs";
-import { homedir } from "os";
-import { join } from "path";
+import { mkdirSync } from "node:fs";
+import { homedir } from "node:os";
+import { join } from "node:path";
 
 /**
  * Subdirectory name under the openagent config root used for session storage.

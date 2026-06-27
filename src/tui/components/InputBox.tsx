@@ -1,6 +1,6 @@
+import { existsSync, readFileSync } from "node:fs";
+import { join } from "node:path";
 import type { KeyEvent, KeyBinding as TextareaKeyBinding, TextareaRenderable } from "@opentui/core";
-import { existsSync, readFileSync } from "fs";
-import { join } from "path";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { matchCommands } from "../commands.js";
 

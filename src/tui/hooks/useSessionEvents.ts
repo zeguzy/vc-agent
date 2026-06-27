@@ -43,7 +43,10 @@ export function useSessionEvents(
 					break;
 
 				case "message_start": {
-					const msg = event.message as any;
+					const msg = event.message as {
+						role?: string;
+						content?: string | Array<{ type: string; text?: string; thinking?: string }>;
+					};
 					if (msg?.role === "assistant") {
 						const { text, thinking } = extractAssistantContent(msg.content);
 						const newMsg = createAssistantMessage(text);
@@ -54,7 +57,10 @@ export function useSessionEvents(
 				}
 
 				case "message_update": {
-					const msg = event.message as any;
+					const msg = event.message as {
+						role?: string;
+						content?: string | Array<{ type: string; text?: string; thinking?: string }>;
+					};
 					if (msg?.role === "assistant") {
 						const { text, thinking } = extractAssistantContent(msg.content);
 						streaming.setPending(text, thinking);
@@ -64,7 +70,10 @@ export function useSessionEvents(
 				}
 
 				case "message_end": {
-					const msg = event.message as any;
+					const msg = event.message as {
+						role?: string;
+						content?: string | Array<{ type: string; text?: string; thinking?: string }>;
+					};
 					if (msg?.role === "assistant") {
 						const { text, thinking } = extractAssistantContent(msg.content);
 						streaming.flush(setMessages, text, thinking);

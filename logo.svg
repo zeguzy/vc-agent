@@ -1,0 +1,57 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" fill="none">
+  <defs>
+    <linearGradient id="logo-grad" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#0A84FF" />
+      <stop offset="50%" stop-color="#BF5AF2" />
+      <stop offset="100%" stop-color="#64D2FF" />
+    </linearGradient>
+    <linearGradient id="inner-grad" x1="0.5" y1="0" x2="0.5" y2="1">
+      <stop offset="0%" stop-color="rgba(10,132,255,0.12)" />
+      <stop offset="100%" stop-color="rgba(100,210,255,0.06)" />
+    </linearGradient>
+    <filter id="glow">
+      <feGaussianBlur stdDeviation="4" result="blur" />
+      <feMerge>
+        <feMergeNode in="blur" />
+        <feMergeNode in="SourceGraphic" />
+      </feMerge>
+    </filter>
+  </defs>
+
+  <!-- backdrop -->
+  <rect width="512" height="512" rx="96" fill="#0D0D0F" />
+
+  <!-- inner panel inset -->
+  <rect x="32" y="32" width="448" height="448" rx="72" fill="none" stroke="#1F1F1F" stroke-width="2" />
+  <rect x="48" y="48" width="416" height="416" rx="64" fill="url(#inner-grad)" />
+
+  <!-- terminal window header dots -->
+  <circle cx="88" cy="84" r="10" fill="#FF453A" opacity="0.8" />
+  <circle cx="128" cy="84" r="10" fill="#FFD60A" opacity="0.8" />
+  <circle cx="168" cy="84" r="10" fill="#30D158" opacity="0.8" />
+
+  <!-- cursor prompt: $ open -->
+  <text x="96" y="220" font-family="'JetBrains Mono', 'Cascadia Code', 'SF Mono', monospace" font-size="44" font-weight="700" fill="#878787">
+  </text>
+
+  <!-- the A-G-E-N-T letters drawn as block/TUI style -->
+  <!-- A -->
+  <text x="96" y="288" font-family="monospace" font-size="64" font-weight="900" fill="url(#logo-grad)" filter="url(#glow)">
+    <tspan fill="#0A84FF">A</tspan><tspan fill="#1B95FF">G</tspan><tspan fill="#387CF9">E</tspan><tspan fill="#BF5AF2">N</tspan><tspan fill="#64D2FF">T</tspan>
+  </text>
+
+  <!-- blinking cursor underscore -->
+  <rect x="404" y="244" width="28" height="5" rx="2" fill="#EDEDED" opacity="0.9">
+    <animate attributeName="opacity" values="0.9;0.1;0.9" dur="1.2s" repeatCount="indefinite" />
+  </rect>
+
+  <!-- subtag: your terminal coding assistant -->
+  <text x="96" y="350" font-family="'JetBrains Mono', monospace" font-size="18" fill="#626A76">
+    terminal coding assistant
+  </text>
+
+  <!-- bottom decor: input prompt -->
+  <text x="96" y="400" font-family="monospace" font-size="22" fill="#878787">
+    &gt; _
+  </text>
+</svg>
