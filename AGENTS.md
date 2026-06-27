@@ -13,6 +13,13 @@ openagent — your terminal coding assistant.
 
 > **铁律**：OpenSpec 流程**必须**跑在隔离 worktree 内。各 openspec skill 本身不含 worktree 逻辑，由本节强制约束——执行任何 `/openspec-*` 之前，先确认当前 worktree 与分支身份。建 worktree 后所有操作在 worktree 目录内进行，**主目录保持不动**，仅归档阶段做一次性合并。
 
+> **工作目录确认**：每次执行 `/openspec-*` 或代码编辑前，必须先验证当前目录和分支：
+> ```bash
+> pwd    # 必须在 ../vc-agent-<change>
+> git branch --show-current  # 必须在 change/<change-id>
+> ```
+> 若发现自己回到了主目录（`vc-agent`），立即停手并切回 worktree。
+
 0. **前置门禁**（开新需求必做，在任何 `/openspec-*` 之前）
    - **工作区干净**：`git status` 无未提交改动、无 untracked 的 `openspec/changes/`。有脏数据先提交、归档或询问用户，**不得带脏开新需求**。
    - **无未归档 active change**：`openspec list` 若有未归档 change，先 `/openspec-archive-change` 或与用户确认它确实已完成；禁止把多个 change 叠在同一分支。
@@ -36,7 +43,19 @@ openagent — your terminal coding assistant.
    按 `tasks.md` 顺序逐项执行并勾选，每完成一项跑 `bun run check` 验证。
 
 4. **归档 + 合并 + 清理** —— `/openspec-archive-change`
-   实现完成、`bun run check` 全绿后：先归档到 `openspec/changes/archive/`，再回主 worktree 合并并清理 worktree（命令见「工作树隔离开发 → 流程」）。
+    实现完成、`bun run check` 全绿后：先归档到 `openspec/changes/archive/`，再回主 worktree 合并并清理 worktree（命令见「工作树隔离开发 → 流程」）。
+
+5. **创建 MR**（合并到 main 后）
+    合并通过、`bun run check` 全绿后，推送 main 并创建 MR 供 review：
+    ```bash
+    git push origin main
+    gh pr create --base main --head main --title "<mr 标题>" --body "<mr 描述>"
+    ```
+    如果分支尚未合并，也可以直接从 worktree 分支创建 MR：
+    ```bash
+    git push -u origin change/<change-id>
+    gh pr create --base main --head change/<change-id> --title "<标题>" --body "<描述>"
+    ```
 
 ### 规格位置
 
@@ -72,9 +91,10 @@ openagent — your terminal coding assistant.
    git checkout main && git pull --ff-only
    git merge --no-ff change/<change-id>
    bun run check
+   git push origin main
    ```
 
-4. **清理**（合并通过后）：
+4. **清理**（合并通过 + 推送后）：
    ```bash
    git worktree remove ../vc-agent-<change>
    git branch -d change/<change-id>

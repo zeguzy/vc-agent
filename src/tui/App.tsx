@@ -228,7 +228,7 @@ export function App({ runtime, skillManager, model, cwd, config, initialResumeLi
 										return updated;
 									});
 								}
-							}, 120);
+							}, 80);
 						}
 					}
 					break;
