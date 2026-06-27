@@ -1,7 +1,7 @@
 import { useKeyboard } from "@opentui/react";
 import { useMemo, useRef, useState } from "react";
 import type { SessionInfo } from "../../session/list.js";
-import { colors } from "../theme.js";
+import { colors } from "../utils/theme.js";
 
 interface SessionPickerProps {
 	sessions: SessionInfo[];

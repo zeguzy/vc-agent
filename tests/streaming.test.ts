@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { splitStreamingText } from "../src/tui/streaming.js";
+import { splitStreamingText } from "../src/tui/utils/streaming.js";
 
 describe("splitStreamingText", () => {
 	test("plain text returns as head with no tail", () => {

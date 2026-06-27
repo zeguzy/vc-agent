@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, mock, spyOn } from "bun:test";
-import { copyToClipboard } from "../src/tui/clipboard.js";
+import { copyToClipboard } from "../src/tui/utils/clipboard.js";
 
 const originalEnv = { ...process.env };
 const originalPlatform = process.platform;

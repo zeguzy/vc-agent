@@ -1,4 +1,4 @@
-import { colors } from "../theme.js";
+import { colors } from "../utils/theme.js";
 
 interface WelcomeBannerProps {
 	cwd: string;

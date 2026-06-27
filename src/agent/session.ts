@@ -283,26 +283,7 @@ function resolveModel(registry: ModelRegistry, modelStr?: string) {
 	return undefined;
 }
 
-export function extractAssistantContent(content: unknown): { text: string; thinking: string } {
-	if (typeof content === "string") return { text: content, thinking: "" };
-	if (!Array.isArray(content)) return { text: "", thinking: "" };
-	let text = "";
-	let thinking = "";
-	for (const c of content as any[]) {
-		if (c?.type === "text" && typeof c.text === "string") text += c.text;
-		else if (c?.type === "thinking" && typeof c.thinking === "string") thinking += c.thinking;
-	}
-	return { text, thinking };
-}
-
-export function extractAssistantText(content: unknown): string {
-	return extractAssistantContent(content).text;
-}
-
-export function summarizeArgs(args: unknown, maxLen = 50): string {
-	const str = typeof args === "string" ? args : JSON.stringify(args);
-	if (str.length <= maxLen) return str;
-	return `${str.slice(0, maxLen - 3)}...`;
-}
+// Re-export content utilities for backward compatibility
+export { extractAssistantContent, extractAssistantText, summarizeArgs } from "../utils/content.js";
 
 export type { AgentSession, AgentSessionEvent, AgentSessionRuntime };

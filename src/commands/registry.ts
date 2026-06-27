@@ -11,11 +11,11 @@ export interface CommandContext {
 	session: AgentSession;
 	runtime: AgentSessionRuntime;
 	skillManager: SkillManager;
-	messages: import("../store.js").Message[];
+	messages: import("../message.js").Message[];
 	setMessages: (
 		updater:
-			| import("../store.js").Message[]
-			| ((prev: import("../store.js").Message[]) => import("../store.js").Message[]),
+			| import("../message.js").Message[]
+			| ((prev: import("../message.js").Message[]) => import("../message.js").Message[]),
 	) => void;
 	setIsRunning: (running: boolean) => void;
 	setContextUsage: (usage: {

@@ -1,8 +1,9 @@
 import { type CommandContext, commandRegistry } from "../commands/registry.js";
 import { writeConfig } from "../config.js";
+import { createAssistantMessage, createUserMessage } from "../message.js";
 import { listSessions } from "../session/list.js";
-import { modelSetting } from "../settings/model.js";
-import { createAssistantMessage, createUserMessage } from "../store.js";
+import { modelSetting } from "../settings/definitions.js";
+import { formatError } from "../utils/formatError.js";
 
 /**
  * Register all built-in slash commands into the global CommandRegistry.
@@ -14,9 +15,7 @@ async function showSessions(ctx: CommandContext): Promise<void> {
 	} catch (err) {
 		ctx.setMessages((prev) => [
 			...prev,
-			createAssistantMessage(
-				`加载会话列表失败: ${err instanceof Error ? err.message : String(err)}`,
-			),
+			createAssistantMessage(`加载会话列表失败: ${formatError(err)}`),
 		]);
 	}
 }
@@ -40,9 +39,7 @@ export function registerBuiltinCommands(): void {
 			ctx.session.compact(args || undefined).catch((err) => {
 				ctx.setMessages((prev) => [
 					...prev,
-					createAssistantMessage(
-						`Compaction failed: ${err instanceof Error ? err.message : String(err)}`,
-					),
+					createAssistantMessage(`Compaction failed: ${formatError(err)}`),
 				]);
 			});
 		},
@@ -68,14 +65,17 @@ export function registerBuiltinCommands(): void {
 						} catch (err) {
 							ctx.setMessages((prev) => [
 								...prev,
-								createAssistantMessage(
-									`Applied but not saved: ${err instanceof Error ? err.message : String(err)}`,
-								),
+								createAssistantMessage(`Applied but not saved: ${formatError(err)}`),
 							]);
 						}
 					}
 				})
-				.catch(() => {});
+				.catch((err) => {
+					ctx.setMessages((prev) => [
+						...prev,
+						createAssistantMessage(`切换模型失败: ${formatError(err)}`),
+					]);
+				});
 		},
 	});
 
@@ -137,9 +137,7 @@ export function registerBuiltinCommands(): void {
 			} catch (err) {
 				ctx.setMessages((prev) => [
 					...prev,
-					createAssistantMessage(
-						`新建会话失败: ${err instanceof Error ? err.message : String(err)}`,
-					),
+					createAssistantMessage(`新建会话失败: ${formatError(err)}`),
 				]);
 			}
 		},
@@ -238,9 +236,7 @@ export function registerBuiltinCommands(): void {
 			} catch (err) {
 				ctx.setMessages((prev) => [
 					...prev,
-					createAssistantMessage(
-						`Failed to load skill: ${err instanceof Error ? err.message : String(err)}`,
-					),
+					createAssistantMessage(`Failed to load skill: ${formatError(err)}`),
 				]);
 			}
 		},

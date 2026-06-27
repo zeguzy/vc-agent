@@ -1,5 +1,5 @@
 import { describe, expect, it } from "bun:test";
-import { deepMerge, defaultConfig } from "../src/config.js";
+import { deepMerge } from "../src/config.js";
 
 describe("deepMerge", () => {
 	it("recursively merges nested plain objects", () => {
@@ -33,11 +33,5 @@ describe("deepMerge", () => {
 		// global 数组被浅拷贝，project 的索引覆盖对应位置
 		const merged = deepMerge([1, 2, 3] as any, [9] as any);
 		expect(merged).toEqual([9, 2, 3]);
-	});
-});
-
-describe("defaultConfig", () => {
-	it("is an empty object by default", () => {
-		expect(defaultConfig).toEqual({});
 	});
 });

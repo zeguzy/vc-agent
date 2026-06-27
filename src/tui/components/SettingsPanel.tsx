@@ -4,7 +4,8 @@ import { useRef, useState } from "react";
 import { type Config, writeConfig } from "../../config.js";
 import { settings as allSettings } from "../../settings/registry.js";
 import type { SettingContext } from "../../settings/types.js";
-import { colors } from "../theme.js";
+import { formatError } from "../../utils/formatError.js";
+import { colors } from "../utils/theme.js";
 import { ModelPicker } from "./ModelPicker.js";
 
 interface SettingsPanelProps {
@@ -61,7 +62,7 @@ export function SettingsPanel({ config: initialConfig, ctx, onClose }: SettingsP
 			writeConfig(ctx.cwd, newConfig, s.scope === "global" ? "global" : "project");
 			setError(null);
 		} catch (e) {
-			setError(`not saved: ${e instanceof Error ? e.message : String(e)}`);
+			setError(`not saved: ${formatError(e)}`);
 		}
 	};
 

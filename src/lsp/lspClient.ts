@@ -1,5 +1,6 @@
 import { type ChildProcess, spawn } from "child_process";
 import { join } from "path";
+import { formatError } from "../utils/formatError.js";
 
 // ── JSON-RPC types ────────────────────────────────────────────
 
@@ -148,7 +149,7 @@ export class LspClient {
 			this.initialized = true;
 			return true;
 		} catch (err) {
-			this.initError = err instanceof Error ? err.message : String(err);
+			this.initError = formatError(err);
 			return false;
 		}
 	}

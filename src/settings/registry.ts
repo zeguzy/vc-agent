@@ -1,8 +1,10 @@
-import { compactionEnabledSetting } from "./compaction-enabled.js";
-import { contextModeSetting } from "./context-mode.js";
-import { modelSetting } from "./model.js";
-import { thinkingCollapsedSetting } from "./thinking-collapsed.js";
-import { thinkingLevelSetting } from "./thinking-level.js";
+import {
+	compactionEnabledSetting,
+	contextModeSetting,
+	modelSetting,
+	thinkingCollapsedSetting,
+	thinkingLevelSetting,
+} from "./definitions.js";
 import type { Setting } from "./types.js";
 
 export const settings: Setting<unknown>[] = [

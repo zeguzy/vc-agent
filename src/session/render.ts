@@ -1,11 +1,11 @@
-import { extractAssistantContent } from "../agent/session.js";
 import {
 	createAssistantMessage,
 	createSeparator,
 	createToolMessage,
 	createUserMessage,
 	type Message,
-} from "../store.js";
+} from "../message.js";
+import { extractAssistantContent } from "../utils/content.js";
 
 /**
  * Minimal structural shape of a Pi SDK message we read during restoration.
