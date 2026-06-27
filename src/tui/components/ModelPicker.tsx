@@ -31,8 +31,13 @@ export function ModelPicker({ config, ctx, onApply, onCancel }: ModelPickerProps
 	const providers = useMemo(() => {
 		const set = new Set<string>();
 		for (const m of ctx.modelRegistry.getAll()) set.add(m.provider);
-		return Array.from(set).sort();
-	}, [ctx.modelRegistry]);
+		return Array.from(set).sort((a, b) => {
+			const ka = ctx.authStorage.hasAuth(a) ? 0 : 1;
+			const kb = ctx.authStorage.hasAuth(b) ? 0 : 1;
+			if (ka !== kb) return ka - kb;
+			return a.localeCompare(b);
+		});
+	}, [ctx.modelRegistry, ctx.authStorage.hasAuth]);
 
 	const providerFiltered = useMemo(() => {
 		const q = query.toLowerCase();
@@ -143,7 +148,12 @@ export function ModelPicker({ config, ctx, onApply, onCancel }: ModelPickerProps
 	};
 
 	const rowCount = phase === "provider" ? providerFiltered.length : models.length;
-	const visible = Math.min(rowCount, 12);
+	const WINDOW = 12;
+	const offset = Math.max(
+		0,
+		Math.min(selectedIdx - Math.floor(WINDOW / 2), Math.max(0, rowCount - WINDOW)),
+	);
+	const visible = Math.min(WINDOW, rowCount);
 
 	return (
 		<box flexDirection="column" paddingLeft={1}>
@@ -205,7 +215,7 @@ export function ModelPicker({ config, ctx, onApply, onCancel }: ModelPickerProps
 							keyBindings={[]}
 						/>
 					</box>
-					{Array.from({ length: visible }, (_, i) => renderRow(i))}
+					{Array.from({ length: visible }, (_, rel) => renderRow(offset + rel))}
 					<text fg={colors.textMuted}>
 						up/down navigate · Enter select · Esc {phase === "provider" ? "cancel" : "back"}
 					</text>
