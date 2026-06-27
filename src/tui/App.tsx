@@ -101,6 +101,14 @@ export function App({ runtime, skillManager, model, cwd, config, initialResumeLi
 			setIsRunning(false);
 			toolCallIdToMsgId.current.clear();
 			setContextUsage({ tokens: null, window: null, percent: null });
+			const cu = newSession.getContextUsage();
+			if (cu) {
+				setContextUsage({
+					tokens: cu.tokens ?? null,
+					window: cu.contextWindow,
+					percent: cu.percent ?? null,
+				});
+			}
 			setTimeout(() => {
 				const sb = scrollRef.current;
 				if (sb) sb.scrollTo(sb.scrollHeight);

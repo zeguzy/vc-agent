@@ -29,7 +29,10 @@ export interface DisplayConfig {
 
 export interface CompactionConfig {
 	enabled?: boolean;
-	threshold?: number;
+	/** Tokens to reserve for the LLM response (Pi SDK default: 4096) */
+	reserveTokens?: number;
+	/** Approximate tokens to keep from recent messages (Pi SDK default: 8192) */
+	keepRecentTokens?: number;
 }
 
 export interface SkillsConfig {
