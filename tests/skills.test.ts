@@ -1,9 +1,12 @@
 import { describe, expect, it } from "bun:test";
+import { SettingsManager } from "@earendil-works/pi-coding-agent";
 import { existsSync } from "fs";
 import { mkdir, writeFile } from "fs/promises";
 import { tmpdir } from "os";
 import { join } from "path";
 import { SkillManager } from "../src/skills/manager.js";
+
+const inMemorySettings = SettingsManager.inMemory();
 
 describe("SkillManager", () => {
 	it("returns default directories", () => {
@@ -25,7 +28,7 @@ describe("SkillManager", () => {
 		const cwd = join(tmpdir(), "skill-test-cwd-" + Date.now());
 		await mkdir(cwd, { recursive: true });
 		try {
-			await mgr.initialize(cwd, {});
+			await mgr.initialize(cwd, {}, inMemorySettings);
 			await expect(mgr.loadDynamicSkill(tmp)).rejects.toThrow("Skill path does not exist");
 		} finally {
 			await import("fs/promises").then((m) => m.rm(cwd, { recursive: true, force: true }));
@@ -58,7 +61,7 @@ Hello, this is a test skill.
 
 		const mgr = new SkillManager();
 		try {
-			await mgr.initialize(cwd, {});
+			await mgr.initialize(cwd, {}, inMemorySettings);
 			const result = await mgr.loadDynamicSkill(skillDir);
 			expect(result.skill.name).toBe("test-skill");
 			expect(result.skill.description).toBe("A test skill for unit testing");
@@ -93,7 +96,7 @@ Goodbye test.
 
 		const mgr = new SkillManager();
 		try {
-			await mgr.initialize(cwd, {});
+			await mgr.initialize(cwd, {}, inMemorySettings);
 			await mgr.loadDynamicSkill(skillDir);
 
 			expect(mgr.listSkills().skills.filter((s) => s.source === "dynamic")).toHaveLength(1);
@@ -124,7 +127,7 @@ Goodbye test.
 
 		const mgr = new SkillManager();
 		try {
-			await mgr.initialize(cwd, {});
+			await mgr.initialize(cwd, {}, inMemorySettings);
 			await mgr.loadDynamicSkill(skillDir1);
 			await expect(mgr.loadDynamicSkill(skillDir2)).rejects.toThrow("is already loaded");
 		} finally {

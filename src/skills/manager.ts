@@ -3,6 +3,7 @@ import {
 	type LoadSkillsResult,
 	loadSkillsFromDir,
 	type ResourceDiagnostic,
+	type SettingsManager,
 	type Skill,
 } from "@earendil-works/pi-coding-agent";
 import { existsSync } from "fs";
@@ -68,18 +69,32 @@ export class SkillManager {
 	 * Creates a DefaultResourceLoader with openagent-specific paths and loads
 	 * auto-discovered skills. Returns the configured resource loader.
 	 */
-	async initialize(cwd: string, config: Config): Promise<DefaultResourceLoader> {
+	async initialize(
+		cwd: string,
+		config: Config,
+		settingsManager: SettingsManager,
+	): Promise<DefaultResourceLoader> {
 		this._cwd = cwd;
 		this._agentDir = join(homedir(), ".config", "openagent");
 
 		const disabledSkills = config.skills?.disabled ?? [];
 		const disabledSet = new Set(disabledSkills);
 
+		// Build skill paths: only openagent directories, never pi defaults
+		const skillPaths: string[] = [];
+		if (config.skills?.autoLoad !== false) {
+			skillPaths.push(GLOBAL_SKILLS_DIR, resolveProjectSkillsDir(cwd));
+		}
+		if (config.skills?.paths) {
+			skillPaths.push(...config.skills.paths);
+		}
+
 		const loader = new DefaultResourceLoader({
 			cwd,
 			agentDir: this._agentDir,
-			additionalSkillPaths: config.skills?.paths ?? [],
-			noSkills: config.skills?.autoLoad === false,
+			settingsManager,
+			additionalSkillPaths: skillPaths,
+			noSkills: true,
 			systemPrompt: [
 				"You are openagent, a terminal coding assistant.",
 				"You help users by reading files, executing commands, editing code, and writing new files.",

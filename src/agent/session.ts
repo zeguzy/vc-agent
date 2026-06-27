@@ -22,8 +22,8 @@ export interface SessionResult {
 }
 
 export async function createSession(options: SessionOptions): Promise<SessionResult> {
-	const authStorage = AuthStorage.create();
-	const modelRegistry = ModelRegistry.create(authStorage);
+	const authStorage = AuthStorage.inMemory();
+	const modelRegistry = ModelRegistry.inMemory(authStorage);
 
 	if (options.config?.providers) {
 		for (const [name, providerConfig] of Object.entries(options.config.providers)) {
@@ -43,7 +43,11 @@ export async function createSession(options: SessionOptions): Promise<SessionRes
 
 	// Initialize SkillManager with DefaultResourceLoader for skill discovery
 	const skillManager = new SkillManager();
-	const resourceLoader = await skillManager.initialize(options.cwd, options.config ?? {});
+	const resourceLoader = await skillManager.initialize(
+		options.cwd,
+		options.config ?? {},
+		settingsManager,
+	);
 
 	const result = await createAgentSession({
 		cwd: options.cwd,
