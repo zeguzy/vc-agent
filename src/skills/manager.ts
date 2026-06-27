@@ -10,6 +10,7 @@ import {
 	type Skill,
 } from "@earendil-works/pi-coding-agent";
 import type { Config } from "../config.js";
+import { loadSystemContext } from "../context-files.js";
 
 export interface SkillListEntry {
 	name: string;
@@ -89,21 +90,15 @@ export class SkillManager {
 			skillPaths.push(...config.skills.paths);
 		}
 
+		const systemPrompt = await loadSystemContext(cwd, config);
+
 		const loader = new DefaultResourceLoader({
 			cwd,
 			agentDir: this._agentDir,
 			settingsManager,
 			additionalSkillPaths: skillPaths,
 			noSkills: true,
-			systemPrompt: [
-				"You are openagent, a terminal coding assistant.",
-				"You help users by reading files, executing commands, editing code, and writing new files.",
-				"",
-				"Guidelines:",
-				"- Be concise in your responses.",
-				"- Show file paths clearly when working with files.",
-				"- When a task involves multiple steps, break it down and work through it methodically.",
-			].join("\n"),
+			systemPrompt,
 			skillsOverride: (base: { skills: Skill[]; diagnostics: ResourceDiagnostic[] }) => {
 				if (disabledSet.size === 0) return base;
 				return {

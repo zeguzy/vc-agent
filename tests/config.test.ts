@@ -34,4 +34,21 @@ describe("deepMerge", () => {
 		const merged = deepMerge([1, 2, 3] as any, [9] as any);
 		expect(merged).toEqual([9, 2, 3]);
 	});
+
+	it("merges instructions arrays positionally from config objects", () => {
+		const global = { instructions: ["docs/global.md"] };
+		const project = { instructions: ["docs/project.md"] };
+		expect(deepMerge(global, project)).toEqual({
+			instructions: ["docs/project.md"],
+		});
+	});
+
+	it("preserves global instructions when project omits the key", () => {
+		const global = { instructions: ["docs/global.md"], model: "claude" };
+		const project = { model: "gpt-4" };
+		expect(deepMerge(global, project)).toEqual({
+			instructions: ["docs/global.md"],
+			model: "gpt-4",
+		});
+	});
 });

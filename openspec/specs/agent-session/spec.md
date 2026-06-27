@@ -4,12 +4,13 @@
 定义 Agent 会话的创建过程，包括 Provider 注册、Model 解析、Skill 自动发现和 ResourceLoader 配置。
 ## Requirements
 ### Requirement: Skill 自动发现
-系统 SHALL 在创建 Agent 会话时自动扫描并加载技能（Skills），将可自动调用的技能注入到系统提示中。
+系统 SHALL 在创建 Agent 会话时自动扫描并加载技能（Skills），将可自动调用的技能注入到系统提示中。系统提示 SHALL 由基础 prompt 和上下文文件内容组装而成（详见 context-files 规格），不再使用硬编码字符串。
 
 #### Scenario: 全局技能扫描
 - **WHEN** 系统启动
 - **THEN** 创建 `DefaultResourceLoader`，配置 `agentDir=~/.config/openagent`
 - **AND** 自动扫描 `~/.config/openagent/skills/` 目录下的 SKILL.md 文件
+- **AND** systemPrompt 由 `loadSystemContext(cwd, config)` 生成，非硬编码
 
 #### Scenario: 项目技能扫描
 - **WHEN** 系统启动
@@ -26,6 +27,11 @@
 #### Scenario: 排除特定技能
 - **WHEN** `config.skills.disabled` 列出了技能名称
 - **THEN** 这些技能 SHALL 通过 `skillsOverride` 从加载结果中过滤掉
+
+#### Scenario: 上下文文件注入 system prompt
+- **WHEN** 系统启动并初始化 SkillManager
+- **THEN** systemPrompt SHALL 调用 `loadSystemContext(cwd, config)` 生成
+- **AND** 结果包含 base prompt + 全局 rules + 项目 rules + instructions 文件
 
 ### Requirement: 创建 Pi SDK Agent 会话
 系统 SHALL 调用 Pi SDK 的 `createAgentSessionRuntime()` 创建一个 `AgentSessionRuntime` 承载当前会话；runtime 内部的 factory SHALL 调用 `createAgentSession()` 配置内置工具（read、bash、edit、write、grep、find）和 LSP 自定义工具（lsp_diagnostics、lsp_goto_definition、lsp_find_references），并使用纯内存 API（`AuthStorage.inMemory()`、`ModelRegistry.inMemory(authStorage)`、`SettingsManager.inMemory()`）创建 auth / model / settings 附属组件，不读取 Pi 磁盘配置；`SessionManager` SHALL 根据启动恢复意图选择模式（新建持久化 / continueRecent / open），不再固定 `inMemory()`。
