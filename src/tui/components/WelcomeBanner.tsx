@@ -18,11 +18,11 @@ interface WelcomeBannerProps {
 
 export function WelcomeBanner({ cwd, model }: WelcomeBannerProps) {
 	return (
-		<box flexDirection="column" paddingTop={2} paddingBottom={2} flexShrink={0}>
+		<box flexDirection="column" paddingTop={2} paddingBottom={2} paddingLeft={2} flexShrink={0}>
 			{/* Logo */}
 			<box flexDirection="column" paddingBottom={1}>
 				{LOGO.map((line, i) => (
-					<text key={i} fg={i < 5 ? colors.secondary : colors.primary}>
+					<text key={`l${i}`} fg={i < 5 ? colors.secondary : colors.primary}>
 						{line}
 					</text>
 				))}
@@ -33,39 +33,39 @@ export function WelcomeBanner({ cwd, model }: WelcomeBannerProps) {
 
 			{/* Model + CWD */}
 			<box flexDirection="column" paddingTop={1}>
-				<text fg={colors.textMuted}>
+				<box flexDirection="row">
 					<text fg={colors.textSubtle}>model: </text>
 					<text fg={colors.primary}>{model ?? "default"}</text>
-				</text>
-				<text fg={colors.textMuted}>
+				</box>
+				<box flexDirection="row">
 					<text fg={colors.textSubtle}>cwd: </text>
 					<text fg={colors.text}>{cwd}</text>
-				</text>
+				</box>
 			</box>
 
 			{/* Quick tips */}
 			<box flexDirection="column" paddingTop={1}>
 				<text fg={colors.textSubtle}>Quick Start</text>
-				<text fg={colors.textMuted}>
+				<box flexDirection="row">
 					<text fg={colors.secondary}>/help</text>
 					<text fg={colors.textMuted}> list all commands</text>
-				</text>
-				<text fg={colors.textMuted}>
+				</box>
+				<box flexDirection="row">
 					<text fg={colors.secondary}>/model</text>
 					<text fg={colors.textMuted}> switch model</text>
-				</text>
-				<text fg={colors.textMuted}>
+				</box>
+				<box flexDirection="row">
 					<text fg={colors.secondary}>/sessions</text>
 					<text fg={colors.textMuted}> pick from previous chats</text>
-				</text>
-				<text fg={colors.textMuted}>
+				</box>
+				<box flexDirection="row">
 					<text fg={colors.secondary}>/settings</text>
 					<text fg={colors.textMuted}> open settings</text>
-				</text>
-				<text fg={colors.textMuted}>
+				</box>
+				<box flexDirection="row">
 					<text fg={colors.secondary}>Ctrl+C</text>
 					<text fg={colors.textMuted}> exit</text>
-				</text>
+				</box>
 			</box>
 
 			{/* Separator */}
