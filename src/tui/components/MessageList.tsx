@@ -449,12 +449,15 @@ export function MessageList({
 		>
 			<box flexDirection="column" paddingLeft={2} paddingRight={2} paddingBottom={1}>
 				<box height={1} />
-				{items.map((item) => {
+				{items.map((item, i, arr) => {
 					if (item.type === "readGroup") {
 						return <ReadGroupView key={`rg-${item.startIndex}`} reads={item.messages} />;
 					}
 					const msg = item.message;
-					if (msg.role === "separator") return <SeparatorView key={msg.id} />;
+					if (msg.role === "separator") {
+						if (i === arr.length - 1) return null;
+						return <SeparatorView key={msg.id} />;
+					}
 					if (msg.role === "user")
 						return <UserMessageView key={msg.id} message={msg} index={item.index} />;
 					if (msg.role === "tool") return <ToolMessageView key={msg.id} message={msg} />;
