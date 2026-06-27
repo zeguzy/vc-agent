@@ -1,5 +1,6 @@
 import type { ToolDefinition } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
+import { formatError } from "../utils/formatError.js";
 import { formatDiagnostics, formatLocations, type LspClient } from "./lspClient.js";
 
 interface ToolDefOptions {
@@ -52,7 +53,7 @@ function createDiagnosticsTool(client: LspClient): ToolDefinition {
 					content: [
 						{
 							type: "text" as const,
-							text: `LSP error: ${err instanceof Error ? err.message : String(err)}`,
+							text: `LSP error: ${formatError(err)}`,
 						},
 					],
 					details: undefined,
@@ -99,7 +100,7 @@ function createGotoDefinitionTool(client: LspClient): ToolDefinition {
 					content: [
 						{
 							type: "text" as const,
-							text: `LSP error: ${err instanceof Error ? err.message : String(err)}`,
+							text: `LSP error: ${formatError(err)}`,
 						},
 					],
 					details: undefined,
@@ -159,7 +160,7 @@ function createFindReferencesTool(client: LspClient): ToolDefinition {
 					content: [
 						{
 							type: "text" as const,
-							text: `LSP error: ${err instanceof Error ? err.message : String(err)}`,
+							text: `LSP error: ${formatError(err)}`,
 						},
 					],
 					details: undefined,

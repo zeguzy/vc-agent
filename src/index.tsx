@@ -2,8 +2,9 @@
 import { createCliRenderer } from "@opentui/core";
 import { createRoot } from "@opentui/react";
 import { createRuntime, type RuntimeResult, type SessionMode } from "./agent/session.js";
-import { loadConfig } from "./config.js";
+import { readConfig } from "./config.js";
 import { App } from "./tui/App.js";
+import { formatError } from "./utils/formatError.js";
 
 interface ParsedArgs {
 	model?: string;
@@ -86,7 +87,7 @@ async function main(): Promise<void> {
 	}
 
 	const cwd = process.cwd();
-	const config = loadConfig(cwd);
+	const config = readConfig(cwd);
 	const model = args.model ?? config.model;
 	const mode = resolveMode(args);
 
@@ -101,7 +102,7 @@ async function main(): Promise<void> {
 			...(args.name ? { name: args.name } : {}),
 		});
 	} catch (err) {
-		console.error("创建 Agent 会话失败:", err instanceof Error ? err.message : String(err));
+		console.error("创建 Agent 会话失败:", formatError(err));
 		process.exit(1);
 	}
 
@@ -129,6 +130,6 @@ async function main(): Promise<void> {
 }
 
 main().catch((err) => {
-	console.error("启动失败:", err instanceof Error ? err.message : String(err));
+	console.error("启动失败:", formatError(err));
 	process.exit(1);
 });

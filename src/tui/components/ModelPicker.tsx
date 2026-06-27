@@ -2,7 +2,7 @@ import type { KeyEvent, TextareaRenderable } from "@opentui/core";
 import { useMemo, useRef, useState } from "react";
 import { type Config, writeConfig } from "../../config.js";
 import type { SettingContext } from "../../settings/types.js";
-import { colors } from "../theme.js";
+import { colors } from "../utils/theme.js";
 
 interface ModelPickerProps {
 	config: Config;

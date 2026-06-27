@@ -1,6 +1,7 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "fs";
 import { homedir } from "os";
 import { join } from "path";
+import { formatError } from "./utils/formatError.js";
 
 export interface CustomModel {
 	id: string;
@@ -49,18 +50,13 @@ export interface Config {
 	skills?: SkillsConfig;
 }
 
-export const defaultConfig: Config = {};
-
 function readJsonFile(filePath: string): Record<string, unknown> | null {
 	if (!existsSync(filePath)) return null;
 	try {
 		const content = readFileSync(filePath, "utf-8");
 		return JSON.parse(content);
 	} catch (err) {
-		console.error(
-			`Warning: Failed to parse config at ${filePath}:`,
-			err instanceof Error ? err.message : String(err),
-		);
+		console.error(`Warning: Failed to parse config at ${filePath}:`, formatError(err));
 		return null;
 	}
 }
@@ -72,7 +68,7 @@ export function readConfig(cwd: string): Config {
 	const globalRaw = readJsonFile(globalPath);
 	const projectRaw = readJsonFile(projectPath);
 
-	if (!globalRaw && !projectRaw) return defaultConfig;
+	if (!globalRaw && !projectRaw) return {};
 	if (!globalRaw) return projectRaw as Config;
 	if (!projectRaw) return globalRaw as Config;
 
@@ -101,10 +97,6 @@ export function deepMerge<T>(global: T, project: Partial<T>): T {
 		}
 	}
 	return result as T;
-}
-
-export function loadConfig(cwd: string): Config {
-	return readConfig(cwd);
 }
 
 export function writeConfig(

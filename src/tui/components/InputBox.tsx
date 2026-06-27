@@ -5,7 +5,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { matchCommands } from "../commands.js";
 
 import type { Mode } from "../keymap.js";
-import { colors, icons } from "../theme.js";
+import { colors, icons } from "../utils/theme.js";
 
 function getGitBranch(cwd: string): string {
 	try {

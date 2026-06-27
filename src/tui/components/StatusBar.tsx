@@ -1,6 +1,6 @@
 import { useEffect } from "react";
 import type { Mode } from "../keymap.js";
-import { colors } from "../theme.js";
+import { colors } from "../utils/theme.js";
 
 type ContextDisplay = "compact" | "full";
 

@@ -1,5 +1,5 @@
 import { describe, expect, it, mock } from "bun:test";
-import { copySelection } from "../src/tui/selection.js";
+import { copySelection } from "../src/tui/utils/selection.js";
 
 function makeRenderer(opts: { selectedText?: string; hasSelection?: boolean }): {
 	renderer: Parameters<typeof copySelection>[0];

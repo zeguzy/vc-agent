@@ -5,7 +5,7 @@ import {
 	createToolMessage,
 	createUserMessage,
 	nextId,
-} from "../src/store.js";
+} from "../src/message.js";
 
 describe("nextId", () => {
 	it("produces msg-<number> ids", () => {

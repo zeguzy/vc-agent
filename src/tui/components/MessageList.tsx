@@ -1,9 +1,9 @@
 import type { ScrollBoxRenderable } from "@opentui/core";
 import { memo } from "react";
-import type { Message } from "../../store.js";
-import { splitStreamingText } from "../streaming.js";
-import { syntaxStyle } from "../syntax.js";
-import { colors, icons } from "../theme.js";
+import type { Message } from "../../message.js";
+import { splitStreamingText } from "../utils/streaming.js";
+import { syntaxStyle } from "../utils/syntax.js";
+import { colors, icons } from "../utils/theme.js";
 
 export interface ReadEntry {
 	path: string;

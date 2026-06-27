@@ -1,6 +1,6 @@
 import { describe, expect, it } from "bun:test";
-import { getSyntaxRules, syntaxStyle } from "../src/tui/syntax.js";
-import { colors } from "../src/tui/theme.js";
+import { getSyntaxRules, syntaxStyle } from "../src/tui/utils/syntax.js";
+import { colors } from "../src/tui/utils/theme.js";
 
 /**
  * Markdown 元素 scope —— 对应 spec.md「scope 注册完整性」scenario
