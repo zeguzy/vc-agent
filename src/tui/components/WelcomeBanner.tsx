@@ -1,75 +1,45 @@
 import { colors } from "../theme.js";
 
-const LOGO = [
-	"  ╭───╮     ╭───────╮",
-	"  │ o │     │ p e n │",
-	"  │ p │     │ a g e │",
-	"  │ e │ ─── │ n t   │",
-	"  │ n │     │       │",
-	"  │ a │     │       │",
-	"  │ g │     │       │",
-	"  ╰───╯     ╰───────╯",
-];
-
 interface WelcomeBannerProps {
 	cwd: string;
 	model?: string;
 }
 
+function KeyHint({ k, desc }: { k: string; desc: string }) {
+	return (
+		<box flexDirection="row">
+			<text fg={colors.secondary}>{k}</text>
+			<text fg={colors.textMuted}>{desc}</text>
+		</box>
+	);
+}
+
 export function WelcomeBanner({ cwd, model }: WelcomeBannerProps) {
 	return (
-		<box flexDirection="column" paddingTop={2} paddingBottom={2} paddingLeft={2} flexShrink={0}>
-			{/* Logo */}
-			<box flexDirection="column" paddingBottom={1}>
-				{LOGO.map((line, i) => (
-					<text key={`l${i}`} fg={i < 5 ? colors.secondary : colors.primary}>
-						{line}
-					</text>
-				))}
-			</box>
+		<box flexDirection="column" paddingTop={3} paddingLeft={2} flexShrink={0}>
+			<text fg={colors.primary}>openagent</text>
+			<text fg={colors.textSubtle}>your terminal coding assistant</text>
 
-			{/* Subtitle */}
-			<text fg={colors.textSubtle}>Your terminal coding assistant</text>
-
-			{/* Model + CWD */}
-			<box flexDirection="column" paddingTop={1}>
+			<box flexDirection="column" paddingTop={2}>
 				<box flexDirection="row">
-					<text fg={colors.textSubtle}>model: </text>
-					<text fg={colors.primary}>{model ?? "default"}</text>
+					<text fg={colors.textSubtle}>model </text>
+					<text fg={colors.text}>{model ?? "default"}</text>
 				</box>
 				<box flexDirection="row">
-					<text fg={colors.textSubtle}>cwd: </text>
-					<text fg={colors.text}>{cwd}</text>
+					<text fg={colors.textSubtle}>cwd </text>
+					<text fg={colors.textMuted}>{cwd}</text>
 				</box>
 			</box>
 
-			{/* Quick tips */}
-			<box flexDirection="column" paddingTop={1}>
-				<text fg={colors.textSubtle}>Quick Start</text>
-				<box flexDirection="row">
-					<text fg={colors.secondary}>/help</text>
-					<text fg={colors.textMuted}> list all commands</text>
-				</box>
-				<box flexDirection="row">
-					<text fg={colors.secondary}>/model</text>
-					<text fg={colors.textMuted}> switch model</text>
-				</box>
-				<box flexDirection="row">
-					<text fg={colors.secondary}>/sessions</text>
-					<text fg={colors.textMuted}> pick from previous chats</text>
-				</box>
-				<box flexDirection="row">
-					<text fg={colors.secondary}>/settings</text>
-					<text fg={colors.textMuted}> open settings</text>
-				</box>
-				<box flexDirection="row">
-					<text fg={colors.secondary}>Ctrl+C</text>
-					<text fg={colors.textMuted}> exit</text>
-				</box>
+			<box flexDirection="column" paddingTop={2}>
+				<KeyHint k="/help     " desc="list all commands" />
+				<KeyHint k="/model    " desc="switch model" />
+				<KeyHint k="/sessions " desc="browse history" />
+				<KeyHint k="/settings " desc="configure" />
+				<KeyHint k="Ctrl+C    " desc="exit" />
 			</box>
 
-			{/* Separator */}
-			<box paddingTop={1}>
+			<box paddingTop={2}>
 				<box border={["top"]} borderColor={colors.borderSoft} />
 			</box>
 		</box>
