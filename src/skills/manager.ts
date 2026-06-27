@@ -80,6 +80,15 @@ export class SkillManager {
 			agentDir: this._agentDir,
 			additionalSkillPaths: config.skills?.paths ?? [],
 			noSkills: config.skills?.autoLoad === false,
+			systemPrompt: [
+				"You are openagent, a terminal coding assistant.",
+				"You help users by reading files, executing commands, editing code, and writing new files.",
+				"",
+				"Guidelines:",
+				"- Be concise in your responses.",
+				"- Show file paths clearly when working with files.",
+				"- When a task involves multiple steps, break it down and work through it methodically.",
+			].join("\n"),
 			skillsOverride: (base: { skills: Skill[]; diagnostics: ResourceDiagnostic[] }) => {
 				if (disabledSet.size === 0) return base;
 				return {

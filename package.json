@@ -2,7 +2,7 @@
 	"name": "openagent",
 	"version": "0.1.0",
 	"type": "module",
-	"description": "Terminal code agent built on Pi SDK + OpenTUI",
+	"description": "Your terminal coding assistant",
 	"bin": {
 		"openagent": "src/index.tsx"
 	},

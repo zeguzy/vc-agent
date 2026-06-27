@@ -32,7 +32,9 @@ interface AppProps {
 
 export function App({ session, skillManager, model, cwd, config }: AppProps) {
 	const [messages, setMessages] = useState<Message[]>([
-		createAssistantMessage("Hi, I'm openagent. I can read and edit files, and run commands."),
+		createAssistantMessage(
+			"Hi! I'm openagent, your terminal coding assistant. What can I help with?",
+		),
 	]);
 	const [isRunning, setIsRunning] = useState(false);
 	const [mode, setMode] = useState<Mode>("insert");

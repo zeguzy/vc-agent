@@ -27,7 +27,7 @@ function parseArgs(argv: string[]): ParsedArgs {
 
 function showHelp(): void {
 	console.log(`
-openagent — 基于 Pi SDK 的全屏 TUI 代码 Agent
+openagent — your terminal coding assistant
 
 用法:
   openagent [选项]

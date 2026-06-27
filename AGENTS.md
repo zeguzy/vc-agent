@@ -1,7 +1,6 @@
 # AGENTS.md
 
-openagent —— 基于 Pi SDK 的全屏 TUI 代码 Agent。
-技术栈：TypeScript（strict）+ Bun 运行时 + @earendil-works/pi-coding-agent + @opentui/react。
+openagent — your terminal coding assistant.
 项目上下文与设计理念见 `openspec/config.yaml`。
 
 ---
