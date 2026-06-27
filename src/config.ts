@@ -51,6 +51,8 @@ export interface Config {
 	display?: DisplayConfig;
 	compaction?: CompactionConfig;
 	skills?: SkillsConfig;
+	/** Additional instruction files to inject into system prompt. Supports relative paths, ~/ expansion, globs, and HTTP(S) URLs. */
+	instructions?: string[];
 }
 
 function readJsonFile(filePath: string): Record<string, unknown> | null {
