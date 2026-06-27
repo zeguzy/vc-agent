@@ -14,27 +14,9 @@ function KeyHint({ k, desc }: { k: string; desc: string }) {
 	);
 }
 
-const PIXEL_LOGO = [
-	"    ▗▄▄▄▄▄▖    ",
-	"  ▗▛▀▀▀▀▀▀▀▜▖  ",
-	" ▐  ▗▄▄▖ ▗▄▄▖ ▌ ",
-	" ▐  █▀▀█ █▀▀█ ▌ ",
-	" ▐  ▝▀▀▘ ▝▀▀▘ ▌ ",
-	"  ▝▀▄▄▄▄▄▄▄▀▘  ",
-];
-
 export function WelcomeBanner({ cwd, model }: WelcomeBannerProps) {
 	return (
 		<box flexDirection="column" paddingTop={2} paddingLeft={2} flexShrink={0}>
-			{/* Pixel art logo */}
-			<box flexDirection="column" paddingBottom={1}>
-				{PIXEL_LOGO.map((line, i) => (
-					<text key={`p${i}`} fg={colors.primary}>
-						{line}
-					</text>
-				))}
-			</box>
-
 			<text fg={colors.primary}>openagent</text>
 			<text fg={colors.textSubtle}>your terminal coding assistant</text>
 
