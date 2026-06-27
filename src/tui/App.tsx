@@ -1,5 +1,5 @@
 import type { ScrollBoxRenderable } from "@opentui/core";
-import { useKeyboard } from "@opentui/react";
+import { useKeyboard, useRenderer } from "@opentui/react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { AgentSession, AgentSessionEvent } from "../agent/session.js";
 import { extractAssistantContent } from "../agent/session.js";
@@ -18,6 +18,7 @@ import { InputBox } from "./components/InputBox.js";
 import { MessageList } from "./components/MessageList.js";
 import { StatusBar } from "./components/StatusBar.js";
 import { type Mode, resolveKey } from "./keymap.js";
+import { copySelection } from "./selection.js";
 import { colors } from "./theme.js";
 
 interface AppProps {
@@ -29,6 +30,7 @@ interface AppProps {
 }
 
 export function App({ session, skillManager, model, cwd, config }: AppProps) {
+	const renderer = useRenderer();
 	const [messages, setMessages] = useState<Message[]>([
 		createAssistantMessage("Hi, I'm openagent. I can read and edit files, and run commands."),
 	]);
@@ -43,6 +45,7 @@ export function App({ session, skillManager, model, cwd, config }: AppProps) {
 	const [contextDisplay, setContextDisplay] = useState<"compact" | "full">(
 		config?.display?.contextMode ?? "compact",
 	);
+	const [copyFeedback, setCopyFeedback] = useState<{ ts: number } | null>(null);
 	const lastCtrlCRef = useRef<number>(0);
 	const toolCallIdToMsgId = useRef<Map<string, string>>(new Map());
 	const scrollRef = useRef<ScrollBoxRenderable>(null);
@@ -229,6 +232,16 @@ export function App({ session, skillManager, model, cwd, config }: AppProps) {
 	);
 
 	useKeyboard((key) => {
+		if (key.name === "c" && (key.ctrl || key.super)) {
+			if (copySelection(renderer, () => setCopyFeedback({ ts: Date.now() }))) {
+				return;
+			}
+		}
+		if (key.name === "escape" && renderer?.getSelection()) {
+			renderer.clearSelection();
+			return;
+		}
+
 		const action = resolveKey(modeRef.current, key);
 		if (!action) return;
 
@@ -313,6 +326,8 @@ export function App({ session, skillManager, model, cwd, config }: AppProps) {
 					contextTokens={contextUsage.tokens}
 					contextWindow={contextUsage.window}
 					contextDisplay={contextDisplay}
+					copyFeedback={copyFeedback}
+					onCopyFeedbackClear={() => setCopyFeedback(null)}
 				/>
 			</box>
 		</box>
