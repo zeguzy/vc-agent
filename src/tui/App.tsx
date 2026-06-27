@@ -22,13 +22,12 @@ import { MessageList } from "./components/MessageList.js";
 import { SessionPicker } from "./components/SessionPicker.js";
 import { SettingsPanel } from "./components/SettingsPanel.js";
 import { StatusBar } from "./components/StatusBar.js";
+import { WelcomeBanner } from "./components/WelcomeBanner.js";
 import { type Mode, resolveKey } from "./keymap.js";
 import { copySelection } from "./selection.js";
 import { colors } from "./theme.js";
 
-const WELCOME_MESSAGE = createAssistantMessage(
-	"Hi! I'm openagent, your terminal coding assistant. What can I help with?",
-);
+const WELCOME_MESSAGE = createAssistantMessage("");
 
 interface AppProps {
 	runtime: AgentSessionRuntime;
@@ -406,13 +405,21 @@ export function App({ runtime, skillManager, model, cwd, config, initialResumeLi
 
 	const queuedMsg = messages.find((m) => m.queued);
 
+	const isWelcome = messages.length === 1 && messages[0].id === WELCOME_MESSAGE.id;
+
 	return (
 		<box flexDirection="column" height={"100%"} backgroundColor={colors.background}>
-			<MessageList
-				messages={messages.filter((m) => !m.queued)}
-				scrollRef={scrollRef}
-				thinkingCollapsed={thinkingCollapsed}
-			/>
+			{isWelcome ? (
+				<scrollbox flexGrow={1} scrollY stickyScroll stickyStart="bottom" focused={false}>
+					<WelcomeBanner cwd={cwd} model={session.model?.name || session.model?.id || model} />
+				</scrollbox>
+			) : (
+				<MessageList
+					messages={messages.filter((m) => !m.queued)}
+					scrollRef={scrollRef}
+					thinkingCollapsed={thinkingCollapsed}
+				/>
+			)}
 			{queuedMsg && (
 				<box flexShrink={0} paddingLeft={3} paddingRight={3}>
 					<box
