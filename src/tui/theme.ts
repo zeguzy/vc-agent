@@ -41,7 +41,7 @@ export const colors = {
 	markdownLinkText: "#30D158",
 	markdownCode: "#30D158",
 	markdownEmph: "#FFD60A",
-	markdownStrong: "#FF453A",
+	markdownStrong: "#FF9500",
 	markdownBlockQuote: "#FFD60A",
 	markdownListItem: "#64D2FF",
 	markdownListEnumeration: "#30D158",
