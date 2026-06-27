@@ -1,5 +1,5 @@
 import type { ScrollBoxRenderable } from "@opentui/core";
-import { useKeyboard } from "@opentui/react";
+import { useKeyboard, useRenderer } from "@opentui/react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { AgentSession, AgentSessionEvent } from "../agent/session.js";
 import { extractAssistantContent } from "../agent/session.js";
@@ -20,6 +20,7 @@ import { MessageList } from "./components/MessageList.js";
 import { SettingsPanel } from "./components/SettingsPanel.js";
 import { StatusBar } from "./components/StatusBar.js";
 import { type Mode, resolveKey } from "./keymap.js";
+import { copySelection } from "./selection.js";
 import { colors } from "./theme.js";
 
 interface AppProps {
@@ -31,6 +32,7 @@ interface AppProps {
 }
 
 export function App({ session, skillManager, model, cwd, config }: AppProps) {
+	const renderer = useRenderer();
 	const [messages, setMessages] = useState<Message[]>([
 		createAssistantMessage(
 			"Hi! I'm openagent, your terminal coding assistant. What can I help with?",
@@ -49,6 +51,7 @@ export function App({ session, skillManager, model, cwd, config }: AppProps) {
 	);
 	const [showSettings, setShowSettings] = useState(false);
 	const [configState, setConfigState] = useState<Config>(config ?? {});
+	const [copyFeedback, setCopyFeedback] = useState<{ ts: number } | null>(null);
 	const lastCtrlCRef = useRef<number>(0);
 	const toolCallIdToMsgId = useRef<Map<string, string>>(new Map());
 	const scrollRef = useRef<ScrollBoxRenderable>(null);
@@ -254,6 +257,16 @@ export function App({ session, skillManager, model, cwd, config }: AppProps) {
 	);
 
 	useKeyboard((key) => {
+		if (key.name === "c" && (key.ctrl || key.super)) {
+			if (copySelection(renderer, () => setCopyFeedback({ ts: Date.now() }))) {
+				return;
+			}
+		}
+		if (key.name === "escape" && renderer?.getSelection()) {
+			renderer.clearSelection();
+			return;
+		}
+
 		const action = resolveKey(modeRef.current, key);
 		if (showSettingsRef.current) {
 			if (action === "ctrlC") {
@@ -360,6 +373,8 @@ export function App({ session, skillManager, model, cwd, config }: AppProps) {
 					contextTokens={contextUsage.tokens}
 					contextWindow={contextUsage.window}
 					contextDisplay={contextDisplay}
+					copyFeedback={copyFeedback}
+					onCopyFeedbackClear={() => setCopyFeedback(null)}
 				/>
 			</box>
 		</box>

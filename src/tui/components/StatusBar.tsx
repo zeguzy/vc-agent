@@ -1,3 +1,4 @@
+import { useEffect } from "react";
 import type { Mode } from "../keymap.js";
 import { colors } from "../theme.js";
 
@@ -10,7 +11,11 @@ interface StatusBarProps {
 	contextTokens: number | null;
 	contextWindow: number | null;
 	contextDisplay: ContextDisplay;
+	copyFeedback: { ts: number } | null;
+	onCopyFeedbackClear?: () => void;
 }
+
+const COPY_FEEDBACK_MS = 2000;
 
 export function StatusBar({
 	model,
@@ -19,8 +24,18 @@ export function StatusBar({
 	contextTokens,
 	contextWindow,
 	contextDisplay,
+	copyFeedback,
+	onCopyFeedbackClear,
 }: StatusBarProps) {
 	const modeColor = mode === "insert" ? colors.success : colors.primary;
+
+	useEffect(() => {
+		if (!copyFeedback || !onCopyFeedbackClear) return;
+		const elapsed = Date.now() - copyFeedback.ts;
+		const remaining = Math.max(0, COPY_FEEDBACK_MS - elapsed);
+		const timer = setTimeout(onCopyFeedbackClear, remaining);
+		return () => clearTimeout(timer);
+	}, [copyFeedback, onCopyFeedbackClear]);
 
 	const ctxColor =
 		contextPercent === null
@@ -37,6 +52,7 @@ export function StatusBar({
 	};
 
 	const hasContext = contextTokens !== null && contextWindow !== null;
+	const showCopy = copyFeedback !== null && Date.now() - copyFeedback.ts < COPY_FEEDBACK_MS;
 
 	return (
 		<box height={1} flexDirection="row" backgroundColor={colors.backgroundStatus}>
@@ -44,12 +60,13 @@ export function StatusBar({
 			<text fg={colors.textSubtle}> </text>
 			<text fg={colors.secondary}>{model}</text>
 			<box flexGrow={1} />
-			{hasContext && contextDisplay === "compact" && (
+			{showCopy && <text fg={colors.success}>Copied to clipboard</text>}
+			{!showCopy && hasContext && contextDisplay === "compact" && (
 				<text fg={ctxColor}>
 					◌ {contextPercent !== null ? `${contextPercent.toFixed(0)}%` : "?"}
 				</text>
 			)}
-			{hasContext && contextDisplay === "full" && (
+			{!showCopy && hasContext && contextDisplay === "full" && (
 				<>
 					<text fg={ctxColor}>
 						◌ {fmtTokens(contextTokens!)}/{fmtTokens(contextWindow!)}
