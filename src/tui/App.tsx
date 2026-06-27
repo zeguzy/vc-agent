@@ -357,10 +357,16 @@ export function App({ runtime, skillManager, model, cwd, config, initialResumeLi
 		if (showSettingsRef.current || showSessionPickerRef.current) {
 			if (action === "ctrlC") {
 				const now = Date.now();
-				if (now - lastCtrlCRef.current < 1000) process.exit(0);
+				if (now - lastCtrlCRef.current < 1000) {
+					renderer.destroy();
+					process.exit(0);
+				}
 				lastCtrlCRef.current = now;
 				if (isRunningRef.current) session.abort().catch(() => {});
-				else process.exit(0);
+				else {
+					renderer.destroy();
+					process.exit(0);
+				}
 			}
 			return;
 		}
@@ -393,12 +399,14 @@ export function App({ runtime, skillManager, model, cwd, config, initialResumeLi
 			case "ctrlC": {
 				const now = Date.now();
 				if (now - lastCtrlCRef.current < 1000) {
+					renderer.destroy();
 					process.exit(0);
 				}
 				lastCtrlCRef.current = now;
 				if (isRunningRef.current) {
 					session.abort().catch(() => {});
 				} else {
+					renderer.destroy();
 					process.exit(0);
 				}
 				return;
