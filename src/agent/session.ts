@@ -8,17 +8,23 @@ import {
 	SettingsManager,
 } from "@earendil-works/pi-coding-agent";
 import type { Config, ProviderConfig } from "../config.js";
+import { adaptToTransports } from "../mcp/adapter.js";
+import type { McpConfig } from "../mcp/config.js";
+import { McpManager } from "../mcp/manager.js";
+import { bridgeToToolDefs } from "../mcp/tools.js";
 import { SkillManager } from "../skills/manager.js";
 
 export interface SessionOptions {
 	cwd: string;
 	model?: string;
 	config?: Config;
+	mcpConfig?: McpConfig;
 }
 
 export interface SessionResult {
 	session: AgentSession;
 	skillManager: SkillManager;
+	mcpManager: McpManager;
 }
 
 export async function createSession(options: SessionOptions): Promise<SessionResult> {
@@ -49,6 +55,12 @@ export async function createSession(options: SessionOptions): Promise<SessionRes
 		settingsManager,
 	);
 
+	const mcpManager = new McpManager();
+	if (options.mcpConfig && Object.keys(options.mcpConfig).length > 0) {
+		await mcpManager.initialize(adaptToTransports(options.mcpConfig));
+	}
+	const customTools = bridgeToToolDefs(mcpManager);
+
 	const result = await createAgentSession({
 		cwd: options.cwd,
 		authStorage,
@@ -57,9 +69,10 @@ export async function createSession(options: SessionOptions): Promise<SessionRes
 		settingsManager,
 		resourceLoader,
 		tools: ["read", "bash", "edit", "write"],
+		customTools,
 		sessionManager: SessionManager.inMemory(),
 	});
-	return { session: result.session, skillManager };
+	return { session: result.session, skillManager, mcpManager };
 }
 
 function convertConfigToSettings(config?: Config): Record<string, unknown> {

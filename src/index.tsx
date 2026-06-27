@@ -3,6 +3,7 @@ import { createCliRenderer } from "@opentui/core";
 import { createRoot } from "@opentui/react";
 import { createSession, type SessionResult } from "./agent/session.js";
 import { loadConfig } from "./config.js";
+import { loadMcpConfig } from "./mcp/config.js";
 import { App } from "./tui/App.js";
 
 interface ParsedArgs {
@@ -56,17 +57,18 @@ async function main(): Promise<void> {
 
 	const cwd = process.cwd();
 	const config = loadConfig(cwd);
+	const mcpConfig = loadMcpConfig(cwd);
 	const model = args.model ?? config.model;
 
 	let sessionResult: SessionResult;
 	try {
-		sessionResult = await createSession({ cwd, model, config });
+		sessionResult = await createSession({ cwd, model, config, mcpConfig });
 	} catch (err) {
 		console.error("创建 Agent 会话失败:", err instanceof Error ? err.message : String(err));
 		process.exit(1);
 	}
 
-	const { session, skillManager } = sessionResult;
+	const { session, skillManager, mcpManager } = sessionResult;
 
 	const renderer = await createCliRenderer({
 		exitOnCtrlC: false,
@@ -77,6 +79,7 @@ async function main(): Promise<void> {
 		<App
 			session={session}
 			skillManager={skillManager}
+			mcpManager={mcpManager}
 			model={model || "default"}
 			cwd={cwd}
 			config={config}

@@ -116,6 +116,15 @@ export function registerBuiltinCommands(): void {
 	});
 
 	commandRegistry.register({
+		name: "mcp",
+		description: "Open MCP server status panel",
+		usage: "/mcp",
+		handler: (_args: string, ctx: CommandContext) => {
+			ctx.setShowMcp(true);
+		},
+	});
+
+	commandRegistry.register({
 		name: "help",
 		description: "Show available commands",
 		usage: "/help",
