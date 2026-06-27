@@ -5,6 +5,7 @@ import type { AgentSession, AgentSessionRuntime } from "../agent/session.js";
 import { commandRegistry } from "../commands/registry.js";
 import type { Config } from "../config.js";
 import { createAssistantMessage, createUserMessage, type Message } from "../message.js";
+import { PollManager } from "../poll/manager.js";
 import { mapSdkMessagesToTui } from "../session/render.js";
 import type { SettingContext } from "../settings/types.js";
 import type { SkillManager } from "../skills/manager.js";
@@ -20,6 +21,7 @@ import { useSessionEvents } from "./hooks/useSessionEvents.js";
 import { useSessionPicker } from "./hooks/useSessionPicker.js";
 import { useStreamingBuffer } from "./hooks/useStreamingBuffer.js";
 import { type Mode, resolveKey } from "./keymap.js";
+import { getGitBranch } from "./utils/git.js";
 import { copySelection } from "./utils/selection.js";
 import { colors } from "./utils/theme.js";
 
@@ -56,6 +58,7 @@ export function App({ runtime, skillManager, model, cwd, config, initialResumeLi
 	const [configState, setConfigState] = useState<Config>(config ?? {});
 	const [copyFeedback, setCopyFeedback] = useState<{ ts: number } | null>(null);
 	const scrollRef = useRef<ScrollBoxRenderable>(null);
+	const pollManagerRef = useRef(new PollManager());
 
 	// ── Custom hooks ──────────────────────────────────────────────
 	const streaming = useStreamingBuffer();
@@ -92,6 +95,13 @@ export function App({ runtime, skillManager, model, cwd, config, initialResumeLi
 			registerBuiltinCommands();
 		}
 	}, []);
+
+	useEffect(() => {
+		pollManagerRef.current.register("git-branch", () => getGitBranch(cwd), 3000);
+		return () => {
+			pollManagerRef.current.unregister("git-branch");
+		};
+	}, [cwd]);
 
 	useEffect(() => {
 		runtime.setRebindSession(async (newSession) => {
@@ -309,6 +319,7 @@ export function App({ runtime, skillManager, model, cwd, config, initialResumeLi
 					disabled={isRunning}
 					mode={showSettings || picker.showSessionPicker ? "normal" : mode}
 					cwd={cwd}
+					pollManager={pollManagerRef.current}
 					onSubmit={handlePrompt}
 				/>
 				<StatusBar
