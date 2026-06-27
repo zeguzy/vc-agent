@@ -1,11 +1,6 @@
 import { type CommandContext, commandRegistry } from "../commands/registry.js";
 import { writeConfig } from "../config.js";
-import {
-	formatSessionList,
-	listSessions,
-	resolveSessionRef,
-	type SessionInfo,
-} from "../session/list.js";
+import { listSessions, resolveSessionRef, type SessionInfo } from "../session/list.js";
 import { modelSetting } from "../settings/model.js";
 import { thinkingLevelSetting } from "../settings/thinking-level.js";
 import { createAssistantMessage, createUserMessage } from "../store.js";
@@ -24,11 +19,7 @@ async function refreshSessions(ctx: CommandContext): Promise<SessionInfo[]> {
 async function showSessions(ctx: CommandContext): Promise<void> {
 	try {
 		const sessions = await refreshSessions(ctx);
-		const currentId = ctx.runtime.session.sessionId;
-		ctx.setMessages((prev) => [
-			...prev,
-			createAssistantMessage(formatSessionList(sessions, currentId)),
-		]);
+		ctx.openSessionPicker(sessions);
 	} catch (err) {
 		ctx.setMessages((prev) => [
 			...prev,

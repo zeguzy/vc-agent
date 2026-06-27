@@ -18,6 +18,14 @@ export async function listSessions(
 	return SessionManager.list(cwd, sessionDir);
 }
 
+export function renameSessionFile(
+	path: string,
+	name: string,
+	sessionDir: string = resolveSessionDir(),
+): void {
+	const manager = SessionManager.open(path, sessionDir);
+	manager.appendSessionInfo(name);
+}
 /**
  * Resolve a `--session <path|id>` / `/resume <ref>` reference against a list.
  *

@@ -5,6 +5,7 @@ import type { AgentSession, AgentSessionEvent, AgentSessionRuntime } from "../ag
 import { extractAssistantContent } from "../agent/session.js";
 import { commandRegistry } from "../commands/registry.js";
 import type { Config } from "../config.js";
+import { renameSessionFile, type SessionInfo } from "../session/list.js";
 import { mapSdkMessagesToTui } from "../session/render.js";
 import type { SettingContext } from "../settings/types.js";
 import type { SkillManager } from "../skills/manager.js";
@@ -18,6 +19,7 @@ import {
 import { registerBuiltinCommands } from "./commands.js";
 import { InputBox } from "./components/InputBox.js";
 import { MessageList } from "./components/MessageList.js";
+import { SessionPicker } from "./components/SessionPicker.js";
 import { SettingsPanel } from "./components/SettingsPanel.js";
 import { StatusBar } from "./components/StatusBar.js";
 import { type Mode, resolveKey } from "./keymap.js";
@@ -57,6 +59,8 @@ export function App({ runtime, skillManager, model, cwd, config, initialResumeLi
 		config?.display?.contextMode ?? "compact",
 	);
 	const [showSettings, setShowSettings] = useState(false);
+	const [showSessionPicker, setShowSessionPicker] = useState(false);
+	const [pickerSessions, setPickerSessions] = useState<SessionInfo[]>([]);
 	const [configState, setConfigState] = useState<Config>(config ?? {});
 	const [copyFeedback, setCopyFeedback] = useState<{ ts: number } | null>(null);
 	const lastCtrlCRef = useRef<number>(0);
@@ -99,6 +103,8 @@ export function App({ runtime, skillManager, model, cwd, config, initialResumeLi
 	messagesRef.current = messages;
 	const showSettingsRef = useRef(showSettings);
 	showSettingsRef.current = showSettings;
+	const showSessionPickerRef = useRef(showSessionPicker);
+	showSessionPickerRef.current = showSessionPicker;
 	const configRef = useRef(configState);
 	configRef.current = configState;
 	const resumeListDoneRef = useRef(false);
@@ -115,6 +121,48 @@ export function App({ runtime, skillManager, model, cwd, config, initialResumeLi
 		cwd,
 	};
 
+	const openSessionPicker = useCallback((sessions: SessionInfo[]) => {
+		setPickerSessions(sessions);
+		setShowSessionPicker(true);
+	}, []);
+
+	const handlePickerSelect = useCallback(
+		async (path: string) => {
+			setShowSessionPicker(false);
+			try {
+				await runtime.switchSession(path);
+			} catch (err) {
+				setMessages((prev) => [
+					...prev,
+					createAssistantMessage(
+						`切换会话失败: ${err instanceof Error ? err.message : String(err)}`,
+					),
+				]);
+			}
+		},
+		[runtime],
+	);
+
+	const closeSessionPicker = useCallback(() => setShowSessionPicker(false), []);
+
+	const handlePickerRename = useCallback(
+		(path: string, name: string) => {
+			try {
+				renameSessionFile(path, name);
+				if (path === runtime.session.sessionFile) {
+					runtime.session.setSessionName(name);
+				}
+				setPickerSessions((prev) => prev.map((s) => (s.path === path ? { ...s, name } : s)));
+			} catch (err) {
+				setMessages((prev) => [
+					...prev,
+					createAssistantMessage(`重命名失败: ${err instanceof Error ? err.message : String(err)}`),
+				]);
+			}
+		},
+		[runtime],
+	);
+
 	const buildCommandCtx = useCallback(() => {
 		return {
 			session,
@@ -130,8 +178,9 @@ export function App({ runtime, skillManager, model, cwd, config, initialResumeLi
 			setShowSettings,
 			getConfig: () => configRef.current,
 			setConfig: setConfigState,
+			openSessionPicker,
 		};
-	}, [session, runtime, skillManager, cwd]);
+	}, [session, runtime, skillManager, cwd, openSessionPicker]);
 
 	useEffect(() => {
 		const unsubscribe = session.subscribe((event: AgentSessionEvent) => {
@@ -305,7 +354,7 @@ export function App({ runtime, skillManager, model, cwd, config, initialResumeLi
 		}
 
 		const action = resolveKey(modeRef.current, key);
-		if (showSettingsRef.current) {
+		if (showSettingsRef.current || showSessionPickerRef.current) {
 			if (action === "ctrlC") {
 				const now = Date.now();
 				if (now - lastCtrlCRef.current < 1000) process.exit(0);
@@ -389,6 +438,15 @@ export function App({ runtime, skillManager, model, cwd, config, initialResumeLi
 					onClose={() => setShowSettings(false)}
 				/>
 			)}
+			{showSessionPicker && (
+				<SessionPicker
+					sessions={pickerSessions}
+					currentId={session.sessionId}
+					onSelect={handlePickerSelect}
+					onClose={closeSessionPicker}
+					onRename={handlePickerRename}
+				/>
+			)}
 			<box
 				flexDirection="column"
 				flexShrink={0}
@@ -399,7 +457,7 @@ export function App({ runtime, skillManager, model, cwd, config, initialResumeLi
 			>
 				<InputBox
 					disabled={isRunning}
-					mode={showSettings ? "normal" : mode}
+					mode={showSettings || showSessionPicker ? "normal" : mode}
 					cwd={cwd}
 					onSubmit={handlePrompt}
 				/>

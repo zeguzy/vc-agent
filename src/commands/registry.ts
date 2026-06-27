@@ -1,5 +1,6 @@
 import type { AgentSession, AgentSessionRuntime } from "../agent/session.js";
 import type { Config } from "../config.js";
+import type { SessionInfo } from "../session/list.js";
 import type { SkillManager } from "../skills/manager.js";
 
 /**
@@ -30,6 +31,7 @@ export interface CommandContext {
 	setShowSettings: (v: boolean) => void;
 	getConfig: () => Config;
 	setConfig: (updater: Config | ((prev: Config) => Config)) => void;
+	openSessionPicker: (sessions: SessionInfo[]) => void;
 }
 
 /**
