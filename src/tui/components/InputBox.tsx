@@ -1,32 +1,21 @@
-import { existsSync, readFileSync } from "node:fs";
-import { join } from "node:path";
 import type { KeyEvent, KeyBinding as TextareaKeyBinding, TextareaRenderable } from "@opentui/core";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import type { PollManager } from "../../poll/manager.js";
+import { usePollState } from "../../poll/usePollState.js";
 import { matchCommands } from "../commands.js";
 
 import type { Mode } from "../keymap.js";
 import { colors, icons } from "../utils/theme.js";
 
-function getGitBranch(cwd: string): string {
-	try {
-		const gitHead = join(cwd, ".git", "HEAD");
-		if (!existsSync(gitHead)) return "";
-		const content = readFileSync(gitHead, "utf-8").trim();
-		const match = content.match(/^ref:\s*refs\/heads\/(.+)$/);
-		return match ? match[1] : "";
-	} catch {
-		return "";
-	}
-}
-
 interface InputBoxProps {
 	disabled: boolean;
 	mode: Mode;
 	cwd: string;
+	pollManager: PollManager;
 	onSubmit: (text: string) => void;
 }
 
-export function InputBox({ disabled, mode, cwd, onSubmit }: InputBoxProps) {
+export function InputBox({ disabled, mode, cwd, pollManager, onSubmit }: InputBoxProps) {
 	const [inputHeight, setInputHeight] = useState(2);
 	const [animationFrame, setAnimationFrame] = useState(0);
 	const [currentText, setCurrentText] = useState("");
@@ -34,6 +23,15 @@ export function InputBox({ disabled, mode, cwd, onSubmit }: InputBoxProps) {
 	const textareaRef = useRef<TextareaRenderable | null>(null);
 	const spinnerFrames = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
 	const workingSuffix = ["   ", ".  ", ".. ", "..."];
+
+	const branch = usePollState<string>("git-branch", pollManager);
+	const pathDisplay = useMemo(() => {
+		const parts = cwd
+			.replace(process.env.HOME ?? "", "~")
+			.split("/")
+			.filter(Boolean);
+		return parts.length > 3 ? `…/${parts[parts.length - 1]}` : parts.join("/");
+	}, [cwd]);
 
 	const isSlashMode = currentText.startsWith("/");
 	const suggestions = useMemo(
@@ -167,17 +165,7 @@ export function InputBox({ disabled, mode, cwd, onSubmit }: InputBoxProps) {
 				marginTop={disabled ? 1 : 0}
 			>
 				<text fg={colors.textMuted}>{icons.folder} </text>
-				<text fg={colors.textMuted}>
-					{(() => {
-						const parts = cwd
-							.replace(process.env.HOME ?? "", "~")
-							.split("/")
-							.filter(Boolean);
-						const pathStr = parts.length > 3 ? `…/${parts[parts.length - 1]}` : parts.join("/");
-						const branch = getGitBranch(cwd);
-						return branch ? `${pathStr}:${branch}` : pathStr;
-					})()}
-				</text>
+				<text fg={colors.textMuted}>{branch ? `${pathDisplay}:${branch}` : pathDisplay}</text>
 				<box flexGrow={1} />
 			</box>
 			<box
