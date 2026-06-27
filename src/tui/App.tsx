@@ -1,10 +1,11 @@
 import type { ScrollBoxRenderable } from "@opentui/core";
 import { useKeyboard, useRenderer } from "@opentui/react";
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { AgentSession, AgentSessionEvent } from "../agent/session.js";
+import type { AgentSession, AgentSessionEvent, AgentSessionRuntime } from "../agent/session.js";
 import { extractAssistantContent } from "../agent/session.js";
 import { commandRegistry } from "../commands/registry.js";
 import type { Config } from "../config.js";
+import { mapSdkMessagesToTui } from "../session/render.js";
 import type { SettingContext } from "../settings/types.js";
 import type { SkillManager } from "../skills/manager.js";
 import {
@@ -23,21 +24,27 @@ import { type Mode, resolveKey } from "./keymap.js";
 import { copySelection } from "./selection.js";
 import { colors } from "./theme.js";
 
+const WELCOME_MESSAGE = createAssistantMessage(
+	"Hi! I'm openagent, your terminal coding assistant. What can I help with?",
+);
+
 interface AppProps {
-	session: AgentSession;
+	runtime: AgentSessionRuntime;
 	skillManager: SkillManager;
 	model: string;
 	cwd: string;
 	config?: Config;
+	/** When true (CLI `-r/--resume`), open the session list once commands are registered. */
+	initialResumeList?: boolean;
 }
 
-export function App({ session, skillManager, model, cwd, config }: AppProps) {
+export function App({ runtime, skillManager, model, cwd, config, initialResumeList }: AppProps) {
 	const renderer = useRenderer();
-	const [messages, setMessages] = useState<Message[]>([
-		createAssistantMessage(
-			"Hi! I'm openagent, your terminal coding assistant. What can I help with?",
-		),
-	]);
+	const [session, setSession] = useState<AgentSession>(runtime.session);
+	const initialMapped = mapSdkMessagesToTui(runtime.session.messages);
+	const [messages, setMessages] = useState<Message[]>(
+		initialMapped.length > 0 ? initialMapped : [WELCOME_MESSAGE],
+	);
 	const [isRunning, setIsRunning] = useState(false);
 	const [mode, setMode] = useState<Mode>("insert");
 	const [thinkingCollapsed, setThinkingCollapsed] = useState(config?.thinking?.collapsed ?? false);
@@ -66,6 +73,24 @@ export function App({ session, skillManager, model, cwd, config }: AppProps) {
 		}
 	}, []);
 
+	// Register the runtime rebind hook once: on every switchSession/newSession
+	// the SDK calls this with the new AgentSession. We update the session state
+	// (which re-runs the subscribe effect below) and re-render history.
+	useEffect(() => {
+		runtime.setRebindSession(async (newSession) => {
+			const mapped = mapSdkMessagesToTui(newSession.messages);
+			setSession(newSession);
+			setMessages(mapped.length > 0 ? mapped : [WELCOME_MESSAGE]);
+			setIsRunning(false);
+			toolCallIdToMsgId.current.clear();
+			setContextUsage({ tokens: null, window: null, percent: null });
+			setTimeout(() => {
+				const sb = scrollRef.current;
+				if (sb) sb.scrollTo(sb.scrollHeight);
+			}, 0);
+		});
+	}, [runtime]);
+
 	const modeRef = useRef<Mode>("insert");
 	modeRef.current = mode;
 	const isRunningRef = useRef(false);
@@ -76,6 +101,7 @@ export function App({ session, skillManager, model, cwd, config }: AppProps) {
 	showSettingsRef.current = showSettings;
 	const configRef = useRef(configState);
 	configRef.current = configState;
+	const resumeListDoneRef = useRef(false);
 
 	const settingCtx: SettingContext = {
 		session,
@@ -88,6 +114,24 @@ export function App({ session, skillManager, model, cwd, config }: AppProps) {
 		},
 		cwd,
 	};
+
+	const buildCommandCtx = useCallback(() => {
+		return {
+			session,
+			runtime,
+			skillManager,
+			messages: messagesRef.current,
+			setMessages,
+			setIsRunning,
+			setContextUsage,
+			setThinkingCollapsed,
+			setContextDisplay,
+			cwd,
+			setShowSettings,
+			getConfig: () => configRef.current,
+			setConfig: setConfigState,
+		};
+	}, [session, runtime, skillManager, cwd]);
 
 	useEffect(() => {
 		const unsubscribe = session.subscribe((event: AgentSessionEvent) => {
@@ -199,28 +243,21 @@ export function App({ session, skillManager, model, cwd, config }: AppProps) {
 		return unsubscribe;
 	}, [session]);
 
+	// `-r/--resume`: open the session list once after commands are registered.
+	useEffect(() => {
+		if (!initialResumeList || resumeListDoneRef.current) return;
+		if (commandRegistry.size === 0) return;
+		resumeListDoneRef.current = true;
+		commandRegistry.execute("sessions", "", buildCommandCtx()).catch(() => {});
+	}, [initialResumeList, buildCommandCtx]);
+
 	const handlePrompt = useCallback(
 		(text: string) => {
 			if (text.startsWith("/")) {
 				const [cmd, ...args] = text.slice(1).split(/\s+/);
 				const argStr = args.join(" ").trim();
 
-				const ctx = {
-					session,
-					skillManager,
-					messages: messagesRef.current,
-					setMessages,
-					setIsRunning,
-					setContextUsage,
-					setThinkingCollapsed,
-					setContextDisplay,
-					cwd,
-					setShowSettings,
-					getConfig: () => configRef.current,
-					setConfig: setConfigState,
-				};
-
-				commandRegistry.execute(cmd, argStr, ctx).then((handled) => {
+				commandRegistry.execute(cmd, argStr, buildCommandCtx()).then((handled) => {
 					if (!handled) {
 						setMessages((prev) => [
 							...prev,
@@ -253,7 +290,7 @@ export function App({ session, skillManager, model, cwd, config }: AppProps) {
 				setIsRunning(false);
 			});
 		},
-		[session, skillManager, cwd],
+		[session, buildCommandCtx],
 	);
 
 	useKeyboard((key) => {

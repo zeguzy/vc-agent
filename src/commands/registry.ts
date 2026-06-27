@@ -1,4 +1,4 @@
-import type { AgentSession } from "../agent/session.js";
+import type { AgentSession, AgentSessionRuntime } from "../agent/session.js";
 import type { Config } from "../config.js";
 import type { SkillManager } from "../skills/manager.js";
 
@@ -8,6 +8,7 @@ import type { SkillManager } from "../skills/manager.js";
  */
 export interface CommandContext {
 	session: AgentSession;
+	runtime: AgentSessionRuntime;
 	skillManager: SkillManager;
 	messages: import("../store.js").Message[];
 	setMessages: (

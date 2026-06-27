@@ -1,14 +1,33 @@
 import {
 	type AgentSession,
 	type AgentSessionEvent,
+	type AgentSessionRuntime,
+	type AgentSessionServices,
 	AuthStorage,
+	type CreateAgentSessionRuntimeFactory,
 	createAgentSession,
+	createAgentSessionRuntime,
 	ModelRegistry,
 	SessionManager,
 	SettingsManager,
 } from "@earendil-works/pi-coding-agent";
+import { existsSync } from "fs";
+import { homedir } from "os";
+import { join } from "path";
 import type { Config, ProviderConfig } from "../config.js";
+import { listSessions, resolveSessionRef } from "../session/list.js";
+import { resolveSessionDir } from "../session/storage.js";
 import { SkillManager } from "../skills/manager.js";
+
+const BUILTIN_TOOLS = ["read", "bash", "edit", "write"];
+
+/**
+ * How the initial SessionManager should be constructed at startup.
+ *
+ * `-r/--resume` is handled at the CLI layer (mode `new` + a flag that opens
+ * the list after TUI mount), so it has no entry here.
+ */
+export type SessionMode = "new" | "continue" | "session";
 
 export interface SessionOptions {
 	cwd: string;
@@ -21,12 +40,51 @@ export interface SessionResult {
 	skillManager: SkillManager;
 }
 
-export async function createSession(options: SessionOptions): Promise<SessionResult> {
+export interface RuntimeOptions {
+	cwd: string;
+	/** LLM model id (overrides config.model) */
+	model?: string;
+	config?: Config;
+	/** SessionManager construction mode. Defaults to "new". */
+	mode?: SessionMode;
+	/** `<path|id>` reference for mode "session". */
+	sessionRef?: string;
+	/** Optional display name applied via setSessionName after runtime creation. */
+	name?: string;
+}
+
+export interface RuntimeResult {
+	runtime: AgentSessionRuntime;
+	skillManager: SkillManager;
+}
+
+/**
+ * Initialized cwd-bound services shared across session replacements.
+ *
+ * openagent runs with a single fixed cwd/config per process, so these are
+ * created once and reused by the runtime factory on every switchSession /
+ * newSession (the SDK factory contract allows this; only the SessionManager
+ * differs across switches).
+ */
+interface InitializedServices {
+	authStorage: AuthStorage;
+	modelRegistry: ModelRegistry;
+	settingsManager: SettingsManager;
+	skillManager: SkillManager;
+	resourceLoader: Awaited<ReturnType<SkillManager["initialize"]>>;
+	model: ReturnType<typeof resolveModel>;
+}
+
+async function initServices(opts: {
+	cwd: string;
+	config?: Config;
+	modelStr?: string;
+}): Promise<InitializedServices> {
 	const authStorage = AuthStorage.inMemory();
 	const modelRegistry = ModelRegistry.inMemory(authStorage);
 
-	if (options.config?.providers) {
-		for (const [name, providerConfig] of Object.entries(options.config.providers)) {
+	if (opts.config?.providers) {
+		for (const [name, providerConfig] of Object.entries(opts.config.providers)) {
 			if (providerConfig.apiKey) {
 				authStorage.setRuntimeApiKey(name, providerConfig.apiKey);
 			}
@@ -36,30 +94,120 @@ export async function createSession(options: SessionOptions): Promise<SessionRes
 		}
 	}
 
-	const modelStr = options.model ?? options.config?.model;
-	const model = resolveModel(modelRegistry, modelStr);
+	const model = resolveModel(modelRegistry, opts.modelStr);
+	const settingsManager = SettingsManager.inMemory(convertConfigToSettings(opts.config));
 
-	const settingsManager = SettingsManager.inMemory(convertConfigToSettings(options.config));
-
-	// Initialize SkillManager with DefaultResourceLoader for skill discovery
 	const skillManager = new SkillManager();
 	const resourceLoader = await skillManager.initialize(
-		options.cwd,
-		options.config ?? {},
+		opts.cwd,
+		opts.config ?? {},
 		settingsManager,
 	);
 
+	return { authStorage, modelRegistry, settingsManager, skillManager, resourceLoader, model };
+}
+
+/**
+ * Legacy entry: creates an in-memory (non-persistent) session.
+ *
+ * Kept for backwards compatibility; the runtime path (`createRuntime`) is the
+ * default since session-management.
+ */
+export async function createSession(options: SessionOptions): Promise<SessionResult> {
+	const svc = await initServices({
+		cwd: options.cwd,
+		config: options.config,
+		modelStr: options.model ?? options.config?.model,
+	});
 	const result = await createAgentSession({
 		cwd: options.cwd,
-		authStorage,
-		modelRegistry,
-		...(model ? { model } : {}),
-		settingsManager,
-		resourceLoader,
-		tools: ["read", "bash", "edit", "write"],
+		authStorage: svc.authStorage,
+		modelRegistry: svc.modelRegistry,
+		...(svc.model ? { model: svc.model } : {}),
+		settingsManager: svc.settingsManager,
+		resourceLoader: svc.resourceLoader,
+		tools: BUILTIN_TOOLS,
 		sessionManager: SessionManager.inMemory(),
 	});
-	return { session: result.session, skillManager };
+	return { session: result.session, skillManager: svc.skillManager };
+}
+
+/**
+ * Create an AgentSessionRuntime bound to a persisted SessionManager.
+ *
+ * The runtime owns the current session and exposes `switchSession` /
+ * `newSession` for in-TUI hot-switching. App holds `runtime` (not `session`)
+ * and reads `runtime.session` for the current session.
+ */
+export async function createRuntime(options: RuntimeOptions): Promise<RuntimeResult> {
+	const cwd = options.cwd;
+	const sessionDir = resolveSessionDir();
+	const sessionManager = await buildSessionManager(options, sessionDir);
+	const agentDir = join(homedir(), ".config", "openagent");
+
+	const svc = await initServices({
+		cwd,
+		config: options.config,
+		modelStr: options.model ?? options.config?.model,
+	});
+
+	const factory: CreateAgentSessionRuntimeFactory = async ({
+		cwd: fCwd,
+		agentDir: fAgentDir,
+		sessionManager: fSessionManager,
+	}) => {
+		const result = await createAgentSession({
+			cwd: fCwd,
+			authStorage: svc.authStorage,
+			modelRegistry: svc.modelRegistry,
+			...(svc.model ? { model: svc.model } : {}),
+			settingsManager: svc.settingsManager,
+			resourceLoader: svc.resourceLoader,
+			tools: BUILTIN_TOOLS,
+			sessionManager: fSessionManager,
+		});
+		const services: AgentSessionServices = {
+			cwd: fCwd,
+			agentDir: fAgentDir,
+			authStorage: svc.authStorage,
+			settingsManager: svc.settingsManager,
+			modelRegistry: svc.modelRegistry,
+			resourceLoader: svc.resourceLoader,
+			diagnostics: [],
+		};
+		return { ...result, services, diagnostics: [] };
+	};
+
+	const runtime = await createAgentSessionRuntime(factory, { cwd, agentDir, sessionManager });
+
+	if (options.name) {
+		runtime.session.setSessionName(options.name);
+	}
+
+	return { runtime, skillManager: svc.skillManager };
+}
+
+async function buildSessionManager(
+	options: RuntimeOptions,
+	sessionDir: string,
+): Promise<SessionManager> {
+	const cwd = options.cwd;
+	const mode = options.mode ?? "new";
+	switch (mode) {
+		case "new":
+			return SessionManager.create(cwd, sessionDir);
+		case "continue":
+			return SessionManager.continueRecent(cwd, sessionDir);
+		case "session": {
+			const ref = options.sessionRef?.trim();
+			if (!ref) throw new Error("--session 需要指定 <path|id>");
+			if (existsSync(ref)) return SessionManager.open(ref, sessionDir);
+			const sessions = await listSessions(cwd, sessionDir);
+			const path = resolveSessionRef(sessions, ref);
+			if (!path) throw new Error(`未找到会话: ${ref}`);
+			return SessionManager.open(path, sessionDir);
+		}
+	}
 }
 
 function convertConfigToSettings(config?: Config): Record<string, unknown> {
@@ -133,4 +281,4 @@ export function summarizeArgs(args: unknown, maxLen = 50): string {
 	return `${str.slice(0, maxLen - 3)}...`;
 }
 
-export type { AgentSession, AgentSessionEvent };
+export type { AgentSession, AgentSessionEvent, AgentSessionRuntime };

@@ -1,31 +1,4 @@
-# agent-session Specification
-
-## Purpose
-定义 Agent 会话的创建过程，包括 Provider 注册、Model 解析、Skill 自动发现和 ResourceLoader 配置。
-## Requirements
-### Requirement: Skill 自动发现
-系统 SHALL 在创建 Agent 会话时自动扫描并加载技能（Skills），将可自动调用的技能注入到系统提示中。
-
-#### Scenario: 全局技能扫描
-- **WHEN** 系统启动
-- **THEN** 创建 `DefaultResourceLoader`，配置 `agentDir=~/.config/openagent`
-- **AND** 自动扫描 `~/.config/openagent/skills/` 目录下的 SKILL.md 文件
-
-#### Scenario: 项目技能扫描
-- **WHEN** 系统启动
-- **THEN** 自动扫描 `<cwd>/.openagent/skills/` 目录下的 SKILL.md 文件
-
-#### Scenario: 额外技能路径
-- **WHEN** `config.skills.paths` 配置了额外的路径
-- **THEN** 这些路径 SHALL 被加入 `additionalSkillPaths` 传入 `DefaultResourceLoader`
-
-#### Scenario: 禁用自动加载
-- **WHEN** `config.skills.autoLoad` 为 `false`
-- **THEN** 系统 SHALL 不扫描默认技能目录（但额外路径仍可配置）
-
-#### Scenario: 排除特定技能
-- **WHEN** `config.skills.disabled` 列出了技能名称
-- **THEN** 这些技能 SHALL 通过 `skillsOverride` 从加载结果中过滤掉
+## MODIFIED Requirements
 
 ### Requirement: 创建 Pi SDK Agent 会话
 系统 SHALL 调用 Pi SDK 的 `createAgentSessionRuntime()` 创建一个 `AgentSessionRuntime` 承载当前会话；runtime 内部的 factory SHALL 调用 `createAgentSession()` 配置内置工具（read、bash、edit、write），并使用纯内存 API（`AuthStorage.inMemory()`、`ModelRegistry.inMemory(authStorage)`、`SettingsManager.inMemory()`）创建 auth / model / settings 附属组件，不读取 Pi 磁盘配置；`SessionManager` SHALL 根据启动恢复意图选择模式（新建持久化 / continueRecent / open），不再固定 `inMemory()`。
@@ -33,7 +6,7 @@
 #### Scenario: 成功创建 runtime
 - **WHEN** 系统启动且检测到有效的 LLM API Key（如 `ANTHROPIC_API_KEY`）或 openagent config.json 中配置了 provider API key
 - **THEN** 根据启动模式构造 `SessionManager`：new → `SessionManager.create(cwd, sessionDir)`；continue → `SessionManager.continueRecent(cwd, sessionDir)`；resume/session → `SessionManager.list` 匹配 id/path 后 `open`（详见 session-persistence 规格）
-- **AND** 定义 runtime factory：接收 `{cwd, agentDir, sessionManager}`，内部用 `AuthStorage.inMemory()` / `ModelRegistry.inMemory(authStorage)` / `SettingsManager.inMemory(...)` 创建附属组件（不读取 Pi auth.json/models.json/settings.json），注入 `config.providers[name].apiKey`，初始化 SkillManager，调用 `createAgentSession({cwd, model, tools, settingsManager, authStorage, modelRegistry, sessionManager})`
+- **AND** 定义 runtime factory：接收 `{cwd, agentDir, sessionManager}`，内部用 `AuthStorage.inMemory()` / `ModelRegistry.inMemory(authStorage)` / `SettingsManager.inMemory(...)` 创建附属组件（不读取 Pi auth.json/models.json/settings.json），注入 `config.providers[name].apiKey`，初始化 SkillManager/McpManager，调用 `createAgentSession({cwd, model, tools, settingsManager, authStorage, modelRegistry, sessionManager})`
 - **AND** 调用 `createAgentSessionRuntime(factory, {cwd, agentDir, sessionManager})` 返回 `runtime`，SDK 自动检测并恢复历史上下文（若 sessionManager 含历史数据）
 - **AND** `createRuntime` 返回 `runtime`（而非裸 `session`），调用方（`index.tsx` / App）通过 `runtime.session` 访问当前会话
 
@@ -58,31 +31,7 @@
 - **WHEN** 系统创建或恢复会话
 - **THEN** `SessionManager` 的 `sessionDir` SHALL 指向 `~/.config/openagent/sessions/`，会话 JSONL 文件 SHALL NOT 写入 `~/.pi/agent/sessions/`
 
-### Requirement: Pi 事件流映射为 React State
-系统 SHALL 订阅 Pi SDK 的事件系统，将 Agent 生命周期事件映射为 React state 更新，驱动 OpenTUI 组件重新渲染。
-
-#### Scenario: 流式文本输出
-- **WHEN** 收到 `message_update` 事件且包含 `text_delta`
-- **THEN** 将文本增量追加到当前 Agent 消息的 state，触发 MessageList 组件重新渲染
-
-#### Scenario: 工具调用开始
-- **WHEN** 收到 `tool_execution_start` 事件
-- **THEN** 在消息 state 中添加工具调用消息（`{ type: "tool", name, args, status: "running" }`）
-
-#### Scenario: 工具调用完成
-- **WHEN** 收到 `tool_execution_end` 事件
-- **THEN** 更新对应工具消息的 status 为 "done"，记录结果摘要
-
-#### Scenario: Agent 回合结束
-- **WHEN** 收到 `agent_end` 事件
-- **THEN** 设置 `isRunning` state 为 false，恢复输入框交互
-
-### Requirement: 发送用户输入到 Agent
-系统 SHALL 通过 `session.prompt(text)` 将用户输入发送到 Agent，触发新一轮 Agent 循环。
-
-#### Scenario: 提交用户输入
-- **WHEN** 用户在输入行按 Enter 键
-- **THEN** 系统调用 `session.prompt(inputText)`，等待 Agent 响应期间禁用输入
+## ADDED Requirements
 
 ### Requirement: TUI 内运行时会话热切换
 系统 SHALL 通过 `AgentSessionRuntime` 支持 TUI 内不重启进程切换会话：`/sessions` 列表选中、`/resume`、`/new` 调用 `runtime.switchSession(path)` / `runtime.newSession()`，SDK 内部完成旧会话 teardown + 新会话创建；App SHALL 通过 `runtime.setRebindSession` 注册重绑钩子响应切换。
@@ -135,4 +84,3 @@
 #### Scenario: 未知内容降级
 - **WHEN** 历史消息含无法识别的内容块类型
 - **THEN** 系统 SHALL 降级为纯文本兜底渲染，不崩溃
-
