@@ -19,7 +19,7 @@ import { listSessions, resolveSessionRef } from "../session/list.js";
 import { resolveSessionDir } from "../session/storage.js";
 import { SkillManager } from "../skills/manager.js";
 
-const BUILTIN_TOOLS = ["read", "bash", "edit", "write"];
+const BUILTIN_TOOLS = ["read", "bash", "edit", "write", "grep", "find"];
 
 /**
  * How the initial SessionManager should be constructed at startup.

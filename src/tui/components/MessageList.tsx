@@ -138,6 +138,30 @@ function formatToolDetail(toolName: string, args: unknown): { label: string; lin
 			}
 			return { label: "write", lines };
 		}
+		case "grep": {
+			const pattern = String(a.pattern ?? "");
+			const dir = a.path ? String(a.path) : undefined;
+			const glob = a.glob ? String(a.glob) : undefined;
+			const flags: string[] = [];
+			if (a.ignoreCase) flags.push("-i");
+			if (a.literal) flags.push("-F");
+			if (a.context != null) flags.push(`-C${a.context}`);
+			const lines: string[] = [];
+			if (dir) lines.push(dir);
+			const flagStr = flags.length > 0 ? ` ${flags.join(" ")}` : "";
+			lines.push(`/${pattern}/${flagStr}`);
+			if (glob) lines.push(`glob: ${glob}`);
+			return { label: "grep", lines };
+		}
+		case "find": {
+			const pattern = String(a.pattern ?? "");
+			const dir = a.path ? String(a.path) : undefined;
+			const lines: string[] = [];
+			if (dir) lines.push(dir);
+			lines.push(pattern);
+			if (a.limit != null) lines.push(`limit: ${a.limit}`);
+			return { label: "find", lines };
+		}
 		default:
 			return { label: toolName, lines: [] };
 	}
