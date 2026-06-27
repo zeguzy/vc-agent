@@ -138,6 +138,50 @@ function formatToolDetail(toolName: string, args: unknown): { label: string; lin
 			}
 			return { label: "write", lines };
 		}
+		case "grep": {
+			const pattern = String(a.pattern ?? "");
+			const dir = a.path ? String(a.path) : undefined;
+			const glob = a.glob ? String(a.glob) : undefined;
+			const flags: string[] = [];
+			if (a.ignoreCase) flags.push("-i");
+			if (a.literal) flags.push("-F");
+			if (a.context != null) flags.push(`-C${a.context}`);
+			const lines: string[] = [];
+			if (dir) lines.push(dir);
+			const flagStr = flags.length > 0 ? ` ${flags.join(" ")}` : "";
+			lines.push(`/${pattern}/${flagStr}`);
+			if (glob) lines.push(`glob: ${glob}`);
+			return { label: "grep", lines };
+		}
+		case "find": {
+			const pattern = String(a.pattern ?? "");
+			const dir = a.path ? String(a.path) : undefined;
+			const lines: string[] = [];
+			if (dir) lines.push(dir);
+			lines.push(pattern);
+			if (a.limit != null) lines.push(`limit: ${a.limit}`);
+			return { label: "find", lines };
+		}
+		case "lsp_diagnostics": {
+			const fp = String(a.filePath ?? "");
+			const severity = a.severity ? String(a.severity) : undefined;
+			const lines = [fp];
+			if (severity && severity !== "all") lines.push(`severity: ${severity}`);
+			return { label: "lsp_diagnostics", lines };
+		}
+		case "lsp_goto_definition": {
+			const fp = String(a.filePath ?? "");
+			const lines: string[] = [fp];
+			if (a.line != null && a.character != null) lines.push(`${a.line}:${a.character}`);
+			return { label: "lsp_goto_definition", lines };
+		}
+		case "lsp_find_references": {
+			const fp = String(a.filePath ?? "");
+			const lines: string[] = [fp];
+			if (a.line != null && a.character != null) lines.push(`${a.line}:${a.character}`);
+			if (a.includeDeclaration === false) lines.push("excl. declaration");
+			return { label: "lsp_find_references", lines };
+		}
 		default:
 			return { label: toolName, lines: [] };
 	}

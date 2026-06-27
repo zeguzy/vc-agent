@@ -1,9 +1,14 @@
 import type { ScrollBoxRenderable } from "@opentui/core";
-import { useKeyboard } from "@opentui/react";
+import { useKeyboard, useRenderer } from "@opentui/react";
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { AgentSession, AgentSessionEvent } from "../agent/session.js";
+import type { AgentSession, AgentSessionEvent, AgentSessionRuntime } from "../agent/session.js";
 import { extractAssistantContent } from "../agent/session.js";
+import { commandRegistry } from "../commands/registry.js";
 import type { Config } from "../config.js";
+import { renameSessionFile, type SessionInfo } from "../session/list.js";
+import { mapSdkMessagesToTui } from "../session/render.js";
+import type { SettingContext } from "../settings/types.js";
+import type { SkillManager } from "../skills/manager.js";
 import {
 	createAssistantMessage,
 	createSeparator,
@@ -11,24 +16,37 @@ import {
 	createUserMessage,
 	type Message,
 } from "../store.js";
-import { buildHelpText } from "./commands.js";
+import { registerBuiltinCommands } from "./commands.js";
 import { InputBox } from "./components/InputBox.js";
 import { MessageList } from "./components/MessageList.js";
+import { SessionPicker } from "./components/SessionPicker.js";
+import { SettingsPanel } from "./components/SettingsPanel.js";
 import { StatusBar } from "./components/StatusBar.js";
 import { type Mode, resolveKey } from "./keymap.js";
+import { copySelection } from "./selection.js";
 import { colors } from "./theme.js";
 
+const WELCOME_MESSAGE = createAssistantMessage(
+	"Hi! I'm openagent, your terminal coding assistant. What can I help with?",
+);
+
 interface AppProps {
-	session: AgentSession;
+	runtime: AgentSessionRuntime;
+	skillManager: SkillManager;
 	model: string;
 	cwd: string;
 	config?: Config;
+	/** When true (CLI `-r/--resume`), open the session list once commands are registered. */
+	initialResumeList?: boolean;
 }
 
-export function App({ session, model, cwd, config }: AppProps) {
-	const [messages, setMessages] = useState<Message[]>([
-		createAssistantMessage("Hi, I'm openagent. I can read and edit files, and run commands."),
-	]);
+export function App({ runtime, skillManager, model, cwd, config, initialResumeList }: AppProps) {
+	const renderer = useRenderer();
+	const [session, setSession] = useState<AgentSession>(runtime.session);
+	const initialMapped = mapSdkMessagesToTui(runtime.session.messages);
+	const [messages, setMessages] = useState<Message[]>(
+		initialMapped.length > 0 ? initialMapped : [WELCOME_MESSAGE],
+	);
 	const [isRunning, setIsRunning] = useState(false);
 	const [mode, setMode] = useState<Mode>("insert");
 	const [thinkingCollapsed, setThinkingCollapsed] = useState(config?.thinking?.collapsed ?? false);
@@ -40,6 +58,11 @@ export function App({ session, model, cwd, config }: AppProps) {
 	const [contextDisplay, setContextDisplay] = useState<"compact" | "full">(
 		config?.display?.contextMode ?? "compact",
 	);
+	const [showSettings, setShowSettings] = useState(false);
+	const [showSessionPicker, setShowSessionPicker] = useState(false);
+	const [pickerSessions, setPickerSessions] = useState<SessionInfo[]>([]);
+	const [configState, setConfigState] = useState<Config>(config ?? {});
+	const [copyFeedback, setCopyFeedback] = useState<{ ts: number } | null>(null);
 	const lastCtrlCRef = useRef<number>(0);
 	const toolCallIdToMsgId = useRef<Map<string, string>>(new Map());
 	const scrollRef = useRef<ScrollBoxRenderable>(null);
@@ -47,10 +70,117 @@ export function App({ session, model, cwd, config }: AppProps) {
 	const pendingThinkingRef = useRef<string | null>(null);
 	const flushTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+	// Register built-in commands once on mount
+	useEffect(() => {
+		if (commandRegistry.size === 0) {
+			registerBuiltinCommands();
+		}
+	}, []);
+
+	// Register the runtime rebind hook once: on every switchSession/newSession
+	// the SDK calls this with the new AgentSession. We update the session state
+	// (which re-runs the subscribe effect below) and re-render history.
+	useEffect(() => {
+		runtime.setRebindSession(async (newSession) => {
+			const mapped = mapSdkMessagesToTui(newSession.messages);
+			setSession(newSession);
+			setMessages(mapped.length > 0 ? mapped : [WELCOME_MESSAGE]);
+			setIsRunning(false);
+			toolCallIdToMsgId.current.clear();
+			setContextUsage({ tokens: null, window: null, percent: null });
+			setTimeout(() => {
+				const sb = scrollRef.current;
+				if (sb) sb.scrollTo(sb.scrollHeight);
+			}, 0);
+		});
+	}, [runtime]);
+
 	const modeRef = useRef<Mode>("insert");
 	modeRef.current = mode;
 	const isRunningRef = useRef(false);
 	isRunningRef.current = isRunning;
+	const messagesRef = useRef(messages);
+	messagesRef.current = messages;
+	const showSettingsRef = useRef(showSettings);
+	showSettingsRef.current = showSettings;
+	const showSessionPickerRef = useRef(showSessionPicker);
+	showSessionPickerRef.current = showSessionPicker;
+	const configRef = useRef(configState);
+	configRef.current = configState;
+	const resumeListDoneRef = useRef(false);
+
+	const settingCtx: SettingContext = {
+		session,
+		settingsManager: session.settingsManager,
+		modelRegistry: session.modelRegistry,
+		authStorage: session.modelRegistry.authStorage,
+		setUi: {
+			thinkingCollapsed: setThinkingCollapsed,
+			contextDisplay: setContextDisplay,
+		},
+		cwd,
+	};
+
+	const openSessionPicker = useCallback((sessions: SessionInfo[]) => {
+		setPickerSessions(sessions);
+		setShowSessionPicker(true);
+	}, []);
+
+	const handlePickerSelect = useCallback(
+		async (path: string) => {
+			setShowSessionPicker(false);
+			try {
+				await runtime.switchSession(path);
+			} catch (err) {
+				setMessages((prev) => [
+					...prev,
+					createAssistantMessage(
+						`切换会话失败: ${err instanceof Error ? err.message : String(err)}`,
+					),
+				]);
+			}
+		},
+		[runtime],
+	);
+
+	const closeSessionPicker = useCallback(() => setShowSessionPicker(false), []);
+
+	const handlePickerRename = useCallback(
+		(path: string, name: string) => {
+			try {
+				renameSessionFile(path, name);
+				if (path === runtime.session.sessionFile) {
+					runtime.session.setSessionName(name);
+				}
+				setPickerSessions((prev) => prev.map((s) => (s.path === path ? { ...s, name } : s)));
+			} catch (err) {
+				setMessages((prev) => [
+					...prev,
+					createAssistantMessage(`重命名失败: ${err instanceof Error ? err.message : String(err)}`),
+				]);
+			}
+		},
+		[runtime],
+	);
+
+	const buildCommandCtx = useCallback(() => {
+		return {
+			session,
+			runtime,
+			skillManager,
+			messages: messagesRef.current,
+			setMessages,
+			setIsRunning,
+			setContextUsage,
+			setThinkingCollapsed,
+			setContextDisplay,
+			cwd,
+			setShowSettings,
+			getConfig: () => configRef.current,
+			setConfig: setConfigState,
+			openSessionPicker,
+		};
+	}, [session, runtime, skillManager, cwd, openSessionPicker]);
 
 	useEffect(() => {
 		const unsubscribe = session.subscribe((event: AgentSessionEvent) => {
@@ -162,58 +292,30 @@ export function App({ session, model, cwd, config }: AppProps) {
 		return unsubscribe;
 	}, [session]);
 
+	// `-r/--resume`: open the session list once after commands are registered.
+	useEffect(() => {
+		if (!initialResumeList || resumeListDoneRef.current) return;
+		if (commandRegistry.size === 0) return;
+		resumeListDoneRef.current = true;
+		commandRegistry.execute("sessions", "", buildCommandCtx()).catch(() => {});
+	}, [initialResumeList, buildCommandCtx]);
+
 	const handlePrompt = useCallback(
 		(text: string) => {
 			if (text.startsWith("/")) {
 				const [cmd, ...args] = text.slice(1).split(/\s+/);
 				const argStr = args.join(" ").trim();
-				switch (cmd) {
-					case "clear":
-						setMessages([]);
-						break;
-					case "compact":
-						setMessages((prev) => [...prev, createUserMessage(text)]);
-						session.compact(argStr || undefined).catch((err) => {
-							setMessages((prev) => [
-								...prev,
-								createAssistantMessage(
-									`Compaction failed: ${err instanceof Error ? err.message : String(err)}`,
-								),
-							]);
-						});
-						break;
-					case "model":
-						session
-							.cycleModel()
-							.then((result) => {
-								if (result) {
-									setMessages((prev) => [
-										...prev,
-										createAssistantMessage(`Switched to ${result.model.name}`),
-									]);
-								}
-							})
-							.catch(() => {});
-						break;
-					case "thinking":
-						session.cycleThinkingLevel();
-						break;
-					case "context":
-						setContextDisplay((d) => (d === "compact" ? "full" : "compact"));
-						break;
-					case "exit":
-						process.exit(0);
-					case "help":
-						setMessages((prev) => [...prev, createAssistantMessage(buildHelpText())]);
-						break;
-					default:
+
+				commandRegistry.execute(cmd, argStr, buildCommandCtx()).then((handled) => {
+					if (!handled) {
 						setMessages((prev) => [
 							...prev,
 							createAssistantMessage(
 								`Unknown command: /${cmd}. Type /help for available commands.`,
 							),
 						]);
-				}
+					}
+				});
 				return;
 			}
 			if (isRunningRef.current) {
@@ -237,11 +339,31 @@ export function App({ session, model, cwd, config }: AppProps) {
 				setIsRunning(false);
 			});
 		},
-		[session],
+		[session, buildCommandCtx],
 	);
 
 	useKeyboard((key) => {
+		if (key.name === "c" && (key.ctrl || key.super)) {
+			if (copySelection(renderer, () => setCopyFeedback({ ts: Date.now() }))) {
+				return;
+			}
+		}
+		if (key.name === "escape" && renderer?.getSelection()) {
+			renderer.clearSelection();
+			return;
+		}
+
 		const action = resolveKey(modeRef.current, key);
+		if (showSettingsRef.current || showSessionPickerRef.current) {
+			if (action === "ctrlC") {
+				const now = Date.now();
+				if (now - lastCtrlCRef.current < 1000) process.exit(0);
+				lastCtrlCRef.current = now;
+				if (isRunningRef.current) session.abort().catch(() => {});
+				else process.exit(0);
+			}
+			return;
+		}
 		if (!action) return;
 
 		switch (action) {
@@ -309,6 +431,22 @@ export function App({ session, model, cwd, config }: AppProps) {
 					</box>
 				</box>
 			)}
+			{showSettings && (
+				<SettingsPanel
+					config={configState}
+					ctx={settingCtx}
+					onClose={() => setShowSettings(false)}
+				/>
+			)}
+			{showSessionPicker && (
+				<SessionPicker
+					sessions={pickerSessions}
+					currentId={session.sessionId}
+					onSelect={handlePickerSelect}
+					onClose={closeSessionPicker}
+					onRename={handlePickerRename}
+				/>
+			)}
 			<box
 				flexDirection="column"
 				flexShrink={0}
@@ -317,7 +455,12 @@ export function App({ session, model, cwd, config }: AppProps) {
 				paddingTop={1}
 				paddingBottom={1}
 			>
-				<InputBox disabled={isRunning} mode={mode} cwd={cwd} onSubmit={handlePrompt} />
+				<InputBox
+					disabled={isRunning}
+					mode={showSettings || showSessionPicker ? "normal" : mode}
+					cwd={cwd}
+					onSubmit={handlePrompt}
+				/>
 				<StatusBar
 					model={session.model?.name || session.model?.id || model}
 					mode={mode}
@@ -325,6 +468,8 @@ export function App({ session, model, cwd, config }: AppProps) {
 					contextTokens={contextUsage.tokens}
 					contextWindow={contextUsage.window}
 					contextDisplay={contextDisplay}
+					copyFeedback={copyFeedback}
+					onCopyFeedbackClear={() => setCopyFeedback(null)}
 				/>
 			</box>
 		</box>

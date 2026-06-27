@@ -1,7 +1,7 @@
 schema: spec-driven
 
 context: |
-  项目：openagent — 基于 Pi SDK 的全屏 TUI 代码 Agent
+  项目：openagent — your terminal coding assistant
   技术栈：TypeScript + Bun + @earendil-works/pi-coding-agent + @opentui/core + @opentui/react + react
   运行时：Bun（原生 TypeScript，无需编译）
   

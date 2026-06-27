@@ -1,7 +1,6 @@
 # AGENTS.md
 
-openagent —— 基于 Pi SDK 的全屏 TUI 代码 Agent。
-技术栈：TypeScript（strict）+ Bun 运行时 + @earendil-works/pi-coding-agent + @opentui/react。
+openagent — your terminal coding assistant.
 项目上下文与设计理念见 `openspec/config.yaml`。
 
 ---
@@ -12,18 +11,32 @@ openagent —— 基于 Pi SDK 的全屏 TUI 代码 Agent。
 
 ### 标准流程
 
-1. **探索 / 澄清**（需求模糊时）—— `/openspec-explore`
-   先理清意图、调研可行性，输出探索结论再决定是否提案。
+> **铁律**：OpenSpec 流程**必须**跑在隔离 worktree 内。各 openspec skill 本身不含 worktree 逻辑，由本节强制约束——执行任何 `/openspec-*` 之前，先确认当前 worktree 与分支身份。建 worktree 后所有操作在 worktree 目录内进行，**主目录保持不动**，仅归档阶段做一次性合并。
 
-2. **提案**（动手前必做）—— `/openspec-propose`
+0. **前置门禁**（开新需求必做，在任何 `/openspec-*` 之前）
+   - **工作区干净**：`git status` 无未提交改动、无 untracked 的 `openspec/changes/`。有脏数据先提交、归档或询问用户，**不得带脏开新需求**。
+   - **无未归档 active change**：`openspec list` 若有未归档 change，先 `/openspec-archive-change` 或与用户确认它确实已完成；禁止把多个 change 叠在同一分支。
+   - **无残留 worktree**：`git worktree list` 不应有陈旧 worktree；有的话先 `git worktree remove` 清理。
+
+1. **建 worktree + 探索 / 澄清**（需求模糊时）—— `/openspec-explore`
+   先建 worktree 再探索（命名见下文「工作树隔离开发」）：
+   ```bash
+   git fetch origin
+   git worktree add ../vc-agent-<change> -b change/<change-id> origin/main
+   cd ../vc-agent-<change>
+   ```
+   在新 worktree 内理清意图、调研可行性，输出探索结论再决定是否提案。
+
+2. **提案**（动手前必做，必须在 worktree 内）—— `/openspec-propose`
    一次性生成：`proposal.md`（含 Non-goals）、`design.md`（ASCII 架构图 + 关键技术决策及理由）、`tasks.md`（每任务 ≤ 2h，按依赖顺序排列）、spec 增量（delta）。
    提案规则见 `openspec/config.yaml`：MVP ≤ 5 个核心功能，必须包含 Non-goals。
 
-3. **实现** —— `/openspec-apply-change`
+3. **实现**（必须在对应 worktree 内）—— `/openspec-apply-change`
+   开工前核对：当前目录 = `../vc-agent-<change>`、当前分支 = `change/<change-id>`；不符则**停手**并引导用户切到正确 worktree。
    按 `tasks.md` 顺序逐项执行并勾选，每完成一项跑 `bun run check` 验证。
 
-4. **归档** —— `/openspec-archive-change`
-   实现完成、`bun run check` 全绿后，归档到 `openspec/changes/archive/`。
+4. **归档 + 合并 + 清理** —— `/openspec-archive-change`
+   实现完成、`bun run check` 全绿后：先归档到 `openspec/changes/archive/`，再回主 worktree 合并并清理 worktree（命令见「工作树隔离开发 → 流程」）。
 
 ### 规格位置
 
@@ -40,6 +53,8 @@ openagent —— 基于 Pi SDK 的全屏 TUI 代码 Agent。
 ## 工作树隔离开发（git worktree）
 
 每个新需求（OpenSpec change 或独立任务）在独立的 git worktree 中开发，与 main 物理隔离。完成后合并回 main 并清理，不在本地堆积长期分支。
+
+> **何时触发**：见上文「标准流程」第 0（前置门禁）、1（创建）、4（合并+清理）步。本节给出 worktree 的具体命令与约定。
 
 ### 流程
 
@@ -67,6 +82,7 @@ openagent —— 基于 Pi SDK 的全屏 TUI 代码 Agent。
 
 ### 约定
 
+- **隔离铁律**：建 worktree 后，所有开发操作（`/openspec-*`、编辑代码、`bun run check`、`git commit`）**都在 worktree 目录内进行**，不得在主目录改动代码或跑 `openspec-*`。主目录（main 分支）在整个开发期间保持不动，**仅**在归档阶段做一次性 `git merge`（见「流程 → 合并」）。若发现自己回到了主目录，立即停手并切回 worktree。
 - 分支命名：`change/<openspec-change-id>`；无 OpenSpec 时用 `feat|fix|chore/<slug>`
 - 一个 worktree 对应一个需求，用完即删；禁止复用旧 worktree 跑新需求
 - 所有 worktree 共享同一 `.git`，不要重复 clone

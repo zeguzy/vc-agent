@@ -88,7 +88,52 @@
 #### Scenario: 命令执行
 - **WHEN** 用户在 `/` 开头时按 Enter
 - **THEN** 系统 SHALL 执行匹配的选中命令（通过 `matchCommands` 解析），不发送给 Agent
-- **AND** 支持的命令：`/clear`、`/compact`、`/model`、`/thinking`、`/context`、`/exit`、`/help`
+- **AND** 支持的命令：`/clear`、`/compact`、`/model`、`/thinking`、`/context`、`/exit`、`/help`、`/setting`
+
+#### Scenario: /setting 打开设置页面
+- **WHEN** 用户执行 `/setting` 命令
+- **THEN** 系统 SHALL 触发 App 顶层 `view` 切换为 `"settings"`，整屏渲染设置页面（详见 `settings` capability 的 "/setting 设置页面" requirement）
+
+### Requirement: CommandRegistry 命令注册表
+系统 SHALL 通过 `CommandRegistry` 类管理所有 slash 命令，支持运行时注册、注销和查询。
+
+#### Scenario: 注册表单例
+- **WHEN** 应用启动
+- **THEN** 系统 SHALL 通过 `registerBuiltinCommands()` 将内置命令注册到全局 `commandRegistry`
+- **AND** 注册表 SHALL 通过 `get(name)` / `getAll()` / `match(input)` / `execute(name, args, ctx)` 提供查询和分发
+
+#### Scenario: 阻止重复注册
+- **WHEN** 尝试注册已存在的命令名
+- **THEN** `register()` SHALL 抛出 `Error`，除非使用 `registerOrReplace()`
+
+#### Scenario: 命令上下文
+- **WHEN** 执行命令 handler
+- **THEN** handler 接收 `CommandContext` 对象，包含 `session`、`skillManager`、`messages`、`setMessages`、`setIsRunning` 等
+
+### Requirement: 技能管理命令
+系统 SHALL 提供 `/skills`、`/load-skill`、`/unload-skill` 三个命令来管理技能生命周期。
+
+#### Scenario: 列出技能
+- **WHEN** 用户执行 `/skills`
+- **THEN** 输出 SHALL 分为 auto（自动加载）和 dynamic（动态加载）两组，显示技能名称、描述、调用方式
+- **AND** 显示默认的全局和项目技能目录路径
+
+#### Scenario: 动态加载技能
+- **WHEN** 用户执行 `/load-skill <path>` 且路径存在有效的 SKILL.md
+- **THEN** 系统 SHALL 通过 `SkillManager.loadDynamicSkill(path)` 加载技能并注入到 ResourceLoader
+- **AND** 返回技能名称、描述和调用方式
+
+#### Scenario: 加载无效路径
+- **WHEN** 用户执行 `/load-skill <path>` 但路径不存在或不包含 SKILL.md
+- **THEN** 系统 SHALL 显示明确错误信息
+
+#### Scenario: 卸载动态技能
+- **WHEN** 用户执行 `/unload-skill <name>` 且该技能之前通过动态加载
+- **THEN** 系统 SHALL 从 `SkillManager` 动态列表中移除该技能
+
+#### Scenario: 卸载不存在的技能
+- **WHEN** 用户执行 `/unload-skill <name>` 但该技能不存在或不是动态加载的
+- **THEN** 系统 SHALL 显示提示信息，并建议用 `/skills` 查看
 
 ### Requirement: 中断处理
 系统 SHALL 通过 `useKeyboard` 监听 Ctrl+C，在不同状态下产生不同行为。
@@ -132,12 +177,15 @@
 
 #### Scenario: 命令列表动态生成
 - **WHEN** 渲染 `/help` 输出的命令列表部分
-- **THEN** 系统 SHALL 从 `slashCommands` 数组（`src/tui/commands.ts`）动态遍历生成，而非硬编码字符串
-- **AND** 每条命令 SHALL 显示命令名与对应 description
+- **THEN** 系统 SHALL 从 `CommandRegistry（src/commands/registry.ts）` 动态遍历生成，而非硬编码字符串
+- **AND** 每条命令 SHALL 显示命令名、description 和 usage
 
 #### Scenario: 完整命令列表
 - **WHEN** 用户执行 `/help`
-- **THEN** 输出 SHALL 列出全部已注册命令：`/clear`、`/compact`、`/model`、`/thinking`、`/context`、`/exit`、`/help`
+- **THEN** 输出 SHALL 列出 `CommandRegistry.getAll()` 返回的全部已注册命令，包括：
+- 内置命令：`/clear`、`/compact`、`/model`、`/thinking`、`/context`、`/exit`、`/help`
+- 技能管理命令：`/skills`、`/load-skill`、`/unload-skill`
+- 后续由技能或插件动态注册的命令
 
 #### Scenario: 快捷键小节内容
 - **WHEN** 用户执行 `/help`
@@ -148,4 +196,49 @@
 #### Scenario: 帮助文案集中维护
 - **WHEN** 实现 `/help` 输出
 - **THEN** 拼接逻辑 SHALL 位于 `src/tui/commands.ts` 的导出函数（如 `buildHelpText()`），App.tsx 仅负责调用并包装为 assistant 消息
+
+### Requirement: 会话管理命令
+系统 SHALL 提供 `/sessions`、`/resume`、`/continue`、`/new`、`/name` 五个斜杠命令管理会话生命周期，复用现有 `CommandRegistry`；`/sessions`、`/resume`、`/new` 通过 `AgentSessionRuntime` 走运行时热切换（详见 agent-session 规格「TUI 内运行时会话热切换」）。
+
+#### Scenario: /sessions 列出会话（opencode 式 UX）
+- **WHEN** 用户执行 `/sessions`
+- **THEN** 系统 SHALL 调用 `runtime.session.sessionManager` 的 `SessionManager.list(cwd, sessionDir)` 获取当前 cwd 会话列表
+- **AND** 按时间分组渲染（Today / 日期分组头），每项显示：序号 · 相对时间 · 会话名称（若有，否则首条消息预览）· 消息数
+- **AND** 当前会话 SHALL 高亮标记
+- **AND** 提示用户用 `/resume <序号|id>` 切换
+
+#### Scenario: /sessions 空列表提示
+- **WHEN** 用户执行 `/sessions` 但当前 cwd 无任何会话
+- **THEN** 系统 SHALL 显示「当前目录暂无会话」提示
+
+#### Scenario: /resume 按序号或 id 热切换
+- **WHEN** 用户执行 `/resume <序号>` 或 `/resume <id>`
+- **THEN** 系统 SHALL 解析参数：纯数字视为最近一次 `/sessions` 列表的序号匹配 path，否则视为会话 id 匹配
+- **AND** 调用 `runtime.switchSession(<对应 path>)` 运行时热切换（不重启进程）
+- **AND** 切换成功后通过 rebind 钩子自动重绑事件订阅 + 重渲染历史消息
+
+#### Scenario: /resume 无参数等同 /sessions
+- **WHEN** 用户执行 `/resume`（无参数）
+- **THEN** 系统 SHALL 等同 `/sessions`，列出会话供选择
+
+#### Scenario: /resume 目标无效
+- **WHEN** 用户执行 `/resume <序号|id>` 但未匹配到任何会话
+- **THEN** 系统 SHALL 显示错误「未找到会话 <参数>」，并建议执行 `/sessions` 查看
+
+#### Scenario: /continue 为 /resume 别名
+- **WHEN** 用户执行 `/continue` 或 `/continue <序号|id>`
+- **THEN** 系统 SHALL 等同 `/resume` 的对应行为
+
+#### Scenario: /new 热切换到新会话
+- **WHEN** 用户执行 `/new`
+- **THEN** 系统 SHALL 调用 `runtime.newSession()` 创建新的持久化会话并运行时热切换
+- **AND** 切换成功后 rebind 钩子重绑 + 重渲染（新会话历史为空，显示欢迎消息）
+
+#### Scenario: /name 命名当前会话
+- **WHEN** 用户执行 `/name <text>`
+- **THEN** 系统 SHALL 调用 `runtime.session.setSessionName(<text>)`，SDK 自动持久化名称到当前会话 JSONL
+
+#### Scenario: /name 无参数显示当前名称
+- **WHEN** 用户执行 `/name`（无参数）
+- **THEN** 系统 SHALL 显示当前会话名称（若有）或「未命名」，并提示用法 `/name <text>`
 
