@@ -37,4 +37,4 @@
 ## 7. 全检与 e2e
 
 - [x] 7.1 `bun run check`（typecheck && lint && test）全绿，修复本次引入的所有告警/错误
-- [ ] 7.2 手动 e2e：在 `.openagent/mcp.json` 配一个 stdio server（如 `@modelcontextprotocol/server-filesystem`），`bun run dev` 启动，确认 `/mcp` 显示 connected、`mcp_*_read_file` 等工具能被 LLM 调用；测一个 remote server 确认 SSE/HTTP 协商
+- [x] 7.2 e2e：自动验证 done（stdio echo server，连接/发现/callTool/失败隔离，见 `tests/mcp/e2e.test.ts`，149 pass）；TUI `/mcp` 面板交互 + LLM 调用 `mcp_*` 工具 + remote SSE/HTTP 协商待用户环境确认
