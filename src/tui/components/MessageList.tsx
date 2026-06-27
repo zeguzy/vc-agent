@@ -162,6 +162,26 @@ function formatToolDetail(toolName: string, args: unknown): { label: string; lin
 			if (a.limit != null) lines.push(`limit: ${a.limit}`);
 			return { label: "find", lines };
 		}
+		case "lsp_diagnostics": {
+			const fp = String(a.filePath ?? "");
+			const severity = a.severity ? String(a.severity) : undefined;
+			const lines = [fp];
+			if (severity && severity !== "all") lines.push(`severity: ${severity}`);
+			return { label: "lsp_diagnostics", lines };
+		}
+		case "lsp_goto_definition": {
+			const fp = String(a.filePath ?? "");
+			const lines: string[] = [fp];
+			if (a.line != null && a.character != null) lines.push(`${a.line}:${a.character}`);
+			return { label: "lsp_goto_definition", lines };
+		}
+		case "lsp_find_references": {
+			const fp = String(a.filePath ?? "");
+			const lines: string[] = [fp];
+			if (a.line != null && a.character != null) lines.push(`${a.line}:${a.character}`);
+			if (a.includeDeclaration === false) lines.push("excl. declaration");
+			return { label: "lsp_find_references", lines };
+		}
 		default:
 			return { label: toolName, lines: [] };
 	}

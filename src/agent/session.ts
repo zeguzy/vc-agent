@@ -15,11 +15,14 @@ import { existsSync } from "fs";
 import { homedir } from "os";
 import { join } from "path";
 import type { Config, ProviderConfig } from "../config.js";
+import { createLspToolDefinitions, LspClient } from "../lsp/index.js";
 import { listSessions, resolveSessionRef } from "../session/list.js";
 import { resolveSessionDir } from "../session/storage.js";
 import { SkillManager } from "../skills/manager.js";
 
 const BUILTIN_TOOLS = ["read", "bash", "edit", "write", "grep", "find"];
+const LSP_TOOL_NAMES = ["lsp_diagnostics", "lsp_goto_definition", "lsp_find_references"];
+const ALL_TOOLS = [...BUILTIN_TOOLS, ...LSP_TOOL_NAMES];
 
 /**
  * How the initial SessionManager should be constructed at startup.
@@ -71,6 +74,7 @@ interface InitializedServices {
 	modelRegistry: ModelRegistry;
 	settingsManager: SettingsManager;
 	skillManager: SkillManager;
+	lspClient: LspClient;
 	resourceLoader: Awaited<ReturnType<SkillManager["initialize"]>>;
 	model: ReturnType<typeof resolveModel>;
 }
@@ -104,7 +108,25 @@ async function initServices(opts: {
 		settingsManager,
 	);
 
-	return { authStorage, modelRegistry, settingsManager, skillManager, resourceLoader, model };
+	const lspClient = new LspClient(opts.cwd);
+	const lspReady = await lspClient.init();
+	if (!lspReady) {
+		console.warn(
+			"LSP: typescript-language-server not available.",
+			lspClient.getInitError(),
+			"LSP tools will report errors when called.",
+		);
+	}
+
+	return {
+		authStorage,
+		modelRegistry,
+		settingsManager,
+		skillManager,
+		lspClient,
+		resourceLoader,
+		model,
+	};
 }
 
 /**
@@ -126,7 +148,8 @@ export async function createSession(options: SessionOptions): Promise<SessionRes
 		...(svc.model ? { model: svc.model } : {}),
 		settingsManager: svc.settingsManager,
 		resourceLoader: svc.resourceLoader,
-		tools: BUILTIN_TOOLS,
+		tools: ALL_TOOLS,
+		customTools: createLspToolDefinitions({ client: svc.lspClient }),
 		sessionManager: SessionManager.inMemory(),
 	});
 	return { session: result.session, skillManager: svc.skillManager };
@@ -163,7 +186,8 @@ export async function createRuntime(options: RuntimeOptions): Promise<RuntimeRes
 			...(svc.model ? { model: svc.model } : {}),
 			settingsManager: svc.settingsManager,
 			resourceLoader: svc.resourceLoader,
-			tools: BUILTIN_TOOLS,
+			tools: ALL_TOOLS,
+			customTools: createLspToolDefinitions({ client: svc.lspClient }),
 			sessionManager: fSessionManager,
 		});
 		const services: AgentSessionServices = {
