@@ -9,3 +9,6 @@ package-lock.json
 
 # opencode runtime artifacts
 .omo/
+
+node_modules
+!.gitignore
