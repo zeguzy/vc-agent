@@ -1,24 +1,15 @@
 import { type CommandContext, commandRegistry } from "../commands/registry.js";
 import { writeConfig } from "../config.js";
-import { listSessions, resolveSessionRef, type SessionInfo } from "../session/list.js";
+import { listSessions } from "../session/list.js";
 import { modelSetting } from "../settings/model.js";
-import { thinkingLevelSetting } from "../settings/thinking-level.js";
 import { createAssistantMessage, createUserMessage } from "../store.js";
 
 /**
  * Register all built-in slash commands into the global CommandRegistry.
  */
-/** Cached session list for `/resume <序号>` resolution (refreshed by /sessions). */
-let lastSessions: SessionInfo[] = [];
-
-async function refreshSessions(ctx: CommandContext): Promise<SessionInfo[]> {
-	lastSessions = await listSessions(ctx.cwd);
-	return lastSessions;
-}
-
 async function showSessions(ctx: CommandContext): Promise<void> {
 	try {
-		const sessions = await refreshSessions(ctx);
+		const sessions = await listSessions(ctx.cwd);
 		ctx.openSessionPicker(sessions);
 	} catch (err) {
 		ctx.setMessages((prev) => [
@@ -89,29 +80,6 @@ export function registerBuiltinCommands(): void {
 	});
 
 	commandRegistry.register({
-		name: "thinking",
-		description: "Cycle thinking level",
-		usage: "/thinking",
-		handler: (_args: string, ctx: CommandContext) => {
-			const newLevel = ctx.session.cycleThinkingLevel();
-			if (newLevel) {
-				const newConfig = thinkingLevelSetting.persist(ctx.getConfig(), newLevel);
-				ctx.setConfig(newConfig);
-				try {
-					writeConfig(ctx.cwd, newConfig, "project");
-				} catch (err) {
-					ctx.setMessages((prev) => [
-						...prev,
-						createAssistantMessage(
-							`Applied but not saved: ${err instanceof Error ? err.message : String(err)}`,
-						),
-					]);
-				}
-			}
-		},
-	});
-
-	commandRegistry.register({
 		name: "context",
 		description: "Toggle context display (compact/full)",
 		usage: "/context",
@@ -154,63 +122,6 @@ export function registerBuiltinCommands(): void {
 		description: "List sessions for the current directory",
 		usage: "/sessions",
 		handler: (_args, ctx) => showSessions(ctx),
-	});
-
-	commandRegistry.register({
-		name: "resume",
-		description: "Switch to a session by index/id (hot-swap); no arg lists sessions",
-		usage: "/resume [序号|id]",
-		handler: async (args, ctx) => {
-			const ref = args.trim();
-			if (!ref) {
-				await showSessions(ctx);
-				return;
-			}
-			if (lastSessions.length === 0) {
-				try {
-					await refreshSessions(ctx);
-				} catch (err) {
-					ctx.setMessages((prev) => [
-						...prev,
-						createAssistantMessage(
-							`加载会话列表失败: ${err instanceof Error ? err.message : String(err)}`,
-						),
-					]);
-					return;
-				}
-			}
-			const path = resolveSessionRef(lastSessions, ref);
-			if (!path) {
-				ctx.setMessages((prev) => [
-					...prev,
-					createAssistantMessage(`未找到会话: ${ref}\n用 /sessions 查看可用会话。`),
-				]);
-				return;
-			}
-			try {
-				const { cancelled } = await ctx.runtime.switchSession(path);
-				if (cancelled) {
-					ctx.setMessages((prev) => [...prev, createAssistantMessage("已取消切换会话。")]);
-				}
-			} catch (err) {
-				ctx.setMessages((prev) => [
-					...prev,
-					createAssistantMessage(
-						`切换会话失败: ${err instanceof Error ? err.message : String(err)}`,
-					),
-				]);
-			}
-		},
-	});
-
-	commandRegistry.register({
-		name: "continue",
-		description: "Alias for /resume",
-		usage: "/continue [序号|id]",
-		handler: async (args, ctx) => {
-			const resume = commandRegistry.get("resume");
-			if (resume) await resume.handler(args, ctx);
-		},
 	});
 
 	commandRegistry.register({
