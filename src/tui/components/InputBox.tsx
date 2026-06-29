@@ -13,13 +13,24 @@ interface InputBoxProps {
 	cwd: string;
 	pollManager: PollManager;
 	onSubmit: (text: string) => void;
+	sentMessages: string[];
 }
 
-export function InputBox({ disabled, mode, cwd, pollManager, onSubmit }: InputBoxProps) {
+export function InputBox({
+	disabled,
+	mode,
+	cwd,
+	pollManager,
+	onSubmit,
+	sentMessages,
+}: InputBoxProps) {
 	const [inputHeight, setInputHeight] = useState(2);
 	const [animationFrame, setAnimationFrame] = useState(0);
 	const [currentText, setCurrentText] = useState("");
 	const [selectedIndex, setSelectedIndex] = useState(0);
+	const [historyIndex, setHistoryIndex] = useState(-1);
+	const [savedDraft, setSavedDraft] = useState<string | null>(null);
+	const isHistoryNavRef = useRef(false);
 	const textareaRef = useRef<TextareaRenderable | null>(null);
 	const spinnerFrames = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
 	const workingSuffix = ["   ", ".  ", ".. ", "..."];
@@ -82,7 +93,11 @@ export function InputBox({ disabled, mode, cwd, pollManager, onSubmit }: InputBo
 		const text = syncTextareaState();
 		setCurrentText(text);
 		setSelectedIndex(0);
-	}, [syncTextareaState]);
+		if (!isHistoryNavRef.current && historyIndex !== -1) {
+			setHistoryIndex(-1);
+			setSavedDraft(null);
+		}
+	}, [syncTextareaState, historyIndex]);
 
 	const handleTextareaSubmit = useCallback(() => {
 		const currentValue = syncTextareaState();
@@ -107,20 +122,67 @@ export function InputBox({ disabled, mode, cwd, pollManager, onSubmit }: InputBo
 
 	const handleKeyDown = useCallback(
 		(key: KeyEvent) => {
-			if (!showSuggestions) return;
+			if (showSuggestions) {
+				if (key.name === "up") {
+					setSelectedIndex((i) => Math.max(0, i - 1));
+				} else if (key.name === "down") {
+					setSelectedIndex((i) => Math.min(suggestions.length - 1, i + 1));
+				} else if (key.name === "tab") {
+					const cmd = suggestions[selectedIndex];
+					if (cmd && textareaRef.current) {
+						textareaRef.current.setText(`/${cmd.name} `);
+						setCurrentText(`/${cmd.name} `);
+					}
+				}
+				return;
+			}
+
+			if (sentMessages.length === 0) return;
+			isHistoryNavRef.current = true;
+
 			if (key.name === "up") {
-				setSelectedIndex((i) => Math.max(0, i - 1));
+				if (historyIndex === -1) {
+					setSavedDraft(currentText);
+					const idx = sentMessages.length - 1;
+					setHistoryIndex(idx);
+					textareaRef.current?.setText(sentMessages[idx]);
+					setCurrentText(sentMessages[idx]);
+				} else if (historyIndex > 0) {
+					const idx = historyIndex - 1;
+					setHistoryIndex(idx);
+					textareaRef.current?.setText(sentMessages[idx]);
+					setCurrentText(sentMessages[idx]);
+				}
 			} else if (key.name === "down") {
-				setSelectedIndex((i) => Math.min(suggestions.length - 1, i + 1));
-			} else if (key.name === "tab") {
-				const cmd = suggestions[selectedIndex];
-				if (cmd && textareaRef.current) {
-					textareaRef.current.setText(`/${cmd.name} `);
-					setCurrentText(`/${cmd.name} `);
+				if (historyIndex === -1) {
+					isHistoryNavRef.current = false;
+					return;
+				}
+				if (historyIndex < sentMessages.length - 1) {
+					const idx = historyIndex + 1;
+					setHistoryIndex(idx);
+					textareaRef.current?.setText(sentMessages[idx]);
+					setCurrentText(sentMessages[idx]);
+				} else {
+					setHistoryIndex(-1);
+					const restore = savedDraft ?? "";
+					textareaRef.current?.setText(restore);
+					setCurrentText(restore);
+					setSavedDraft(null);
 				}
 			}
+
+			isHistoryNavRef.current = false;
 		},
-		[showSuggestions, suggestions, selectedIndex],
+		[
+			showSuggestions,
+			suggestions,
+			selectedIndex,
+			sentMessages,
+			historyIndex,
+			savedDraft,
+			currentText,
+		],
 	);
 
 	useEffect(() => {

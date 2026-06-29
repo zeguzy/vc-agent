@@ -22,6 +22,7 @@ import { useSessionPicker } from "./hooks/useSessionPicker.js";
 import { useStreamingBuffer } from "./hooks/useStreamingBuffer.js";
 import { type Mode, resolveKey } from "./keymap.js";
 import { getGitBranch, getGitDirty } from "./utils/git.js";
+import { loadHistory, saveHistory } from "./utils/history.js";
 import { copySelection } from "./utils/selection.js";
 import { colors } from "./utils/theme.js";
 
@@ -43,6 +44,7 @@ export function App({ runtime, skillManager, model, cwd, config, initialResumeLi
 	const [messages, setMessages] = useState<Message[]>(
 		initialMapped.length > 0 ? initialMapped : [WELCOME_MESSAGE],
 	);
+	const [commandHistory, setCommandHistory] = useState<string[]>(() => loadHistory());
 	const [isRunning, setIsRunning] = useState(false);
 	const [mode, setMode] = useState<Mode>("insert");
 	const [thinkingCollapsed, setThinkingCollapsed] = useState(config?.thinking?.collapsed ?? false);
@@ -187,12 +189,16 @@ export function App({ runtime, skillManager, model, cwd, config, initialResumeLi
 				const msg = createUserMessage(text);
 				msg.queued = true;
 				setMessages((prev) => [...prev, msg]);
+				setCommandHistory((prev) => [...prev, text]);
+				saveHistory(text);
 				session.followUp(text).catch((err) => {
 					setMessages((prev) => [...prev, createAssistantMessage(`Error: ${formatError(err)}`)]);
 				});
 				return;
 			}
 			setMessages((prev) => [...prev, createUserMessage(text)]);
+			setCommandHistory((prev) => [...prev, text]);
+			saveHistory(text);
 			session.prompt(text).catch((err) => {
 				setMessages((prev) => [...prev, createAssistantMessage(`Error: ${formatError(err)}`)]);
 				setIsRunning(false);
@@ -323,6 +329,7 @@ export function App({ runtime, skillManager, model, cwd, config, initialResumeLi
 					cwd={cwd}
 					pollManager={pollManagerRef.current}
 					onSubmit={handlePrompt}
+					sentMessages={commandHistory}
 				/>
 				<StatusBar
 					model={session.model?.name || session.model?.id || model}
