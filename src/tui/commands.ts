@@ -1,3 +1,4 @@
+import { activeToolsFor } from "../agent/session.js";
 import { type CommandContext, commandRegistry } from "../commands/registry.js";
 import { writeConfig } from "../config.js";
 import { createAssistantMessage, createUserMessage } from "../message.js";
@@ -89,35 +90,32 @@ export function registerBuiltinCommands(): void {
 	});
 
 	commandRegistry.register({
+		name: "todos",
+		description: "Show current TODO list",
+		usage: "/todos",
+		handler: (_args: string, ctx: CommandContext) => {
+			const todos = ctx.todoItems;
+			if (todos.length === 0) {
+				ctx.setMessages((prev) => [...prev, createAssistantMessage("No todos.")]);
+				return;
+			}
+			const done = todos.filter((t) => t.done).length;
+			const lines = todos.map((t) => `  ${t.done ? "✓" : "○"} #${t.id}: ${t.text}`);
+			ctx.setMessages((prev) => [
+				...prev,
+				createAssistantMessage(`TODO (${done}/${todos.length})\n${lines.join("\n")}`),
+			]);
+		},
+	});
+
+	commandRegistry.register({
 		name: "plan",
 		description: "Toggle planner mode (read-only exploration)",
 		usage: "/plan",
 		handler: (_args: string, ctx: CommandContext) => {
 			ctx.setAgentMode((prev) => {
 				const next = prev === "standard" ? "planner" : "standard";
-				const tools =
-					next === "planner"
-						? [
-								"read",
-								"bash",
-								"grep",
-								"find",
-								"lsp_diagnostics",
-								"lsp_goto_definition",
-								"lsp_find_references",
-							]
-						: [
-								"read",
-								"bash",
-								"edit",
-								"write",
-								"grep",
-								"find",
-								"lsp_diagnostics",
-								"lsp_goto_definition",
-								"lsp_find_references",
-							];
-				ctx.session.setActiveToolsByName(tools);
+				ctx.session.setActiveToolsByName(activeToolsFor(next));
 				ctx.setMessages((msgs) => [
 					...msgs,
 					createAssistantMessage(

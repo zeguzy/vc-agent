@@ -28,6 +28,18 @@ const ALL_TOOLS = [...BUILTIN_TOOLS, ...LSP_TOOL_NAMES];
 /** Tools available in planner mode — read-only, no file mutations. */
 const PLANNER_TOOLS = ["read", "bash", "grep", "find", ...LSP_TOOL_NAMES];
 
+/**
+ * Active tool sets per agent mode. Used both for initial activation and for
+ * setActiveToolsByName() on mode toggle. Always includes the `todo` tool so
+ * task tracking survives mode switches.
+ */
+export const STANDARD_ACTIVE_TOOLS = [...ALL_TOOLS, "todo"];
+export const PLANNER_ACTIVE_TOOLS = [...PLANNER_TOOLS, "todo"];
+
+export function activeToolsFor(agentMode: AgentMode): string[] {
+	return agentMode === "planner" ? PLANNER_ACTIVE_TOOLS : STANDARD_ACTIVE_TOOLS;
+}
+
 /** Agent runtime mode — controls tool availability and system prompt. */
 export type AgentMode = "standard" | "planner";
 
@@ -157,7 +169,7 @@ export async function createSession(options: SessionOptions): Promise<SessionRes
 		...(svc.model ? { model: svc.model } : {}),
 		settingsManager: svc.settingsManager,
 		resourceLoader: svc.resourceLoader,
-		tools: ALL_TOOLS,
+		tools: STANDARD_ACTIVE_TOOLS,
 		customTools: [...createLspToolDefinitions({ client: svc.lspClient }), createTodoTool()],
 		sessionManager: SessionManager.inMemory(),
 	});
@@ -196,7 +208,7 @@ export async function createRuntime(options: RuntimeOptions): Promise<RuntimeRes
 			...(svc.model ? { model: svc.model } : {}),
 			settingsManager: svc.settingsManager,
 			resourceLoader: svc.resourceLoader,
-			tools: agentMode === "planner" ? PLANNER_TOOLS : ALL_TOOLS,
+			tools: activeToolsFor(agentMode),
 			customTools: [...createLspToolDefinitions({ client: svc.lspClient }), createTodoTool()],
 			sessionManager: fSessionManager,
 		});

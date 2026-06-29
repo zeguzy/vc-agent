@@ -30,10 +30,13 @@ export function useSessionEvents(
 	setContextUsage: (usage: {
 		tokens: number | null;
 		window: number | null;
-		percent: number | null;
+		percent: null | number;
 	}) => void,
+	onToolEnd?: (toolName: string, result: unknown) => void,
 ): SessionEventsState {
 	const toolCallIdToMsgId = useRef<Map<string, string>>(new Map());
+	const onToolEndRef = useRef(onToolEnd);
+	onToolEndRef.current = onToolEnd;
 
 	useEffect(() => {
 		function refreshContextUsage() {
@@ -93,6 +96,7 @@ export function useSessionEvents(
 				}
 
 				case "tool_execution_start": {
+					if (event.toolName === "todo") break;
 					const toolMsg = createToolMessage(event.toolName, event.args, "running");
 					toolCallIdToMsgId.current.set(event.toolCallId, toolMsg.id);
 					setMessages((prev) => [...prev, toolMsg]);
@@ -100,16 +104,45 @@ export function useSessionEvents(
 				}
 
 				case "tool_execution_end": {
+					if (event.toolName === "todo" && !event.isError) {
+						const todos = (
+							event.result as {
+								details?: { todos?: Array<{ text: string; done: boolean }> };
+							} | null
+						)?.details?.todos;
+						if (todos) {
+							const done = todos.filter((t) => t.done).length;
+							const lines = todos.map((t) => `  ${t.done ? "✓" : "○"} ${t.text}`);
+							const card = `📋 TODO (${done}/${todos.length})\n${lines.join("\n")}`;
+							setMessages((prev) => {
+								const idx = prev.findIndex(
+									(m) =>
+										m.role === "assistant" &&
+										typeof m.content === "string" &&
+										m.content.startsWith("📋 TODO"),
+								);
+								if (idx >= 0) {
+									return prev.map((m, i) => (i === idx ? { ...m, content: card } : m));
+								}
+								return [...prev, createAssistantMessage(card)];
+							});
+						}
+					}
 					const msgId = toolCallIdToMsgId.current.get(event.toolCallId);
 					if (msgId) {
 						setMessages((prev) =>
 							prev.map((m) =>
 								m.id === msgId
-									? { ...m, toolStatus: event.isError ? "error" : "done", toolResult: event.result }
+									? {
+											...m,
+											toolStatus: event.isError ? "error" : "done",
+											toolResult: event.result,
+										}
 									: m,
 							),
 						);
 					}
+					onToolEndRef.current?.(event.toolName, event.result);
 					refreshContextUsage();
 					break;
 				}
