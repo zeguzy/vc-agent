@@ -29,6 +29,7 @@ export const keymap: readonly KeyBinding[] = [
 	{ mode: "normal", key: { name: "j" }, action: "scrollDown", desc: "Scroll down" },
 	{ mode: "normal", key: { name: "k" }, action: "scrollUp", desc: "Scroll up" },
 	{ mode: "normal", key: { name: "t" }, action: "toggleThinking", desc: "Toggle thinking" },
+	{ mode: "normal", key: { name: "tab" }, action: "toggleAgentMode", desc: "Toggle planner mode" },
 ] as const;
 
 export function matchKey(

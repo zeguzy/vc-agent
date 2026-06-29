@@ -89,6 +89,49 @@ export function registerBuiltinCommands(): void {
 	});
 
 	commandRegistry.register({
+		name: "plan",
+		description: "Toggle planner mode (read-only exploration)",
+		usage: "/plan",
+		handler: (_args: string, ctx: CommandContext) => {
+			ctx.setAgentMode((prev) => {
+				const next = prev === "standard" ? "planner" : "standard";
+				const tools =
+					next === "planner"
+						? [
+								"read",
+								"bash",
+								"grep",
+								"find",
+								"lsp_diagnostics",
+								"lsp_goto_definition",
+								"lsp_find_references",
+							]
+						: [
+								"read",
+								"bash",
+								"edit",
+								"write",
+								"grep",
+								"find",
+								"lsp_diagnostics",
+								"lsp_goto_definition",
+								"lsp_find_references",
+							];
+				ctx.session.setActiveToolsByName(tools);
+				ctx.setMessages((msgs) => [
+					...msgs,
+					createAssistantMessage(
+						next === "planner"
+							? "📋 Planner mode — edit/write tools disabled. Use /plan or Tab to switch back."
+							: "▶ Standard mode — all tools available.",
+					),
+				]);
+				return next;
+			});
+		},
+	});
+
+	commandRegistry.register({
 		name: "exit",
 		description: "Quit the application",
 		usage: "/exit",
@@ -312,5 +355,6 @@ export function buildHelpText(): string {
 		"    j · k          Scroll down / up",
 		"    g · G          Scroll to top / bottom",
 		"    t              Toggle thinking collapse",
+		"    Tab            Toggle planner mode (read-only)",
 	].join("\n");
 }

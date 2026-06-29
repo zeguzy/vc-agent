@@ -1,7 +1,12 @@
 #!/usr/bin/env bun
 import { createCliRenderer } from "@opentui/core";
 import { createRoot } from "@opentui/react";
-import { createRuntime, type RuntimeResult, type SessionMode } from "./agent/session.js";
+import {
+	type AgentMode,
+	createRuntime,
+	type RuntimeResult,
+	type SessionMode,
+} from "./agent/session.js";
 import { readConfig } from "./config.js";
 import { App } from "./tui/App.js";
 import { formatError } from "./utils/formatError.js";
@@ -13,10 +18,11 @@ interface ParsedArgs {
 	resumeList: boolean;
 	sessionRef?: string;
 	name?: string;
+	plan: boolean;
 }
 
 function parseArgs(argv: string[]): ParsedArgs {
-	const args: ParsedArgs = { help: false, continueSession: false, resumeList: false };
+	const args: ParsedArgs = { help: false, continueSession: false, resumeList: false, plan: false };
 	for (let i = 2; i < argv.length; i++) {
 		const arg = argv[i];
 		if (arg === "--help" || arg === "-h") {
@@ -37,6 +43,8 @@ function parseArgs(argv: string[]): ParsedArgs {
 			args.name = argv[++i];
 		} else if (arg.startsWith("--name=")) {
 			args.name = arg.slice("--name=".length);
+		} else if (arg === "--plan") {
+			args.plan = true;
 		}
 	}
 	return args;
@@ -55,6 +63,7 @@ openagent — your terminal coding assistant
   -r, --resume            启动后打开会话列表选择恢复
   --session <path|id>     恢复指定会话文件路径或会话 id
   -n, --name <name>       启动时为当前会话命名
+  --plan                  以 planner 模式启动（只读探索，禁用 edit/write）
   --help, -h              显示帮助信息
 
 配置:
@@ -69,6 +78,7 @@ openagent — your terminal coding assistant
   openagent --session abc123
   openagent -n "我的任务"
   openagent --model claude-sonnet-4-20250514
+  openagent --plan
 `);
 }
 
@@ -90,6 +100,7 @@ async function main(): Promise<void> {
 	const config = readConfig(cwd);
 	const model = args.model ?? config.model;
 	const mode = resolveMode(args);
+	const agentMode: AgentMode = args.plan ? "planner" : "standard";
 
 	let result: RuntimeResult;
 	try {
@@ -98,6 +109,7 @@ async function main(): Promise<void> {
 			model,
 			config,
 			mode,
+			agentMode,
 			...(args.sessionRef ? { sessionRef: args.sessionRef } : {}),
 			...(args.name ? { name: args.name } : {}),
 		});
@@ -125,6 +137,7 @@ async function main(): Promise<void> {
 			cwd={cwd}
 			config={config}
 			initialResumeList={args.resumeList}
+			initialAgentMode={agentMode}
 		/>,
 	);
 }

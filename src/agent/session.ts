@@ -19,10 +19,17 @@ import { createLspToolDefinitions, LspClient } from "../lsp/index.js";
 import { listSessions, resolveSessionRef } from "../session/list.js";
 import { resolveSessionDir } from "../session/storage.js";
 import { SkillManager } from "../skills/manager.js";
+import { createTodoTool } from "../tools/todo.js";
 
 const BUILTIN_TOOLS = ["read", "bash", "edit", "write", "grep", "find"];
 const LSP_TOOL_NAMES = ["lsp_diagnostics", "lsp_goto_definition", "lsp_find_references"];
 const ALL_TOOLS = [...BUILTIN_TOOLS, ...LSP_TOOL_NAMES];
+
+/** Tools available in planner mode — read-only, no file mutations. */
+const PLANNER_TOOLS = ["read", "bash", "grep", "find", ...LSP_TOOL_NAMES];
+
+/** Agent runtime mode — controls tool availability and system prompt. */
+export type AgentMode = "standard" | "planner";
 
 /**
  * How the initial SessionManager should be constructed at startup.
@@ -54,6 +61,8 @@ export interface RuntimeOptions {
 	sessionRef?: string;
 	/** Optional display name applied via setSessionName after runtime creation. */
 	name?: string;
+	/** Agent runtime mode. "planner" starts with edit/write tools disabled. */
+	agentMode?: AgentMode;
 }
 
 export interface RuntimeResult {
@@ -149,7 +158,7 @@ export async function createSession(options: SessionOptions): Promise<SessionRes
 		settingsManager: svc.settingsManager,
 		resourceLoader: svc.resourceLoader,
 		tools: ALL_TOOLS,
-		customTools: createLspToolDefinitions({ client: svc.lspClient }),
+		customTools: [...createLspToolDefinitions({ client: svc.lspClient }), createTodoTool()],
 		sessionManager: SessionManager.inMemory(),
 	});
 	return { session: result.session, skillManager: svc.skillManager };
@@ -167,6 +176,7 @@ export async function createRuntime(options: RuntimeOptions): Promise<RuntimeRes
 	const sessionDir = resolveSessionDir();
 	const sessionManager = await buildSessionManager(options, sessionDir);
 	const agentDir = join(homedir(), ".config", "openagent");
+	const agentMode = options.agentMode ?? "standard";
 
 	const svc = await initServices({
 		cwd,
@@ -186,8 +196,8 @@ export async function createRuntime(options: RuntimeOptions): Promise<RuntimeRes
 			...(svc.model ? { model: svc.model } : {}),
 			settingsManager: svc.settingsManager,
 			resourceLoader: svc.resourceLoader,
-			tools: ALL_TOOLS,
-			customTools: createLspToolDefinitions({ client: svc.lspClient }),
+			tools: agentMode === "planner" ? PLANNER_TOOLS : ALL_TOOLS,
+			customTools: [...createLspToolDefinitions({ client: svc.lspClient }), createTodoTool()],
 			sessionManager: fSessionManager,
 		});
 		const services: AgentSessionServices = {

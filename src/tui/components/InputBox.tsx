@@ -1,15 +1,16 @@
 import type { KeyEvent, KeyBinding as TextareaKeyBinding, TextareaRenderable } from "@opentui/core";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import type { AgentMode } from "../../agent/session.js";
 import type { PollManager } from "../../poll/manager.js";
 import { usePollState } from "../../poll/usePollState.js";
 import { matchCommands } from "../commands.js";
-
 import type { Mode } from "../keymap.js";
 import { colors, icons } from "../utils/theme.js";
 
 interface InputBoxProps {
 	disabled: boolean;
 	mode: Mode;
+	agentMode: AgentMode;
 	cwd: string;
 	pollManager: PollManager;
 	onSubmit: (text: string) => void;
@@ -19,6 +20,7 @@ interface InputBoxProps {
 export function InputBox({
 	disabled,
 	mode,
+	agentMode,
 	cwd,
 	pollManager,
 	onSubmit,
@@ -234,6 +236,7 @@ export function InputBox({
 					{branch ? ":" : ""}
 				</text>
 				{branch ? <text fg={gitColor}>{branch}</text> : null}
+				{agentMode === "planner" && <text fg={colors.warning}> ⏸ planner</text>}
 				<box flexGrow={1} />
 			</box>
 			<box

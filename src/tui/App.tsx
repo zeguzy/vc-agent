@@ -1,7 +1,7 @@
 import type { ScrollBoxRenderable } from "@opentui/core";
 import { useKeyboard, useRenderer } from "@opentui/react";
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { AgentSession, AgentSessionRuntime } from "../agent/session.js";
+import type { AgentMode, AgentSession, AgentSessionRuntime } from "../agent/session.js";
 import { commandRegistry } from "../commands/registry.js";
 import type { Config } from "../config.js";
 import { createAssistantMessage, createUserMessage, type Message } from "../message.js";
@@ -35,9 +35,18 @@ interface AppProps {
 	cwd: string;
 	config?: Config;
 	initialResumeList?: boolean;
+	initialAgentMode?: AgentMode;
 }
 
-export function App({ runtime, skillManager, model, cwd, config, initialResumeList }: AppProps) {
+export function App({
+	runtime,
+	skillManager,
+	model,
+	cwd,
+	config,
+	initialResumeList,
+	initialAgentMode,
+}: AppProps) {
 	const renderer = useRenderer();
 	const [session, setSession] = useState<AgentSession>(runtime.session);
 	const initialMapped = mapSdkMessagesToTui(runtime.session.messages);
@@ -47,6 +56,7 @@ export function App({ runtime, skillManager, model, cwd, config, initialResumeLi
 	const [commandHistory, setCommandHistory] = useState<string[]>(() => loadHistory());
 	const [isRunning, setIsRunning] = useState(false);
 	const [mode, setMode] = useState<Mode>("insert");
+	const [agentMode, setAgentMode] = useState<AgentMode>(initialAgentMode ?? "standard");
 	const [thinkingCollapsed, setThinkingCollapsed] = useState(config?.thinking?.collapsed ?? false);
 	const [contextUsage, setContextUsage] = useState<{
 		tokens: number | null;
@@ -78,6 +88,8 @@ export function App({ runtime, skillManager, model, cwd, config, initialResumeLi
 	// ── Refs for mutable state access in callbacks ─────────────────
 	const modeRef = useRef<Mode>("insert");
 	modeRef.current = mode;
+	const agentModeRef = useRef<AgentMode>(initialAgentMode ?? "standard");
+	agentModeRef.current = agentMode;
 	const isRunningRef = useRef(false);
 	isRunningRef.current = isRunning;
 	const messagesRef = useRef(messages);
@@ -158,6 +170,8 @@ export function App({ runtime, skillManager, model, cwd, config, initialResumeLi
 			getConfig: () => configRef.current,
 			setConfig: setConfigState,
 			openSessionPicker: picker.openSessionPicker,
+			agentMode: agentModeRef.current,
+			setAgentMode,
 		};
 	}, [session, runtime, skillManager, cwd, picker.openSessionPicker]);
 
@@ -253,6 +267,42 @@ export function App({ runtime, skillManager, model, cwd, config, initialResumeLi
 			case "toggleThinking":
 				setThinkingCollapsed((v) => !v);
 				return;
+			case "toggleAgentMode": {
+				const next: AgentMode = agentModeRef.current === "standard" ? "planner" : "standard";
+				const tools =
+					next === "planner"
+						? [
+								"read",
+								"bash",
+								"grep",
+								"find",
+								"lsp_diagnostics",
+								"lsp_goto_definition",
+								"lsp_find_references",
+							]
+						: [
+								"read",
+								"bash",
+								"edit",
+								"write",
+								"grep",
+								"find",
+								"lsp_diagnostics",
+								"lsp_goto_definition",
+								"lsp_find_references",
+							];
+				session.setActiveToolsByName(tools);
+				setAgentMode(next);
+				setMessages((prev) => [
+					...prev,
+					createAssistantMessage(
+						next === "planner"
+							? "📋 Planner mode — edit/write tools disabled. Use Tab or /plan to switch back."
+							: "▶ Standard mode — all tools available.",
+					),
+				]);
+				return;
+			}
 			case "ctrlC": {
 				const now = Date.now();
 				if (now - lastCtrlCRef.current < 1000) process.exit(0);
@@ -326,6 +376,7 @@ export function App({ runtime, skillManager, model, cwd, config, initialResumeLi
 				<InputBox
 					disabled={isRunning}
 					mode={showSettings || picker.showSessionPicker ? "normal" : mode}
+					agentMode={agentMode}
 					cwd={cwd}
 					pollManager={pollManagerRef.current}
 					onSubmit={handlePrompt}
