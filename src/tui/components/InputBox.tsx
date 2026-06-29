@@ -3,7 +3,6 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { AgentMode } from "../../agent/session.js";
 import type { PollManager } from "../../poll/manager.js";
 import { usePollState } from "../../poll/usePollState.js";
-import type { TodoItem } from "../../tools/todo.js";
 import { matchCommands } from "../commands.js";
 import type { Mode } from "../keymap.js";
 import { colors, icons } from "../utils/theme.js";
@@ -16,7 +15,6 @@ interface InputBoxProps {
 	pollManager: PollManager;
 	onSubmit: (text: string) => void;
 	sentMessages: string[];
-	todoItems: TodoItem[];
 }
 
 export function InputBox({
@@ -27,7 +25,6 @@ export function InputBox({
 	pollManager,
 	onSubmit,
 	sentMessages,
-	todoItems,
 }: InputBoxProps) {
 	const [inputHeight, setInputHeight] = useState(2);
 	const [animationFrame, setAnimationFrame] = useState(0);
@@ -57,13 +54,6 @@ export function InputBox({
 		[isSlashMode, currentText],
 	);
 	const showSuggestions = isSlashMode && suggestions.length > 0 && mode === "insert";
-	const todoOpen = todoItems.length > 0 && todoItems.some((t) => !t.done);
-	const todoDone = todoItems.filter((t) => t.done).length;
-	const currentTodo = todoItems.find((t) => !t.done);
-	const currentTodoText =
-		currentTodo && currentTodo.text.length > 30
-			? `${currentTodo.text.slice(0, 29)}…`
-			: (currentTodo?.text ?? null);
 
 	useEffect(() => {
 		if (selectedIndex >= suggestions.length) {
@@ -250,16 +240,6 @@ export function InputBox({
 				</text>
 				{branch ? <text fg={gitColor}>{branch}</text> : null}
 				<box flexGrow={1} />
-				{todoOpen && (
-					<>
-						<text fg={colors.secondary}>▶ </text>
-						<text fg={colors.primary}>TODO </text>
-						<text fg={colors.textMuted}>
-							({todoDone}/{todoItems.length})
-						</text>
-						{currentTodoText && <text fg={colors.text}> · {currentTodoText}</text>}
-					</>
-				)}
 			</box>
 			<box
 				borderStyle="rounded"

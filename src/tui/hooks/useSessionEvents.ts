@@ -104,30 +104,6 @@ export function useSessionEvents(
 				}
 
 				case "tool_execution_end": {
-					if (event.toolName === "todo" && !event.isError) {
-						const todos = (
-							event.result as {
-								details?: { todos?: Array<{ text: string; done: boolean }> };
-							} | null
-						)?.details?.todos;
-						if (todos) {
-							const done = todos.filter((t) => t.done).length;
-							const lines = todos.map((t) => `  ${t.done ? "✓" : "○"} ${t.text}`);
-							const card = `📋 TODO (${done}/${todos.length})\n${lines.join("\n")}`;
-							setMessages((prev) => {
-								const idx = prev.findIndex(
-									(m) =>
-										m.role === "assistant" &&
-										typeof m.content === "string" &&
-										m.content.startsWith("📋 TODO"),
-								);
-								if (idx >= 0) {
-									return prev.map((m, i) => (i === idx ? { ...m, content: card } : m));
-								}
-								return [...prev, createAssistantMessage(card)];
-							});
-						}
-					}
 					const msgId = toolCallIdToMsgId.current.get(event.toolCallId);
 					if (msgId) {
 						setMessages((prev) =>

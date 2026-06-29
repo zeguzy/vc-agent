@@ -22,6 +22,7 @@ import { MessageList } from "./components/MessageList.js";
 import { SessionPicker } from "./components/SessionPicker.js";
 import { SettingsPanel } from "./components/SettingsPanel.js";
 import { StatusBar } from "./components/StatusBar.js";
+import { TodoPanel } from "./components/TodoPanel.js";
 import { WelcomeBanner } from "./components/WelcomeBanner.js";
 import { useSessionEvents } from "./hooks/useSessionEvents.js";
 import { useSessionPicker } from "./hooks/useSessionPicker.js";
@@ -366,6 +367,7 @@ export function App({
 					onRename={picker.handlePickerRename}
 				/>
 			)}
+			<TodoPanel todos={todoItems} working={isRunning} />
 			<box
 				flexDirection="column"
 				flexShrink={0}
@@ -382,7 +384,6 @@ export function App({
 					pollManager={pollManagerRef.current}
 					onSubmit={handlePrompt}
 					sentMessages={commandHistory}
-					todoItems={todoItems}
 				/>
 				<StatusBar
 					model={session.model?.name || session.model?.id || model}

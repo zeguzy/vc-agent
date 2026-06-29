@@ -99,11 +99,14 @@ export function registerBuiltinCommands(): void {
 				ctx.setMessages((prev) => [...prev, createAssistantMessage("No todos.")]);
 				return;
 			}
-			const done = todos.filter((t) => t.done).length;
-			const lines = todos.map((t) => `  ${t.done ? "✓" : "○"} #${t.id}: ${t.text}`);
+			const completed = todos.filter((t) => t.status === "completed").length;
+			const lines = todos.map(
+				(t) =>
+					`  ${t.status === "completed" ? "✓" : t.status === "in_progress" ? "●" : "○"} ${t.content}`,
+			);
 			ctx.setMessages((prev) => [
 				...prev,
-				createAssistantMessage(`TODO (${done}/${todos.length})\n${lines.join("\n")}`),
+				createAssistantMessage(`TODO (${completed}/${todos.length})\n${lines.join("\n")}`),
 			]);
 		},
 	});
