@@ -230,13 +230,15 @@ export function InputBox({
 				paddingRight={1}
 				marginTop={disabled ? 1 : 0}
 			>
+				<text fg={agentMode === "planner" ? colors.warning : colors.success}>
+					{agentMode === "planner" ? "⏸ planner" : "▶ standard"}{" "}
+				</text>
 				<text fg={colors.textMuted}>{icons.folder} </text>
 				<text fg={colors.textMuted}>
 					{pathDisplay}
 					{branch ? ":" : ""}
 				</text>
 				{branch ? <text fg={gitColor}>{branch}</text> : null}
-				{agentMode === "planner" && <text fg={colors.warning}> ⏸ planner</text>}
 				<box flexGrow={1} />
 			</box>
 			<box
