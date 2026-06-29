@@ -2,7 +2,6 @@ import type { AgentMode, AgentSession, AgentSessionRuntime } from "../agent/sess
 import type { Config } from "../config.js";
 import type { SessionInfo } from "../session/list.js";
 import type { SkillManager } from "../skills/manager.js";
-import type { TodoItem } from "../tools/todo.js";
 
 /**
  * Context passed to every command handler.
@@ -35,7 +34,6 @@ export interface CommandContext {
 	openSessionPicker: (sessions: SessionInfo[]) => void;
 	agentMode: AgentMode;
 	setAgentMode: (updater: AgentMode | ((prev: AgentMode) => AgentMode)) => void;
-	todoItems: TodoItem[];
 }
 
 /**

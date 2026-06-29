@@ -32,11 +32,8 @@ export function useSessionEvents(
 		window: number | null;
 		percent: null | number;
 	}) => void,
-	onToolEnd?: (toolName: string, result: unknown) => void,
 ): SessionEventsState {
 	const toolCallIdToMsgId = useRef<Map<string, string>>(new Map());
-	const onToolEndRef = useRef(onToolEnd);
-	onToolEndRef.current = onToolEnd;
 
 	useEffect(() => {
 		function refreshContextUsage() {
@@ -96,7 +93,6 @@ export function useSessionEvents(
 				}
 
 				case "tool_execution_start": {
-					if (event.toolName === "todo") break;
 					const toolMsg = createToolMessage(event.toolName, event.args, "running");
 					toolCallIdToMsgId.current.set(event.toolCallId, toolMsg.id);
 					setMessages((prev) => [...prev, toolMsg]);
@@ -118,7 +114,6 @@ export function useSessionEvents(
 							),
 						);
 					}
-					onToolEndRef.current?.(event.toolName, event.result);
 					refreshContextUsage();
 					break;
 				}

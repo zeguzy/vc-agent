@@ -382,6 +382,48 @@ const ReadGroupView = memo(function ReadGroupView({ reads }: { reads: Message[] 
 	);
 });
 
+const TodoMessageView = memo(function TodoMessageView({ message }: { message: Message }) {
+	if (message.toolStatus === "running") {
+		return (
+			<box marginTop={1} paddingLeft={2} flexShrink={0}>
+				<text fg={colors.textMuted}>⚙ Updating todos...</text>
+			</box>
+		);
+	}
+	const args = (message.toolArgs ?? {}) as {
+		todos?: Array<{ content: string; status: string }>;
+	};
+	const todos = args.todos ?? [];
+	return (
+		<box
+			border={["left"]}
+			borderColor={colors.borderSoft}
+			backgroundColor={colors.backgroundPanel}
+			marginTop={1}
+			paddingTop={1}
+			paddingBottom={1}
+			paddingLeft={2}
+			flexShrink={0}
+			flexDirection="column"
+		>
+			<text fg={colors.textMuted}># Todos</text>
+			<box height={1} />
+			<box flexDirection="column">
+				{todos.map((t, i) => {
+					const ch = t.status === "completed" ? "✓" : t.status === "in_progress" ? "•" : " ";
+					const fg = t.status === "in_progress" ? colors.warning : colors.textMuted;
+					return (
+						<box key={`todo-${i}`} flexDirection="row">
+							<text fg={fg}>{`[${ch}] `}</text>
+							<text fg={fg}>{t.content}</text>
+						</box>
+					);
+				})}
+			</box>
+		</box>
+	);
+});
+
 const SeparatorView = memo(function SeparatorView() {
 	return (
 		<box marginTop={1} flexShrink={0}>
@@ -460,7 +502,10 @@ export function MessageList({
 					}
 					if (msg.role === "user")
 						return <UserMessageView key={msg.id} message={msg} index={item.index} />;
-					if (msg.role === "tool") return <ToolMessageView key={msg.id} message={msg} />;
+					if (msg.role === "tool") {
+						if (msg.toolName === "todo") return <TodoMessageView key={msg.id} message={msg} />;
+						return <ToolMessageView key={msg.id} message={msg} />;
+					}
 					return (
 						<AssistantMessageView
 							key={msg.id}

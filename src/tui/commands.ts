@@ -4,6 +4,7 @@ import { writeConfig } from "../config.js";
 import { createAssistantMessage, createUserMessage } from "../message.js";
 import { listSessions } from "../session/list.js";
 import { modelSetting } from "../settings/definitions.js";
+import { extractTodoItems } from "../tools/todo.js";
 import { formatError } from "../utils/formatError.js";
 
 /**
@@ -94,7 +95,7 @@ export function registerBuiltinCommands(): void {
 		description: "Show current TODO list",
 		usage: "/todos",
 		handler: (_args: string, ctx: CommandContext) => {
-			const todos = ctx.todoItems;
+			const todos = extractTodoItems(ctx.messages);
 			if (todos.length === 0) {
 				ctx.setMessages((prev) => [...prev, createAssistantMessage("No todos.")]);
 				return;
@@ -102,11 +103,11 @@ export function registerBuiltinCommands(): void {
 			const completed = todos.filter((t) => t.status === "completed").length;
 			const lines = todos.map(
 				(t) =>
-					`  ${t.status === "completed" ? "✓" : t.status === "in_progress" ? "●" : "○"} ${t.content}`,
+					`  [${t.status === "completed" ? "✓" : t.status === "in_progress" ? "•" : " "}] ${t.content}`,
 			);
 			ctx.setMessages((prev) => [
 				...prev,
-				createAssistantMessage(`TODO (${completed}/${todos.length})\n${lines.join("\n")}`),
+				createAssistantMessage(`# Todos (${completed}/${todos.length})\n${lines.join("\n")}`),
 			]);
 		},
 	});

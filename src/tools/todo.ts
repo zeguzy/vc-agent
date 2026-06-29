@@ -16,17 +16,17 @@ export interface TodoDetails {
 }
 
 /**
- * Rebuild the todo list from the latest `todo` tool result in a session's
- * message history. Used to restore state on session resume / hot-swap.
+ * Rebuild the todo list from the latest `todo` tool result in a message
+ * history. Reads `toolResult.details.todos` from TUI tool messages.
  */
 export function extractTodoItems(
-	messages: Array<{ role?: string; toolName?: string; details?: unknown }>,
+	messages: Array<{ role?: string; toolName?: string; toolResult?: unknown }>,
 ): TodoItem[] {
 	for (let i = messages.length - 1; i >= 0; i--) {
 		const msg = messages[i];
-		if (msg.role === "toolResult" && msg.toolName === "todo" && msg.details) {
-			const d = msg.details as TodoDetails;
-			if (Array.isArray(d.todos)) return d.todos;
+		if (msg.role === "tool" && msg.toolName === "todo" && msg.toolResult) {
+			const d = (msg.toolResult as { details?: TodoDetails } | null | undefined)?.details;
+			if (d && Array.isArray(d.todos)) return d.todos;
 		}
 	}
 	return [];

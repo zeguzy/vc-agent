@@ -14,7 +14,6 @@ import { PollManager } from "../poll/manager.js";
 import { mapSdkMessagesToTui } from "../session/render.js";
 import type { SettingContext } from "../settings/types.js";
 import type { SkillManager } from "../skills/manager.js";
-import { extractTodoItems, type TodoDetails, type TodoItem } from "../tools/todo.js";
 import { formatError } from "../utils/formatError.js";
 import { registerBuiltinCommands } from "./commands.js";
 import { InputBox } from "./components/InputBox.js";
@@ -22,7 +21,6 @@ import { MessageList } from "./components/MessageList.js";
 import { SessionPicker } from "./components/SessionPicker.js";
 import { SettingsPanel } from "./components/SettingsPanel.js";
 import { StatusBar } from "./components/StatusBar.js";
-import { TodoPanel } from "./components/TodoPanel.js";
 import { WelcomeBanner } from "./components/WelcomeBanner.js";
 import { useSessionEvents } from "./hooks/useSessionEvents.js";
 import { useSessionPicker } from "./hooks/useSessionPicker.js";
@@ -76,9 +74,6 @@ export function App({
 	const [showSettings, setShowSettings] = useState(false);
 	const [configState, setConfigState] = useState<Config>(config ?? {});
 	const [copyFeedback, setCopyFeedback] = useState<{ ts: number } | null>(null);
-	const [todoItems, setTodoItems] = useState<TodoItem[]>(() =>
-		extractTodoItems(runtime.session.messages as Parameters<typeof extractTodoItems>[0]),
-	);
 	const scrollRef = useRef<ScrollBoxRenderable>(null);
 	const pollManagerRef = useRef(new PollManager());
 
@@ -87,21 +82,12 @@ export function App({
 
 	const picker = useSessionPicker(runtime, setMessages);
 
-	const handleToolEnd = useCallback((toolName: string, result: unknown) => {
-		if (toolName !== "todo") return;
-		const details = (result as { details?: unknown } | null | undefined)?.details as
-			| TodoDetails
-			| undefined;
-		if (details && Array.isArray(details.todos)) setTodoItems(details.todos);
-	}, []);
-
 	const { toolCallIdToMsgId } = useSessionEvents(
 		session,
 		streaming,
 		setMessages,
 		setIsRunning,
 		setContextUsage,
-		handleToolEnd,
 	);
 
 	// ── Refs for mutable state access in callbacks ─────────────────
@@ -113,8 +99,6 @@ export function App({
 	isRunningRef.current = isRunning;
 	const messagesRef = useRef(messages);
 	messagesRef.current = messages;
-	const todoItemsRef = useRef(todoItems);
-	todoItemsRef.current = todoItems;
 	const showSettingsRef = useRef(showSettings);
 	showSettingsRef.current = showSettings;
 	const showSessionPickerRef = useRef(false);
@@ -146,7 +130,6 @@ export function App({
 			setSession(newSession);
 			setMessages(mapped.length > 0 ? mapped : [WELCOME_MESSAGE]);
 			setIsRunning(false);
-			setTodoItems(extractTodoItems(newSession.messages as Parameters<typeof extractTodoItems>[0]));
 			toolCallIdToMsgId.current.clear();
 			setContextUsage({ tokens: null, window: null, percent: null });
 			const cu = newSession.getContextUsage();
@@ -194,7 +177,6 @@ export function App({
 			openSessionPicker: picker.openSessionPicker,
 			agentMode: agentModeRef.current,
 			setAgentMode,
-			todoItems: todoItemsRef.current,
 		};
 	}, [session, runtime, skillManager, cwd, picker.openSessionPicker]);
 
@@ -294,7 +276,6 @@ export function App({
 				const next: AgentMode = agentModeRef.current === "standard" ? "planner" : "standard";
 				session.setActiveToolsByName(activeToolsFor(next));
 				setAgentMode(next);
-				setTodoItems([]);
 				setMessages((prev) => [
 					...prev,
 					createAssistantMessage(
@@ -367,7 +348,6 @@ export function App({
 					onRename={picker.handlePickerRename}
 				/>
 			)}
-			<TodoPanel todos={todoItems} working={isRunning} />
 			<box
 				flexDirection="column"
 				flexShrink={0}
