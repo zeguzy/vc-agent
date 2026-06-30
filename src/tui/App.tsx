@@ -300,7 +300,7 @@ export function App({
 		}
 	});
 
-	const queuedMsg = messages.find((m) => m.queued);
+	const queuedMsgs = messages.filter((m) => m.queued);
 	const isWelcome = messages.length === 1 && messages[0].id === WELCOME_MESSAGE.id;
 
 	return (
@@ -316,7 +316,7 @@ export function App({
 					thinkingCollapsed={thinkingCollapsed}
 				/>
 			)}
-			{queuedMsg && (
+			{queuedMsgs.length > 0 && (
 				<box flexShrink={0} paddingLeft={3} paddingRight={3}>
 					<box
 						borderStyle="rounded"
@@ -325,10 +325,14 @@ export function App({
 						backgroundColor={colors.backgroundInset}
 						paddingLeft={1}
 						paddingRight={1}
-						flexDirection="row"
+						flexDirection="column"
 					>
-						<text fg={colors.secondary}>Queued → </text>
-						<text fg={colors.textMuted}>{queuedMsg.content}</text>
+						{queuedMsgs.map((msg) => (
+							<box key={msg.id} flexDirection="row">
+								<text fg={colors.secondary}>Queued → </text>
+								<text fg={colors.textMuted}>{msg.content}</text>
+							</box>
+						))}
 					</box>
 				</box>
 			)}
