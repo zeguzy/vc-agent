@@ -99,6 +99,7 @@ export function InputBox({
 			setHistoryIndex(-1);
 			setSavedDraft(null);
 		}
+		isHistoryNavRef.current = false;
 	}, [syncTextareaState, historyIndex]);
 
 	const handleTextareaSubmit = useCallback(() => {
@@ -140,32 +141,32 @@ export function InputBox({
 			}
 
 			if (sentMessages.length === 0) return;
-			isHistoryNavRef.current = true;
 
 			if (key.name === "up") {
 				if (historyIndex === -1) {
 					setSavedDraft(currentText);
 					const idx = sentMessages.length - 1;
+					isHistoryNavRef.current = true;
 					setHistoryIndex(idx);
 					textareaRef.current?.setText(sentMessages[idx]);
 					setCurrentText(sentMessages[idx]);
 				} else if (historyIndex > 0) {
 					const idx = historyIndex - 1;
+					isHistoryNavRef.current = true;
 					setHistoryIndex(idx);
 					textareaRef.current?.setText(sentMessages[idx]);
 					setCurrentText(sentMessages[idx]);
 				}
 			} else if (key.name === "down") {
-				if (historyIndex === -1) {
-					isHistoryNavRef.current = false;
-					return;
-				}
+				if (historyIndex === -1) return;
 				if (historyIndex < sentMessages.length - 1) {
 					const idx = historyIndex + 1;
+					isHistoryNavRef.current = true;
 					setHistoryIndex(idx);
 					textareaRef.current?.setText(sentMessages[idx]);
 					setCurrentText(sentMessages[idx]);
 				} else {
+					isHistoryNavRef.current = true;
 					setHistoryIndex(-1);
 					const restore = savedDraft ?? "";
 					textareaRef.current?.setText(restore);
@@ -173,8 +174,6 @@ export function InputBox({
 					setSavedDraft(null);
 				}
 			}
-
-			isHistoryNavRef.current = false;
 		},
 		[
 			showSuggestions,
