@@ -1,6 +1,7 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
+import type { NotificationsConfig } from "./notifications/types.js";
 import { formatError } from "./utils/formatError.js";
 
 export interface CustomModel {
@@ -51,6 +52,8 @@ export interface Config {
 	display?: DisplayConfig;
 	compaction?: CompactionConfig;
 	skills?: SkillsConfig;
+	/** Native notification settings (OS notifications + TUI toasts). */
+	notifications?: NotificationsConfig;
 	/** Additional instruction files to inject into system prompt. Supports relative paths, ~/ expansion, globs, and HTTP(S) URLs. */
 	instructions?: string[];
 }

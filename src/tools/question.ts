@@ -1,5 +1,6 @@
 import type { ToolDefinition } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
+import { getGlobalRouter } from "../notifications/notifier.js";
 import type { QuestionBridge, QuestionData } from "./question-bridge.js";
 
 export interface QuestionDetails {
@@ -59,6 +60,8 @@ export function createQuestionTool(bridge?: QuestionBridge): ToolDefinition {
 				bridge.pending = p;
 				bridge.resolve = resolve;
 				bridge.reject = reject;
+
+				getGlobalRouter()?.notifyNeedsInput();
 
 				if (signal) {
 					signal.addEventListener(

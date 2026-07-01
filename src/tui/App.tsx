@@ -5,6 +5,7 @@ import type { AgentClient, AgentMode } from "../client/index.js";
 import { commandRegistry } from "../commands/registry.js";
 import type { Config } from "../config.js";
 import { createAssistantMessage, createUserMessage, type Message } from "../message.js";
+import { getGlobalRouter } from "../notifications/notifier.js";
 import { PollManager } from "../poll/manager.js";
 import type { SettingContext } from "../settings/types.js";
 import type { QuestionBridge, QuestionData } from "../tools/question-bridge.js";
@@ -16,10 +17,12 @@ import { QuestionBox } from "./components/QuestionBox.js";
 import { SessionPicker } from "./components/SessionPicker.js";
 import { SettingsPanel } from "./components/SettingsPanel.js";
 import { StatusBar } from "./components/StatusBar.js";
+import { Toast } from "./components/Toast.js";
 import { WelcomeBanner } from "./components/WelcomeBanner.js";
 import { useSessionEvents } from "./hooks/useSessionEvents.js";
 import { useSessionPicker } from "./hooks/useSessionPicker.js";
 import { useStreamingBuffer } from "./hooks/useStreamingBuffer.js";
+import { useToasts } from "./hooks/useToasts.js";
 import { type Mode, resolveKey } from "./keymap.js";
 import { getGitBranch, getGitDirty } from "./utils/git.js";
 import { loadHistory, saveHistory } from "./utils/history.js";
@@ -102,6 +105,20 @@ export function App({
 	configRef.current = configState;
 	const lastCtrlCRef = useRef<number>(0);
 	const resumeListDoneRef = useRef(false);
+
+	const { toast, pushToast } = useToasts();
+	const toastPushRef = useRef(pushToast);
+	toastPushRef.current = pushToast;
+
+	useEffect(() => {
+		const router = getGlobalRouter();
+		if (!router) return;
+		router.setRenderer(renderer);
+		router.setToastHandler(toastPushRef.current);
+		return () => {
+			router.setToastHandler(undefined);
+		};
+	}, [renderer]);
 
 	useEffect(() => {
 		if (commandRegistry.size === 0) {
@@ -319,6 +336,7 @@ export function App({
 
 	return (
 		<box flexDirection="column" height={"100%"} backgroundColor={colors.background}>
+			<Toast toast={toast} />
 			{isWelcome ? (
 				<scrollbox flexGrow={1} scrollY stickyScroll stickyStart="bottom" focused={false}>
 					<WelcomeBanner cwd={cwd} model={modelDisplay} />

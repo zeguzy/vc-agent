@@ -2,6 +2,9 @@ import {
 	compactionEnabledSetting,
 	contextModeSetting,
 	modelSetting,
+	notificationsBashThresholdSetting,
+	notificationsEnabledSetting,
+	notificationsSoundSetting,
 	thinkingCollapsedSetting,
 	thinkingLevelSetting,
 } from "./definitions.js";
@@ -13,6 +16,9 @@ export const settings: Setting<unknown>[] = [
 	compactionEnabledSetting,
 	modelSetting,
 	thinkingLevelSetting,
+	notificationsEnabledSetting,
+	notificationsSoundSetting,
+	notificationsBashThresholdSetting,
 ];
 
 export function findSetting(key: string): Setting<unknown> | undefined {
