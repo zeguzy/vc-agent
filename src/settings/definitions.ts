@@ -1,3 +1,4 @@
+import { getGlobalRouter } from "../notifications/notifier.js";
 import type { Setting } from "./types.js";
 
 export const thinkingCollapsedSetting: Setting<boolean> = {
@@ -108,5 +109,72 @@ export const thinkingLevelSetting: Setting<string> = {
 	},
 	persist(config, value) {
 		return { ...config, thinking: { ...config.thinking, level: value } };
+	},
+};
+
+export const notificationsEnabledSetting: Setting<boolean> = {
+	key: "notifications.enabled",
+	label: "通知",
+	category: "notifications",
+	defaultValue: true,
+	editor: { type: "toggle" },
+	read(config) {
+		return config.notifications?.enabled ?? true;
+	},
+	renderValue(v) {
+		return v ? "on" : "off";
+	},
+	apply(value) {
+		getGlobalRouter()?.setEnabled(value);
+	},
+	persist(config, value) {
+		return { ...config, notifications: { ...config.notifications, enabled: value } };
+	},
+};
+
+export const notificationsSoundSetting: Setting<boolean> = {
+	key: "notifications.sound",
+	label: "通知声音",
+	category: "notifications",
+	defaultValue: true,
+	editor: { type: "toggle" },
+	read(config) {
+		return config.notifications?.sound ?? true;
+	},
+	renderValue(v) {
+		return v ? "on" : "off";
+	},
+	apply(value) {
+		getGlobalRouter()?.setSound(value);
+	},
+	persist(config, value) {
+		return { ...config, notifications: { ...config.notifications, sound: value } };
+	},
+};
+
+export const notificationsBashThresholdSetting: Setting<string> = {
+	key: "notifications.bashThresholdSeconds",
+	label: "Bash 通知阈值 (秒)",
+	category: "notifications",
+	defaultValue: "10",
+	editor: { type: "input", placeholder: "10" },
+	read(config) {
+		const ms = config.notifications?.bashThresholdMs;
+		if (ms === undefined) return "10";
+		return String(Math.round(ms / 1000));
+	},
+	renderValue(v) {
+		return `${v}s`;
+	},
+	apply(value) {
+		const seconds = Number(value) || 10;
+		getGlobalRouter()?.setBashThresholdMs(seconds * 1000);
+	},
+	persist(config, value) {
+		const seconds = Number(value) || 10;
+		return {
+			...config,
+			notifications: { ...config.notifications, bashThresholdMs: seconds * 1000 },
+		};
 	},
 };

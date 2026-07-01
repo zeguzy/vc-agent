@@ -11,6 +11,8 @@ import type {
 } from "../client/types.js";
 import type { CommandContext } from "../commands/registry.js";
 import { commandRegistry } from "../commands/registry.js";
+import { readConfig } from "../config.js";
+import { NotificationRouter, setGlobalRouter } from "../notifications/notifier.js";
 import { listSessions } from "../session/list.js";
 import { mapSdkMessagesToTui } from "../session/render.js";
 import type { SkillManager } from "../skills/manager.js";
@@ -28,11 +30,17 @@ export class AgentServer {
 	private readonly eventHandlers = new Set<EventHandler>();
 	private readonly sessionChangeHandlers = new Set<(session: AgentSession) => Promise<void>>();
 	private currentUnsub: Unsubscribe | null = null;
+	private readonly notificationRouter: NotificationRouter;
 
 	constructor(opts: AgentServerOptions) {
 		this.runtime = opts.runtime;
 		this.skillManager = opts.skillManager;
 		this.cwd = opts.cwd;
+
+		this.notificationRouter = new NotificationRouter({
+			config: readConfig(opts.cwd).notifications,
+		});
+		setGlobalRouter(this.notificationRouter);
 
 		this.runtime.setRebindSession(async (newSession) => {
 			this.resubscribe();
@@ -51,6 +59,7 @@ export class AgentServer {
 	private ensureSubscribed() {
 		if (this.currentUnsub) return;
 		this.currentUnsub = this.session.subscribe((event: AgentSessionEvent) => {
+			this.notificationRouter.handleEvent(event);
 			for (const handler of this.eventHandlers) {
 				handler(event);
 			}
