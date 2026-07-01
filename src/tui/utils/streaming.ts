@@ -1,10 +1,10 @@
 /**
  * Split streaming text into settled head + trailing tail.
- * Adapted from opencode's splitStreamingMarkdown.
  *
  * When the last block is an unclosed fenced code block,
  * the head (stable markdown) stays still while only the
- * tail (growing code) re-renders — eliminating flicker.
+ * tail (growing code) re-renders — eliminating flicker
+ * inside code blocks during streaming.
  */
 export interface StreamingSplit {
 	head: string;

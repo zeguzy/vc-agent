@@ -1,7 +1,6 @@
 import type { ScrollBoxRenderable } from "@opentui/core";
 import { memo } from "react";
 import type { Message } from "../../message.js";
-import { splitStreamingText } from "../utils/streaming.js";
 import { syntaxStyle } from "../utils/syntax.js";
 import { colors, icons } from "../utils/theme.js";
 
@@ -55,7 +54,7 @@ const UserMessageView = memo(function UserMessageView({
 	);
 });
 
-function AssistantMessageView({
+const AssistantMessageView = memo(function AssistantMessageView({
 	message,
 	thinkingCollapsed,
 }: {
@@ -64,7 +63,6 @@ function AssistantMessageView({
 }) {
 	const hasThinking = message.thinking?.trim();
 	const collapsed = thinkingCollapsed && hasThinking;
-	const split = splitStreamingText(message.content);
 	return (
 		<box paddingLeft={3} marginTop={1} flexShrink={0} flexDirection="column">
 			{hasThinking && (
@@ -77,7 +75,7 @@ function AssistantMessageView({
 								.filter((l) => l.trim())
 								// biome-ignore lint/suspicious/noArrayIndexKey: split text lines have no stable IDs
 								.map((line, i) => (
-									<text key={`think-${i}`} fg={colors.textSubtle}>
+									<text key={`think-${message.id}-${i}`} fg={colors.textSubtle}>
 										{line}
 									</text>
 								))}
@@ -87,33 +85,21 @@ function AssistantMessageView({
 			)}
 			{message.content && (
 				<box marginTop={hasThinking && !collapsed ? 1 : 0} flexDirection="column">
-					{split.tail ? (
-						<>
-							{split.head && (
-								<markdown
-									syntaxStyle={syntaxStyle}
-									streaming={false}
-									content={split.head}
-									fg={colors.markdownText}
-									bg={colors.background}
-								/>
-							)}
-							<text fg={colors.markdownText}>{split.tail}</text>
-						</>
-					) : (
-						<markdown
-							syntaxStyle={syntaxStyle}
-							streaming={true}
-							content={message.content}
-							fg={colors.markdownText}
-							bg={colors.background}
-						/>
-					)}
+					<markdown
+						id={`md-${message.id}`}
+						syntaxStyle={syntaxStyle}
+						streaming={true}
+						internalBlockMode="top-level"
+						tableOptions={{ style: "grid" }}
+						content={message.content}
+						fg={colors.markdownText}
+						bg={colors.background}
+					/>
 				</box>
 			)}
 		</box>
 	);
-}
+});
 
 function formatToolDetail(toolName: string, args: unknown): { label: string; lines: string[] } {
 	if (!args || typeof args !== "object") return { label: toolName, lines: [] };
@@ -180,25 +166,18 @@ function formatToolDetail(toolName: string, args: unknown): { label: string; lin
 			if (a.limit != null) lines.push(`limit: ${a.limit}`);
 			return { label: "find", lines };
 		}
-		case "lsp_diagnostics": {
-			const fp = String(a.filePath ?? "");
-			const severity = a.severity ? String(a.severity) : undefined;
-			const lines = [fp];
-			if (severity && severity !== "all") lines.push(`severity: ${severity}`);
-			return { label: "lsp_diagnostics", lines };
-		}
-		case "lsp_goto_definition": {
-			const fp = String(a.filePath ?? "");
-			const lines: string[] = [fp];
-			if (a.line != null && a.character != null) lines.push(`${a.line}:${a.character}`);
-			return { label: "lsp_goto_definition", lines };
-		}
-		case "lsp_find_references": {
-			const fp = String(a.filePath ?? "");
-			const lines: string[] = [fp];
-			if (a.line != null && a.character != null) lines.push(`${a.line}:${a.character}`);
-			if (a.includeDeclaration === false) lines.push("excl. declaration");
-			return { label: "lsp_find_references", lines };
+		case "lsp": {
+			const action = String(a.action ?? "");
+			const fp = a.file ? String(a.file) : undefined;
+			const lines: string[] = [action];
+			if (fp) lines.push(fp);
+			if (a.line != null) lines.push(`line: ${a.line}`);
+			if (a.symbol) lines.push(`symbol: ${a.symbol}`);
+			if (a.query) lines.push(`query: ${a.query}`);
+			if (a.new_name) lines.push(`→ ${a.new_name}`);
+			if (a.apply === true) lines.push("apply");
+			if (a.index != null) lines.push(`index: ${a.index}`);
+			return { label: "lsp", lines };
 		}
 		default:
 			return { label: toolName, lines: [] };
