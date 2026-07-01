@@ -8,6 +8,7 @@ import { readConfig } from "./config.js";
 import { HeadlessRunner } from "./headless/runner.js";
 import { createHttpServer } from "./server/http.js";
 import { createServer } from "./server/index.js";
+import { createQuestionBridge } from "./tools/question-bridge.js";
 import { App } from "./tui/App.js";
 import { formatError } from "./utils/formatError.js";
 
@@ -168,6 +169,7 @@ async function runTui(argv: string[]): Promise<void> {
 	const mode = resolveMode(args);
 	const agentMode: AgentMode = args.plan ? "planner" : "standard";
 
+	const questionBridge = createQuestionBridge();
 	let result: Awaited<ReturnType<typeof createRuntime>>;
 	try {
 		result = await createRuntime({
@@ -176,6 +178,7 @@ async function runTui(argv: string[]): Promise<void> {
 			config,
 			mode,
 			agentMode,
+			bridge: questionBridge,
 			...(args.sessionRef ? { sessionRef: args.sessionRef } : {}),
 			...(args.name ? { name: args.name } : {}),
 		});
@@ -198,6 +201,7 @@ async function runTui(argv: string[]): Promise<void> {
 			model={model || "default"}
 			cwd={cwd}
 			config={config}
+			bridge={questionBridge}
 			initialResumeList={args.resumeList}
 			initialAgentMode={agentMode}
 		/>,
