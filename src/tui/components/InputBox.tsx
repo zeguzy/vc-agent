@@ -3,7 +3,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { AgentMode } from "../../agent/session.js";
 import type { PollManager } from "../../poll/manager.js";
 import { usePollState } from "../../poll/usePollState.js";
-import { matchCommands } from "../commands.js";
+import type { SkillManager } from "../../skills/manager.js";
+import { matchSuggestions, type SuggestionItem } from "../commands.js";
 import type { Mode } from "../keymap.js";
 import { colors, icons } from "../utils/theme.js";
 
@@ -13,6 +14,7 @@ interface InputBoxProps {
 	agentMode: AgentMode;
 	cwd: string;
 	pollManager: PollManager;
+	skillManager: SkillManager | null;
 	onSubmit: (text: string) => void;
 	sentMessages: string[];
 }
@@ -23,6 +25,7 @@ export function InputBox({
 	agentMode,
 	cwd,
 	pollManager,
+	skillManager,
 	onSubmit,
 	sentMessages,
 }: InputBoxProps) {
@@ -49,9 +52,9 @@ export function InputBox({
 	}, [cwd]);
 
 	const isSlashMode = currentText.startsWith("/");
-	const suggestions = useMemo(
-		() => (isSlashMode ? matchCommands(currentText) : []),
-		[isSlashMode, currentText],
+	const suggestions = useMemo<SuggestionItem[]>(
+		() => (isSlashMode ? matchSuggestions(currentText, skillManager) : []),
+		[isSlashMode, currentText, skillManager],
 	);
 	const showSuggestions = isSlashMode && suggestions.length > 0 && mode === "insert";
 
@@ -104,24 +107,24 @@ export function InputBox({
 
 	const handleTextareaSubmit = useCallback(() => {
 		const currentValue = syncTextareaState();
-		if (currentValue.startsWith("/")) {
-			const matched = matchCommands(currentValue);
-			if (matched.length > 0) {
-				const cmd = matched[Math.min(selectedIndex, matched.length - 1)];
-				handleSubmit(`/${cmd.name}`);
-			} else {
-				handleSubmit(currentValue);
+		if (showSuggestions && suggestions.length > 0) {
+			const cmd = suggestions[Math.min(selectedIndex, suggestions.length - 1)];
+			if (textareaRef.current) {
+				textareaRef.current.setText(`/${cmd.name} `);
+				textareaRef.current.gotoBufferEnd();
 			}
-		} else {
-			handleSubmit(currentValue);
+			setCurrentText(`/${cmd.name} `);
+			setSelectedIndex(0);
+			return;
 		}
+		handleSubmit(currentValue);
 		if (textareaRef.current) {
 			textareaRef.current.clear();
 		}
 		setCurrentText("");
 		setSelectedIndex(0);
 		setInputHeight(2);
-	}, [handleSubmit, syncTextareaState, selectedIndex]);
+	}, [handleSubmit, syncTextareaState, selectedIndex, suggestions, showSuggestions]);
 
 	const handleKeyDown = useCallback(
 		(key: KeyEvent) => {
@@ -134,6 +137,7 @@ export function InputBox({
 					const cmd = suggestions[selectedIndex];
 					if (cmd && textareaRef.current) {
 						textareaRef.current.setText(`/${cmd.name} `);
+						textareaRef.current.gotoBufferEnd();
 						setCurrentText(`/${cmd.name} `);
 					}
 				}

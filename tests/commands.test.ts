@@ -100,8 +100,7 @@ describe("CommandRegistry", () => {
 		});
 
 		const ctx = {
-			session: {} as any,
-			skillManager: {} as any,
+			client: {} as any,
 			messages: [],
 			setMessages: (() => {}) as any,
 			setIsRunning: (() => {}) as any,
@@ -118,8 +117,7 @@ describe("CommandRegistry", () => {
 	it("execute returns false for unknown command", async () => {
 		const registry = new CommandRegistry();
 		const ctx = {
-			session: {} as any,
-			skillManager: {} as any,
+			client: {} as any,
 			messages: [],
 			setMessages: (() => {}) as any,
 			setIsRunning: (() => {}) as any,

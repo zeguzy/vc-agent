@@ -1,27 +1,18 @@
-import type { AgentMode, AgentSession, AgentSessionRuntime } from "../agent/session.js";
+import type { AgentMode } from "../agent/session.js";
+import type { AgentClient } from "../client/index.js";
 import type { Config } from "../config.js";
+import type { Message } from "../message.js";
 import type { SessionInfo } from "../session/list.js";
-import type { SkillManager } from "../skills/manager.js";
 
-/**
- * Context passed to every command handler.
- * Provides access to the session, skill system, and UI state.
- */
 export interface CommandContext {
-	session: AgentSession;
-	runtime: AgentSessionRuntime;
-	skillManager: SkillManager;
-	messages: import("../message.js").Message[];
-	setMessages: (
-		updater:
-			| import("../message.js").Message[]
-			| ((prev: import("../message.js").Message[]) => import("../message.js").Message[]),
-	) => void;
+	client: AgentClient;
+	messages: Message[];
+	setMessages: (updater: Message[] | ((prev: Message[]) => Message[])) => void;
 	setIsRunning: (running: boolean) => void;
 	setContextUsage: (usage: {
 		tokens: number | null;
 		window: number | null;
-		percent: number | null;
+		percent: null | number;
 	}) => void;
 	setThinkingCollapsed: (collapsed: boolean) => void;
 	setContextDisplay: (

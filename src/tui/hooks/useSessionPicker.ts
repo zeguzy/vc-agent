@@ -1,5 +1,5 @@
 import { useCallback, useState } from "react";
-import type { AgentSessionRuntime } from "../../agent/session.js";
+import type { AgentClient } from "../../client/index.js";
 import { createAssistantMessage } from "../../message.js";
 import { renameSessionFile, type SessionInfo } from "../../session/list.js";
 import { formatError } from "../../utils/formatError.js";
@@ -13,14 +13,8 @@ interface SessionPickerState {
 	handlePickerRename: (path: string, name: string) => void;
 }
 
-/**
- * Manages the session picker overlay state and callbacks.
- *
- * Handles session list display, selection (hot-switch via runtime.switchSession),
- * rename, and close. Errors from switch/rename are displayed via setMessages.
- */
 export function useSessionPicker(
-	runtime: AgentSessionRuntime,
+	client: AgentClient,
 	setMessages: (
 		updater:
 			| import("../../message.js").Message[]
@@ -41,7 +35,7 @@ export function useSessionPicker(
 		async (path: string) => {
 			setShowSessionPicker(false);
 			try {
-				await runtime.switchSession(path);
+				await client.switchSession(path);
 			} catch (err) {
 				setMessages((prev) => [
 					...prev,
@@ -49,22 +43,22 @@ export function useSessionPicker(
 				]);
 			}
 		},
-		[runtime, setMessages],
+		[client, setMessages],
 	);
 
 	const handlePickerRename = useCallback(
 		(path: string, name: string) => {
 			try {
 				renameSessionFile(path, name);
-				if (path === runtime.session.sessionFile) {
-					runtime.session.setSessionName(name);
+				if (path === client.getSessionFile()) {
+					client.setSessionName(name);
 				}
 				setPickerSessions((prev) => prev.map((s) => (s.path === path ? { ...s, name } : s)));
 			} catch (err) {
 				setMessages((prev) => [...prev, createAssistantMessage(`重命名失败: ${formatError(err)}`)]);
 			}
 		},
-		[runtime, setMessages],
+		[client, setMessages],
 	);
 
 	return {

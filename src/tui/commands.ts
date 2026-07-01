@@ -1,18 +1,20 @@
-import { activeToolsFor } from "../agent/session.js";
 import { type CommandContext, commandRegistry } from "../commands/registry.js";
 import { writeConfig } from "../config.js";
 import { createAssistantMessage, createUserMessage } from "../message.js";
-import { listSessions } from "../session/list.js";
 import { modelSetting } from "../settings/definitions.js";
+import type { SkillManager } from "../skills/manager.js";
 import { extractTodoItems } from "../tools/todo.js";
 import { formatError } from "../utils/formatError.js";
 
-/**
- * Register all built-in slash commands into the global CommandRegistry.
- */
+export interface SuggestionItem {
+	name: string;
+	description: string;
+	type: "command" | "skill";
+}
+
 async function showSessions(ctx: CommandContext): Promise<void> {
 	try {
-		const sessions = await listSessions(ctx.cwd);
+		const sessions = await ctx.client.listSessions();
 		ctx.openSessionPicker(sessions);
 	} catch (err) {
 		ctx.setMessages((prev) => [
@@ -38,7 +40,7 @@ export function registerBuiltinCommands(): void {
 		usage: "/compact [instructions]",
 		handler: (args: string, ctx: CommandContext) => {
 			ctx.setMessages((prev) => [...prev, createUserMessage(`/compact ${args}`.trim())]);
-			ctx.session.compact(args || undefined).catch((err) => {
+			ctx.client.compact(args || undefined).catch((err) => {
 				ctx.setMessages((prev) => [
 					...prev,
 					createAssistantMessage(`Compaction failed: ${formatError(err)}`),
@@ -52,7 +54,7 @@ export function registerBuiltinCommands(): void {
 		description: "Switch to next model",
 		usage: "/model",
 		handler: (_args: string, ctx: CommandContext) => {
-			ctx.session
+			ctx.client
 				.cycleModel()
 				.then((result) => {
 					if (result) {
@@ -119,7 +121,7 @@ export function registerBuiltinCommands(): void {
 		handler: (_args: string, ctx: CommandContext) => {
 			ctx.setAgentMode((prev) => {
 				const next = prev === "standard" ? "planner" : "standard";
-				ctx.session.setActiveToolsByName(activeToolsFor(next));
+				ctx.client.setAgentMode(next);
 				ctx.setMessages((msgs) => [
 					...msgs,
 					createAssistantMessage(
@@ -160,8 +162,6 @@ export function registerBuiltinCommands(): void {
 		},
 	});
 
-	// --- Session management commands ---
-
 	commandRegistry.register({
 		name: "sessions",
 		description: "List sessions for the current directory",
@@ -175,7 +175,7 @@ export function registerBuiltinCommands(): void {
 		usage: "/new",
 		handler: async (_args, ctx) => {
 			try {
-				const { cancelled } = await ctx.runtime.newSession();
+				const { cancelled } = await ctx.client.newSession();
 				if (cancelled) {
 					ctx.setMessages((prev) => [...prev, createAssistantMessage("已取消新建会话。")]);
 				}
@@ -195,7 +195,7 @@ export function registerBuiltinCommands(): void {
 		handler: (args, ctx) => {
 			const text = args.trim();
 			if (!text) {
-				const current = ctx.runtime.session.sessionName;
+				const current = ctx.client.getSessionName();
 				ctx.setMessages((prev) => [
 					...prev,
 					createAssistantMessage(
@@ -204,25 +204,24 @@ export function registerBuiltinCommands(): void {
 				]);
 				return;
 			}
-			ctx.runtime.session.setSessionName(text);
+			ctx.client.setSessionName(text);
 			ctx.setMessages((prev) => [...prev, createAssistantMessage(`已命名当前会话: ${text}`)]);
 		},
 	});
-
-	// --- Skill management commands ---
 
 	commandRegistry.register({
 		name: "skills",
 		description: "List all loaded skills (auto + dynamic)",
 		usage: "/skills",
 		handler: (_args: string, ctx: CommandContext) => {
-			const result = ctx.skillManager.listSkills();
+			const skillManager = ctx.client.getSkillManager();
+			const result = skillManager.listSkills();
 			if (result.skills.length === 0) {
 				ctx.setMessages((prev) => [...prev, createAssistantMessage("No skills loaded.")]);
 				return;
 			}
 
-			const dirs = ctx.skillManager.getDefaultDirectories();
+			const dirs = skillManager.getDefaultDirectories();
 			const header = [
 				"Loaded skills:",
 				`  Global dir: ${dirs.global}`,
@@ -267,7 +266,7 @@ export function registerBuiltinCommands(): void {
 				return;
 			}
 			try {
-				const result = await ctx.skillManager.loadDynamicSkill(path);
+				const result = await ctx.client.getSkillManager().loadDynamicSkill(path);
 				const skill = result.skill;
 				ctx.setMessages((prev) => [
 					...prev,
@@ -302,7 +301,7 @@ export function registerBuiltinCommands(): void {
 				]);
 				return;
 			}
-			const removed = ctx.skillManager.unloadDynamicSkill(name);
+			const removed = ctx.client.getSkillManager().unloadDynamicSkill(name);
 			if (removed) {
 				ctx.setMessages((prev) => [
 					...prev,
@@ -326,6 +325,36 @@ export function registerBuiltinCommands(): void {
  */
 export function matchCommands(input: string): ReturnType<typeof commandRegistry.match> {
 	return commandRegistry.match(input);
+}
+
+/**
+ * Match commands AND loaded skills for autocomplete.
+ * Skills appear as /skill:name entries, mixed with regular commands.
+ */
+export function matchSuggestions(
+	input: string,
+	skillManager: SkillManager | null,
+): SuggestionItem[] {
+	const commands = matchCommands(input);
+	const items: SuggestionItem[] = commands.map((c) => ({
+		name: c.name,
+		description: c.description,
+		type: "command" as const,
+	}));
+
+	if (skillManager) {
+		const trimmed = input.replace(/^\//, "");
+		const skills = skillManager.listSkills().skills;
+		for (const s of skills) {
+			const fullName = `skill:${s.name}`;
+			if (!trimmed || fullName.startsWith(trimmed)) {
+				items.push({ name: fullName, description: s.description, type: "skill" });
+			}
+		}
+	}
+
+	items.sort((a, b) => a.name.localeCompare(b.name));
+	return items;
 }
 
 /**

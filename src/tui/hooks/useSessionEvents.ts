@@ -1,5 +1,6 @@
 import { useEffect, useRef } from "react";
-import type { AgentSession, AgentSessionEvent } from "../../agent/session.js";
+import type { AgentSessionEvent } from "../../agent/session.js";
+import type { AgentClient } from "../../client/index.js";
 import {
 	createAssistantMessage,
 	createSeparator,
@@ -13,17 +14,8 @@ interface SessionEventsState {
 	toolCallIdToMsgId: React.MutableRefObject<Map<string, string>>;
 }
 
-/**
- * Subscribes to AgentSession events and maps them to TUI message state updates.
- *
- * Handles: agent_start, message_start, message_update (via StreamingBuffer),
- * message_end, tool_execution_start, tool_execution_end, agent_end,
- * compaction_start, compaction_end.
- *
- * The subscription is rebuilt whenever `session` changes (e.g. on hot-switch).
- */
 export function useSessionEvents(
-	session: AgentSession,
+	client: AgentClient,
 	streaming: StreamingBuffer,
 	setMessages: (updater: Message[] | ((prev: Message[]) => Message[])) => void,
 	setIsRunning: (running: boolean) => void,
@@ -37,7 +29,7 @@ export function useSessionEvents(
 
 	useEffect(() => {
 		function refreshContextUsage() {
-			const usage = session.getContextUsage();
+			const usage = client.getContextUsage();
 			setContextUsage({
 				tokens: usage?.tokens ?? null,
 				window: usage?.contextWindow ?? null,
@@ -45,7 +37,7 @@ export function useSessionEvents(
 			});
 		}
 
-		const unsubscribe = session.subscribe((event: AgentSessionEvent) => {
+		const unsubscribe = client.subscribe((event: AgentSessionEvent) => {
 			switch (event.type) {
 				case "agent_start":
 					setIsRunning(true);
@@ -149,7 +141,7 @@ export function useSessionEvents(
 			}
 		});
 		return unsubscribe;
-	}, [session, streaming, setMessages, setIsRunning, setContextUsage]);
+	}, [client, streaming, setMessages, setIsRunning, setContextUsage]);
 
 	return { toolCallIdToMsgId };
 }

@@ -1,19 +1,12 @@
 import type { ScrollBoxRenderable } from "@opentui/core";
 import { useKeyboard, useRenderer } from "@opentui/react";
 import { useCallback, useEffect, useRef, useState } from "react";
-import {
-	type AgentMode,
-	type AgentSession,
-	type AgentSessionRuntime,
-	activeToolsFor,
-} from "../agent/session.js";
+import type { AgentClient, AgentMode } from "../client/index.js";
 import { commandRegistry } from "../commands/registry.js";
 import type { Config } from "../config.js";
 import { createAssistantMessage, createUserMessage, type Message } from "../message.js";
 import { PollManager } from "../poll/manager.js";
-import { mapSdkMessagesToTui } from "../session/render.js";
 import type { SettingContext } from "../settings/types.js";
-import type { SkillManager } from "../skills/manager.js";
 import { formatError } from "../utils/formatError.js";
 import { registerBuiltinCommands } from "./commands.js";
 import { InputBox } from "./components/InputBox.js";
@@ -34,8 +27,7 @@ import { colors } from "./utils/theme.js";
 const WELCOME_MESSAGE = createAssistantMessage("");
 
 interface AppProps {
-	runtime: AgentSessionRuntime;
-	skillManager: SkillManager;
+	client: AgentClient;
 	model: string;
 	cwd: string;
 	config?: Config;
@@ -43,18 +35,9 @@ interface AppProps {
 	initialAgentMode?: AgentMode;
 }
 
-export function App({
-	runtime,
-	skillManager,
-	model,
-	cwd,
-	config,
-	initialResumeList,
-	initialAgentMode,
-}: AppProps) {
+export function App({ client, model, cwd, config, initialResumeList, initialAgentMode }: AppProps) {
 	const renderer = useRenderer();
-	const [session, setSession] = useState<AgentSession>(runtime.session);
-	const initialMapped = mapSdkMessagesToTui(runtime.session.messages);
+	const initialMapped = client.getMappedMessages();
 	const [messages, setMessages] = useState<Message[]>(
 		initialMapped.length > 0 ? initialMapped : [WELCOME_MESSAGE],
 	);
@@ -77,20 +60,16 @@ export function App({
 	const scrollRef = useRef<ScrollBoxRenderable>(null);
 	const pollManagerRef = useRef(new PollManager());
 
-	// ── Custom hooks ──────────────────────────────────────────────
 	const streaming = useStreamingBuffer();
-
-	const picker = useSessionPicker(runtime, setMessages);
-
+	const picker = useSessionPicker(client, setMessages);
 	const { toolCallIdToMsgId } = useSessionEvents(
-		session,
+		client,
 		streaming,
 		setMessages,
 		setIsRunning,
 		setContextUsage,
 	);
 
-	// ── Refs for mutable state access in callbacks ─────────────────
 	const modeRef = useRef<Mode>("insert");
 	modeRef.current = mode;
 	const agentModeRef = useRef<AgentMode>(initialAgentMode ?? "standard");
@@ -108,7 +87,6 @@ export function App({
 	const lastCtrlCRef = useRef<number>(0);
 	const resumeListDoneRef = useRef(false);
 
-	// ── Effects ───────────────────────────────────────────────────
 	useEffect(() => {
 		if (commandRegistry.size === 0) {
 			registerBuiltinCommands();
@@ -125,18 +103,17 @@ export function App({
 	}, [cwd]);
 
 	useEffect(() => {
-		runtime.setRebindSession(async (newSession) => {
-			const mapped = mapSdkMessagesToTui(newSession.messages);
-			setSession(newSession);
+		client.onSessionChange(async () => {
+			const mapped = client.getMappedMessages();
 			setMessages(mapped.length > 0 ? mapped : [WELCOME_MESSAGE]);
 			setIsRunning(false);
 			toolCallIdToMsgId.current.clear();
 			setContextUsage({ tokens: null, window: null, percent: null });
-			const cu = newSession.getContextUsage();
+			const cu = client.getContextUsage();
 			if (cu) {
 				setContextUsage({
 					tokens: cu.tokens ?? null,
-					window: cu.contextWindow,
+					window: cu.contextWindow ?? null,
 					percent: cu.percent ?? null,
 				});
 			}
@@ -145,13 +122,13 @@ export function App({
 				if (sb) sb.scrollTo(sb.scrollHeight);
 			}, 0);
 		});
-	}, [runtime, toolCallIdToMsgId]);
+	}, [client, toolCallIdToMsgId]);
 
 	const settingCtx: SettingContext = {
-		session,
-		settingsManager: session.settingsManager,
-		modelRegistry: session.modelRegistry,
-		authStorage: session.modelRegistry.authStorage,
+		session: client.getSession(),
+		settingsManager: client.getSettingsManager(),
+		modelRegistry: client.getModelRegistry(),
+		authStorage: client.getAuthStorage(),
 		setUi: {
 			thinkingCollapsed: setThinkingCollapsed,
 			contextDisplay: setContextDisplay,
@@ -161,9 +138,7 @@ export function App({
 
 	const buildCommandCtx = useCallback(() => {
 		return {
-			session,
-			runtime,
-			skillManager,
+			client,
 			messages: messagesRef.current,
 			setMessages,
 			setIsRunning,
@@ -178,21 +153,33 @@ export function App({
 			agentMode: agentModeRef.current,
 			setAgentMode,
 		};
-	}, [session, runtime, skillManager, cwd, picker.openSessionPicker]);
+	}, [client, cwd, picker.openSessionPicker]);
 
 	useEffect(() => {
 		if (!initialResumeList || resumeListDoneRef.current) return;
 		if (commandRegistry.size === 0) return;
 		resumeListDoneRef.current = true;
-		commandRegistry.execute("sessions", "", buildCommandCtx()).catch(() => {});
-	}, [initialResumeList, buildCommandCtx]);
+		client.executeCommand("sessions", "", buildCommandCtx()).catch(() => {});
+	}, [initialResumeList, buildCommandCtx, client]);
 
 	const handlePrompt = useCallback(
 		(text: string) => {
 			if (text.startsWith("/")) {
 				const [cmd, ...args] = text.slice(1).split(/\s+/);
 				const argStr = args.join(" ").trim();
-				commandRegistry.execute(cmd, argStr, buildCommandCtx()).then((handled) => {
+
+				if (cmd.startsWith("skill:")) {
+					setMessages((prev) => [...prev, createUserMessage(text)]);
+					setCommandHistory((prev) => [...prev, text]);
+					saveHistory(text);
+					client.prompt(text).catch((err) => {
+						setMessages((prev) => [...prev, createAssistantMessage(`Error: ${formatError(err)}`)]);
+						setIsRunning(false);
+					});
+					return;
+				}
+
+				client.executeCommand(cmd, argStr, buildCommandCtx()).then((handled) => {
 					if (!handled) {
 						setMessages((prev) => [
 							...prev,
@@ -210,7 +197,7 @@ export function App({
 				setMessages((prev) => [...prev, msg]);
 				setCommandHistory((prev) => [...prev, text]);
 				saveHistory(text);
-				session.followUp(text).catch((err) => {
+				client.followUp(text).catch((err) => {
 					setMessages((prev) => [...prev, createAssistantMessage(`Error: ${formatError(err)}`)]);
 				});
 				return;
@@ -218,12 +205,12 @@ export function App({
 			setMessages((prev) => [...prev, createUserMessage(text)]);
 			setCommandHistory((prev) => [...prev, text]);
 			saveHistory(text);
-			session.prompt(text).catch((err) => {
+			client.prompt(text).catch((err) => {
 				setMessages((prev) => [...prev, createAssistantMessage(`Error: ${formatError(err)}`)]);
 				setIsRunning(false);
 			});
 		},
-		[session, buildCommandCtx],
+		[client, buildCommandCtx],
 	);
 
 	useKeyboard((key) => {
@@ -242,7 +229,7 @@ export function App({
 				const now = Date.now();
 				if (now - lastCtrlCRef.current < 1000) process.exit(0);
 				lastCtrlCRef.current = now;
-				if (isRunningRef.current) session.abort().catch(() => {});
+				if (isRunningRef.current) client.abort().catch(() => {});
 				else process.exit(0);
 			}
 			return;
@@ -274,7 +261,7 @@ export function App({
 				return;
 			case "toggleAgentMode": {
 				const next: AgentMode = agentModeRef.current === "standard" ? "planner" : "standard";
-				session.setActiveToolsByName(activeToolsFor(next));
+				client.setAgentMode(next);
 				setAgentMode(next);
 				setMessages((prev) => [
 					...prev,
@@ -291,7 +278,7 @@ export function App({
 				if (now - lastCtrlCRef.current < 1000) process.exit(0);
 				lastCtrlCRef.current = now;
 				if (isRunningRef.current) {
-					session.abort().catch(() => {});
+					client.abort().catch(() => {});
 				} else {
 					process.exit(0);
 				}
@@ -300,6 +287,7 @@ export function App({
 		}
 	});
 
+	const modelDisplay = client.getModel()?.name || client.getModel()?.id || model;
 	const queuedMsgs = messages.filter((m) => m.queued);
 	const isWelcome = messages.length === 1 && messages[0].id === WELCOME_MESSAGE.id;
 
@@ -307,7 +295,7 @@ export function App({
 		<box flexDirection="column" height={"100%"} backgroundColor={colors.background}>
 			{isWelcome ? (
 				<scrollbox flexGrow={1} scrollY stickyScroll stickyStart="bottom" focused={false}>
-					<WelcomeBanner cwd={cwd} model={session.model?.name || session.model?.id || model} />
+					<WelcomeBanner cwd={cwd} model={modelDisplay} />
 				</scrollbox>
 			) : (
 				<MessageList
@@ -346,7 +334,7 @@ export function App({
 			{picker.showSessionPicker && (
 				<SessionPicker
 					sessions={picker.pickerSessions}
-					currentId={session.sessionId}
+					currentId={client.getSessionId()}
 					onSelect={picker.handlePickerSelect}
 					onClose={picker.closeSessionPicker}
 					onRename={picker.handlePickerRename}
@@ -366,11 +354,12 @@ export function App({
 					agentMode={agentMode}
 					cwd={cwd}
 					pollManager={pollManagerRef.current}
+					skillManager={client.getSkillManager()}
 					onSubmit={handlePrompt}
 					sentMessages={commandHistory}
 				/>
 				<StatusBar
-					model={session.model?.name || session.model?.id || model}
+					model={modelDisplay}
 					mode={mode}
 					contextPercent={contextUsage.percent}
 					contextTokens={contextUsage.tokens}

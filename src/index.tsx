@@ -1,13 +1,13 @@
 #!/usr/bin/env bun
 import { createCliRenderer } from "@opentui/core";
 import { createRoot } from "@opentui/react";
-import {
-	type AgentMode,
-	createRuntime,
-	type RuntimeResult,
-	type SessionMode,
-} from "./agent/session.js";
+import { type AgentMode, createRuntime, type SessionMode } from "./agent/session.js";
+import { createHttpClient } from "./client/http.js";
+import { createClient } from "./client/index.js";
 import { readConfig } from "./config.js";
+import { HeadlessRunner } from "./headless/runner.js";
+import { createHttpServer } from "./server/http.js";
+import { createServer } from "./server/index.js";
 import { App } from "./tui/App.js";
 import { formatError } from "./utils/formatError.js";
 
@@ -56,29 +56,32 @@ openagent — your terminal coding assistant
 
 用法:
   openagent [选项]
+  openagent run "<prompt>" [选项]
+  openagent serve [--port <port>]
+  openagent attach <url>
+
+子命令:
+  (无)                    交互式 TUI 模式（默认）
+  run "<prompt>"         非交互模式，执行单次 prompt，输出到 stdout
+  serve                  启动 HTTP server（REST API + SSE 事件流）
+  attach <url>           连接远程 server，以 TUI 模式操作
 
 选项:
-  --model, -m <name>      指定 LLM 模型 (如: claude-sonnet-4-20250514)
-  -c, --continue          恢复当前目录最近的会话
-  -r, --resume            启动后打开会话列表选择恢复
-  --session <path|id>     恢复指定会话文件路径或会话 id
-  -n, --name <name>       启动时为当前会话命名
-  --plan                  以 planner 模式启动（只读探索，禁用 edit/write）
-  --help, -h              显示帮助信息
-
-配置:
-  全局配置: ~/.config/openagent/config.json
-  项目配置: .openagent/config.json
-  会话存储: ~/.config/openagent/sessions/
+  --model, -m <name>      指定 LLM 模型
+  -c, --continue          恢复最近的会话
+  -r, --resume            启动后打开会话列表
+  --session <path|id>     恢复指定会话
+  -n, --name <name>       命名当前会话
+  --plan                  planner 模式（只读）
+  --port <port>           serve 模式端口（默认 4096）
+  --help, -h              显示帮助
 
 示例:
   openagent
-  openagent -c
-  openagent -r
-  openagent --session abc123
-  openagent -n "我的任务"
-  openagent --model claude-sonnet-4-20250514
-  openagent --plan
+  openagent run "explain src/index.tsx"
+  openagent run -c "next step"
+  openagent serve --port 8080
+  openagent attach http://localhost:4096
 `);
 }
 
@@ -88,8 +91,71 @@ function resolveMode(args: ParsedArgs): SessionMode {
 	return "new";
 }
 
-async function main(): Promise<void> {
-	const args = parseArgs(process.argv);
+function parseSubcommand(argv: string[]): { sub?: string; rest: string[] } {
+	const third = argv[2];
+	if (third && !third.startsWith("-") && third !== "") {
+		return { sub: third, rest: ["", "", ...argv.slice(3)] };
+	}
+	return { rest: argv };
+}
+
+async function runHeadless(promptText: string, argv: string[]): Promise<void> {
+	const args = parseArgs(argv);
+	const cwd = process.cwd();
+	const mode = resolveMode(args);
+	const agentMode: AgentMode = args.plan ? "planner" : "standard";
+
+	const runner = new HeadlessRunner({
+		cwd,
+		model: args.model,
+		mode,
+		agentMode,
+		sessionRef: args.sessionRef,
+		name: args.name,
+	});
+	const code = await runner.run(promptText);
+	process.exit(code);
+}
+
+async function runServe(argv: string[]): Promise<void> {
+	let port = 4096;
+	for (let i = 2; i < argv.length; i++) {
+		if (argv[i] === "--port") {
+			port = Number(argv[++i]) || 4096;
+		} else if (argv[i]?.startsWith("--port=")) {
+			port = Number(argv[i].slice("--port=".length)) || 4096;
+		}
+	}
+
+	const cwd = process.cwd();
+	const config = readConfig(cwd);
+	const { runtime, skillManager } = await createRuntime({
+		cwd,
+		model: config.model,
+		config,
+		mode: "new",
+		agentMode: "standard",
+	});
+	const server = createServer({ runtime, skillManager, cwd });
+	createHttpServer({ server, port });
+
+	console.log(`openagent server: http://localhost:${port}`);
+	console.log(`  SSE events:  GET /events`);
+	console.log(`  REST API:    POST /prompt, GET /context, GET /messages, ...`);
+}
+
+async function runAttach(url: string): Promise<void> {
+	const client = createHttpClient(url);
+
+	const renderer = await createCliRenderer({ exitOnCtrlC: false });
+	process.on("exit", () => renderer.destroy());
+
+	const root = createRoot(renderer);
+	root.render(<App client={client} model="remote" cwd="" />);
+}
+
+async function runTui(argv: string[]): Promise<void> {
+	const args = parseArgs(argv);
 
 	if (args.help) {
 		showHelp();
@@ -102,7 +168,7 @@ async function main(): Promise<void> {
 	const mode = resolveMode(args);
 	const agentMode: AgentMode = args.plan ? "planner" : "standard";
 
-	let result: RuntimeResult;
+	let result: Awaited<ReturnType<typeof createRuntime>>;
 	try {
 		result = await createRuntime({
 			cwd,
@@ -119,20 +185,16 @@ async function main(): Promise<void> {
 	}
 
 	const { runtime, skillManager } = result;
+	const server = createServer({ runtime, skillManager, cwd });
+	const client = createClient(server);
 
-	const renderer = await createCliRenderer({
-		exitOnCtrlC: false,
-	});
-
-	process.on("exit", () => {
-		renderer.destroy();
-	});
+	const renderer = await createCliRenderer({ exitOnCtrlC: false });
+	process.on("exit", () => renderer.destroy());
 
 	const root = createRoot(renderer);
 	root.render(
 		<App
-			runtime={runtime}
-			skillManager={skillManager}
+			client={client}
 			model={model || "default"}
 			cwd={cwd}
 			config={config}
@@ -140,6 +202,42 @@ async function main(): Promise<void> {
 			initialAgentMode={agentMode}
 		/>,
 	);
+}
+
+async function main(): Promise<void> {
+	const argv = process.argv;
+	const { sub, rest } = parseSubcommand(argv);
+
+	if (argv.includes("--help") || argv.includes("-h")) {
+		showHelp();
+		process.exit(0);
+	}
+
+	switch (sub) {
+		case "run": {
+			const promptText = rest.slice(2).find((a) => !a.startsWith("-"));
+			if (!promptText) {
+				console.error('Usage: openagent run "<prompt>"');
+				process.exit(1);
+			}
+			await runHeadless(promptText, rest);
+			break;
+		}
+		case "serve":
+			await runServe(rest);
+			break;
+		case "attach": {
+			const url = rest[2];
+			if (!url) {
+				console.error("Usage: openagent attach <url>");
+				process.exit(1);
+			}
+			await runAttach(url);
+			break;
+		}
+		default:
+			await runTui(argv);
+	}
 }
 
 main().catch((err) => {
