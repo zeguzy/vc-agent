@@ -7,10 +7,12 @@ import type { Config } from "../config.js";
 import { createAssistantMessage, createUserMessage, type Message } from "../message.js";
 import { PollManager } from "../poll/manager.js";
 import type { SettingContext } from "../settings/types.js";
+import type { QuestionBridge, QuestionData } from "../tools/question-bridge.js";
 import { formatError } from "../utils/formatError.js";
 import { registerBuiltinCommands } from "./commands.js";
 import { InputBox } from "./components/InputBox.js";
 import { MessageList } from "./components/MessageList.js";
+import { QuestionBox } from "./components/QuestionBox.js";
 import { SessionPicker } from "./components/SessionPicker.js";
 import { SettingsPanel } from "./components/SettingsPanel.js";
 import { StatusBar } from "./components/StatusBar.js";
@@ -31,11 +33,20 @@ interface AppProps {
 	model: string;
 	cwd: string;
 	config?: Config;
+	bridge?: QuestionBridge;
 	initialResumeList?: boolean;
 	initialAgentMode?: AgentMode;
 }
 
-export function App({ client, model, cwd, config, initialResumeList, initialAgentMode }: AppProps) {
+export function App({
+	client,
+	model,
+	cwd,
+	config,
+	bridge,
+	initialResumeList,
+	initialAgentMode,
+}: AppProps) {
 	const renderer = useRenderer();
 	const initialMapped = client.getMappedMessages();
 	const [messages, setMessages] = useState<Message[]>(
@@ -57,6 +68,7 @@ export function App({ client, model, cwd, config, initialResumeList, initialAgen
 	const [showSettings, setShowSettings] = useState(false);
 	const [configState, setConfigState] = useState<Config>(config ?? {});
 	const [copyFeedback, setCopyFeedback] = useState<{ ts: number } | null>(null);
+	const [pendingQuestion, setPendingQuestion] = useState<QuestionData | null>(null);
 	const scrollRef = useRef<ScrollBoxRenderable>(null);
 	const pollManagerRef = useRef(new PollManager());
 
@@ -68,6 +80,7 @@ export function App({ client, model, cwd, config, initialResumeList, initialAgen
 		setMessages,
 		setIsRunning,
 		setContextUsage,
+		bridge ? setPendingQuestion : undefined,
 	);
 
 	const modeRef = useRef<Mode>("insert");
@@ -80,6 +93,8 @@ export function App({ client, model, cwd, config, initialResumeList, initialAgen
 	messagesRef.current = messages;
 	const showSettingsRef = useRef(showSettings);
 	showSettingsRef.current = showSettings;
+	const pendingQuestionRef = useRef<QuestionData | null>(null);
+	pendingQuestionRef.current = pendingQuestion;
 	const showSessionPickerRef = useRef(false);
 	showSessionPickerRef.current = picker.showSessionPicker;
 	const configRef = useRef(configState);
@@ -219,6 +234,14 @@ export function App({ client, model, cwd, config, initialResumeList, initialAgen
 				return;
 			}
 		}
+		if (pendingQuestionRef.current) {
+			const action = resolveKey("insert", key);
+			if (action === "ctrlC") {
+				setPendingQuestion(null);
+			} else {
+				return;
+			}
+		}
 		if (key.name === "escape" && renderer?.getSelection()) {
 			renderer.clearSelection();
 			return;
@@ -348,16 +371,30 @@ export function App({ client, model, cwd, config, initialResumeList, initialAgen
 				paddingTop={1}
 				paddingBottom={1}
 			>
-				<InputBox
-					disabled={isRunning}
-					mode={showSettings || picker.showSessionPicker ? "normal" : mode}
-					agentMode={agentMode}
-					cwd={cwd}
-					pollManager={pollManagerRef.current}
-					skillManager={client.getSkillManager()}
-					onSubmit={handlePrompt}
-					sentMessages={commandHistory}
-				/>
+				{pendingQuestion && bridge ? (
+					<QuestionBox
+						questionData={pendingQuestion}
+						onSubmit={(answers) => {
+							bridge.resolve?.(answers);
+							setPendingQuestion(null);
+						}}
+						onCancel={() => {
+							bridge.resolve?.([]);
+							setPendingQuestion(null);
+						}}
+					/>
+				) : (
+					<InputBox
+						disabled={isRunning}
+						mode={showSettings || picker.showSessionPicker ? "normal" : mode}
+						agentMode={agentMode}
+						cwd={cwd}
+						pollManager={pollManagerRef.current}
+						skillManager={client.getSkillManager()}
+						onSubmit={handlePrompt}
+						sentMessages={commandHistory}
+					/>
+				)}
 				<StatusBar
 					model={modelDisplay}
 					mode={mode}

@@ -7,6 +7,7 @@ import {
 	createToolMessage,
 	type Message,
 } from "../../message.js";
+import type { QuestionData } from "../../tools/question-bridge.js";
 import { extractAssistantContent } from "../../utils/content.js";
 import type { StreamingBuffer } from "./useStreamingBuffer.js";
 
@@ -24,6 +25,7 @@ export function useSessionEvents(
 		window: number | null;
 		percent: null | number;
 	}) => void,
+	onQuestionAsked?: (data: QuestionData) => void,
 ): SessionEventsState {
 	const toolCallIdToMsgId = useRef<Map<string, string>>(new Map());
 
@@ -85,6 +87,13 @@ export function useSessionEvents(
 				}
 
 				case "tool_execution_start": {
+					if (event.toolName === "question" && onQuestionAsked) {
+						const args =
+							typeof event.args === "string"
+								? (JSON.parse(event.args) as QuestionData)
+								: (event.args as QuestionData);
+						onQuestionAsked(args);
+					}
 					const toolMsg = createToolMessage(event.toolName, event.args, "running");
 					toolCallIdToMsgId.current.set(event.toolCallId, toolMsg.id);
 					setMessages((prev) => [...prev, toolMsg]);
@@ -141,7 +150,7 @@ export function useSessionEvents(
 			}
 		});
 		return unsubscribe;
-	}, [client, streaming, setMessages, setIsRunning, setContextUsage]);
+	}, [client, streaming, setMessages, setIsRunning, setContextUsage, onQuestionAsked]);
 
 	return { toolCallIdToMsgId };
 }
