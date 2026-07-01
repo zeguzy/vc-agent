@@ -22,7 +22,7 @@ import { SkillManager } from "../skills/manager.js";
 import { createTodoTool } from "../tools/todo.js";
 
 const BUILTIN_TOOLS = ["read", "bash", "edit", "write", "grep", "find"];
-const LSP_TOOL_NAMES = ["lsp_diagnostics", "lsp_goto_definition", "lsp_find_references"];
+const LSP_TOOL_NAMES = ["lsp"];
 const ALL_TOOLS = [...BUILTIN_TOOLS, ...LSP_TOOL_NAMES];
 
 /** Tools available in planner mode — read-only, no file mutations. */
