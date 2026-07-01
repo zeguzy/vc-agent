@@ -25,6 +25,8 @@ export interface CommandContext {
 	openSessionPicker: (sessions: SessionInfo[]) => void;
 	agentMode: AgentMode;
 	setAgentMode: (updater: AgentMode | ((prev: AgentMode) => AgentMode)) => void;
+	setInputText: (text: string) => void;
+	isRunning: boolean;
 }
 
 /**

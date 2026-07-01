@@ -17,6 +17,7 @@ interface InputBoxProps {
 	skillManager: SkillManager | null;
 	onSubmit: (text: string) => void;
 	sentMessages: string[];
+	pendingInput?: { text: string; nonce: number } | null;
 }
 
 export function InputBox({
@@ -28,6 +29,7 @@ export function InputBox({
 	skillManager,
 	onSubmit,
 	sentMessages,
+	pendingInput,
 }: InputBoxProps) {
 	const [inputHeight, setInputHeight] = useState(2);
 	const [animationFrame, setAnimationFrame] = useState(0);
@@ -63,6 +65,21 @@ export function InputBox({
 			setSelectedIndex(0);
 		}
 	}, [suggestions.length, selectedIndex]);
+
+	useEffect(() => {
+		if (!pendingInput) return;
+		const ta = textareaRef.current;
+		if (ta) {
+			ta.setText(pendingInput.text);
+			ta.gotoBufferEnd();
+		}
+		setCurrentText(pendingInput.text);
+		const nextHeight = Math.min(6, Math.max(2, pendingInput.text.split("\n").length));
+		setInputHeight(nextHeight);
+		setSelectedIndex(0);
+		setHistoryIndex(-1);
+		setSavedDraft(null);
+	}, [pendingInput]);
 
 	const keyBindings = useMemo<TextareaKeyBinding[]>(
 		() => [
