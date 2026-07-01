@@ -317,6 +317,51 @@ export function registerBuiltinCommands(): void {
 			}
 		},
 	});
+
+	commandRegistry.register({
+		name: "undo",
+		description: "Undo the last conversation turn",
+		usage: "/undo",
+		handler: async (_args, ctx) => {
+			if (ctx.isRunning) {
+				ctx.setMessages((prev) => [
+					...prev,
+					createAssistantMessage("Agent 正在运行，请先等待完成或 /abort。"),
+				]);
+				return;
+			}
+			try {
+				const session = ctx.client.getSession();
+				const userMsgs = session.getUserMessagesForForking();
+				if (userMsgs.length === 0) {
+					ctx.setMessages((prev) => [...prev, createAssistantMessage("没有可撤销的对话。")]);
+					return;
+				}
+				const lastUser = userMsgs[userMsgs.length - 1];
+				const parentId = session.sessionManager.getEntry(lastUser.entryId)?.parentId;
+				if (!parentId) {
+					ctx.setMessages((prev) => [
+						...prev,
+						createAssistantMessage("已是会话开头，无法继续撤销。"),
+					]);
+					return;
+				}
+				const result = await session.navigateTree(parentId);
+				if (result.cancelled) {
+					ctx.setMessages((prev) => [...prev, createAssistantMessage("已取消撤销。")]);
+					return;
+				}
+				ctx.setMessages(ctx.client.getMappedMessages());
+				ctx.setInputText(lastUser.text);
+			} catch (err) {
+				const msg =
+					err instanceof Error && err.name === "NotSupportedError"
+						? "/undo 仅在本地模式可用。"
+						: `撤销失败: ${formatError(err)}`;
+				ctx.setMessages((prev) => [...prev, createAssistantMessage(msg)]);
+			}
+		},
+	});
 }
 
 /**

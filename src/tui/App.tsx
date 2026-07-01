@@ -53,6 +53,7 @@ export function App({
 		initialMapped.length > 0 ? initialMapped : [WELCOME_MESSAGE],
 	);
 	const [commandHistory, setCommandHistory] = useState<string[]>(() => loadHistory());
+	const [pendingInput, setPendingInput] = useState<{ text: string; nonce: number } | null>(null);
 	const [isRunning, setIsRunning] = useState(false);
 	const [mode, setMode] = useState<Mode>("insert");
 	const [agentMode, setAgentMode] = useState<AgentMode>(initialAgentMode ?? "standard");
@@ -167,6 +168,8 @@ export function App({
 			openSessionPicker: picker.openSessionPicker,
 			agentMode: agentModeRef.current,
 			setAgentMode,
+			setInputText: (text: string) => setPendingInput({ text, nonce: Date.now() }),
+			isRunning: isRunningRef.current,
 		};
 	}, [client, cwd, picker.openSessionPicker]);
 
@@ -393,6 +396,7 @@ export function App({
 						skillManager={client.getSkillManager()}
 						onSubmit={handlePrompt}
 						sentMessages={commandHistory}
+						pendingInput={pendingInput}
 					/>
 				)}
 				<StatusBar
