@@ -19,6 +19,8 @@ import { createLspToolDefinitions, LspClient } from "../lsp/index.js";
 import { listSessions, resolveSessionRef } from "../session/list.js";
 import { resolveSessionDir } from "../session/storage.js";
 import { SkillManager } from "../skills/manager.js";
+import { createQuestionTool } from "../tools/question.js";
+import { clearBridge, type QuestionBridge } from "../tools/question-bridge.js";
 import { createTodoTool } from "../tools/todo.js";
 
 const BUILTIN_TOOLS = ["read", "bash", "edit", "write", "grep", "find"];
@@ -33,8 +35,8 @@ const PLANNER_TOOLS = ["read", "bash", "grep", "find", ...LSP_TOOL_NAMES];
  * setActiveToolsByName() on mode toggle. Always includes the `todo` tool so
  * task tracking survives mode switches.
  */
-export const STANDARD_ACTIVE_TOOLS = [...ALL_TOOLS, "todo"];
-export const PLANNER_ACTIVE_TOOLS = [...PLANNER_TOOLS, "todo"];
+export const STANDARD_ACTIVE_TOOLS = [...ALL_TOOLS, "todo", "question"];
+export const PLANNER_ACTIVE_TOOLS = [...PLANNER_TOOLS, "todo", "question"];
 
 export function activeToolsFor(agentMode: AgentMode): string[] {
 	return agentMode === "planner" ? PLANNER_ACTIVE_TOOLS : STANDARD_ACTIVE_TOOLS;
@@ -55,6 +57,7 @@ export interface SessionOptions {
 	cwd: string;
 	model?: string;
 	config?: Config;
+	bridge?: QuestionBridge;
 }
 
 export interface SessionResult {
@@ -75,6 +78,8 @@ export interface RuntimeOptions {
 	name?: string;
 	/** Agent runtime mode. "planner" starts with edit/write tools disabled. */
 	agentMode?: AgentMode;
+	/** QuestionBridge for interactive question tool. Omit in non-interactive modes. */
+	bridge?: QuestionBridge;
 }
 
 export interface RuntimeResult {
@@ -170,7 +175,11 @@ export async function createSession(options: SessionOptions): Promise<SessionRes
 		settingsManager: svc.settingsManager,
 		resourceLoader: svc.resourceLoader,
 		tools: STANDARD_ACTIVE_TOOLS,
-		customTools: [...createLspToolDefinitions({ client: svc.lspClient }), createTodoTool()],
+		customTools: [
+			...createLspToolDefinitions({ client: svc.lspClient }),
+			createTodoTool(),
+			createQuestionTool(options.bridge),
+		],
 		sessionManager: SessionManager.inMemory(),
 	});
 	return { session: result.session, skillManager: svc.skillManager };
@@ -201,6 +210,7 @@ export async function createRuntime(options: RuntimeOptions): Promise<RuntimeRes
 		agentDir: fAgentDir,
 		sessionManager: fSessionManager,
 	}) => {
+		if (options.bridge) clearBridge(options.bridge);
 		const result = await createAgentSession({
 			cwd: fCwd,
 			authStorage: svc.authStorage,
@@ -209,7 +219,11 @@ export async function createRuntime(options: RuntimeOptions): Promise<RuntimeRes
 			settingsManager: svc.settingsManager,
 			resourceLoader: svc.resourceLoader,
 			tools: activeToolsFor(agentMode),
-			customTools: [...createLspToolDefinitions({ client: svc.lspClient }), createTodoTool()],
+			customTools: [
+				...createLspToolDefinitions({ client: svc.lspClient }),
+				createTodoTool(),
+				createQuestionTool(options.bridge),
+			],
 			sessionManager: fSessionManager,
 		});
 		const services: AgentSessionServices = {
