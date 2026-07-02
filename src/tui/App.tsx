@@ -5,6 +5,7 @@ import type { AgentClient, AgentMode } from "../client/index.js";
 import { commandRegistry } from "../commands/registry.js";
 import type { Config } from "../config.js";
 import { createAssistantMessage, createUserMessage, type Message } from "../message.js";
+import { resolveNotificationsConfig } from "../notifications/config.js";
 import { getGlobalRouter } from "../notifications/notifier.js";
 import { PollManager } from "../poll/manager.js";
 import type { SettingContext } from "../settings/types.js";
@@ -71,6 +72,9 @@ export function App({
 	);
 	const [showSettings, setShowSettings] = useState(false);
 	const [configState, setConfigState] = useState<Config>(config ?? {});
+	const [toastDismissMs, setToastDismissMs] = useState(
+		resolveNotificationsConfig(config?.notifications).toastDismissMs,
+	);
 	const [copyFeedback, setCopyFeedback] = useState<{ ts: number } | null>(null);
 	const [pendingQuestion, setPendingQuestion] = useState<QuestionData | null>(null);
 	const scrollRef = useRef<ScrollBoxRenderable>(null);
@@ -106,7 +110,7 @@ export function App({
 	const lastCtrlCRef = useRef<number>(0);
 	const resumeListDoneRef = useRef(false);
 
-	const { toast, pushToast } = useToasts();
+	const { toast, pushToast } = useToasts(toastDismissMs);
 	const toastPushRef = useRef(pushToast);
 	toastPushRef.current = pushToast;
 
@@ -165,6 +169,7 @@ export function App({
 		setUi: {
 			thinkingCollapsed: setThinkingCollapsed,
 			contextDisplay: setContextDisplay,
+			toastDismissMs: setToastDismissMs,
 		},
 		cwd,
 	};

@@ -178,3 +178,30 @@ export const notificationsBashThresholdSetting: Setting<string> = {
 		};
 	},
 };
+
+export const toastDismissSecondsSetting: Setting<string> = {
+	key: "notifications.toastDismissSeconds",
+	label: "提示停留时间 (秒)",
+	category: "notifications",
+	defaultValue: "4",
+	editor: { type: "input", placeholder: "4" },
+	read(config) {
+		const ms = config.notifications?.toastDismissMs;
+		if (ms === undefined) return "4";
+		return String(Math.round(ms / 1000));
+	},
+	renderValue(v) {
+		return `${v}s`;
+	},
+	apply(value, ctx) {
+		const seconds = Number(value) || 4;
+		ctx.setUi.toastDismissMs(seconds * 1000);
+	},
+	persist(config, value) {
+		const seconds = Number(value) || 4;
+		return {
+			...config,
+			notifications: { ...config.notifications, toastDismissMs: seconds * 1000 },
+		};
+	},
+};

@@ -7,6 +7,7 @@ import {
 	notificationsSoundSetting,
 	thinkingCollapsedSetting,
 	thinkingLevelSetting,
+	toastDismissSecondsSetting,
 } from "./definitions.js";
 import type { Setting } from "./types.js";
 
@@ -19,6 +20,7 @@ export const settings: Setting<unknown>[] = [
 	notificationsEnabledSetting,
 	notificationsSoundSetting,
 	notificationsBashThresholdSetting,
+	toastDismissSecondsSetting,
 ];
 
 export function findSetting(key: string): Setting<unknown> | undefined {

@@ -8,7 +8,7 @@ interface ToastProps {
 export function Toast({ toast }: ToastProps) {
 	if (!toast) return null;
 	return (
-		<box flexShrink={0} paddingLeft={1} paddingRight={1}>
+		<box position="absolute" top={0} right={0} zIndex={100} maxWidth={"60%"}>
 			<box
 				borderStyle="rounded"
 				border={["top", "right", "bottom", "left"]}
