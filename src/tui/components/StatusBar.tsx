@@ -5,7 +5,6 @@ import { colors } from "../utils/theme.js";
 type ContextDisplay = "compact" | "full";
 
 interface StatusBarProps {
-	model: string;
 	mode: Mode;
 	contextPercent: number | null;
 	contextTokens: number | null;
@@ -18,7 +17,6 @@ interface StatusBarProps {
 const COPY_FEEDBACK_MS = 2000;
 
 export function StatusBar({
-	model,
 	mode,
 	contextPercent,
 	contextTokens,
@@ -57,8 +55,6 @@ export function StatusBar({
 	return (
 		<box height={1} flexDirection="row" backgroundColor={colors.backgroundStatus}>
 			<text fg={modeColor}>-- {mode.toUpperCase()} --</text>
-			<text fg={colors.textSubtle}> </text>
-			<text fg={colors.secondary}>{model}</text>
 			<box flexGrow={1} />
 			{showCopy && <text fg={colors.success}>Copied to clipboard</text>}
 			{!showCopy && hasContext && contextDisplay === "compact" && (

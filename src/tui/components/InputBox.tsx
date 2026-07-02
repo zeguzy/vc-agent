@@ -12,6 +12,7 @@ interface InputBoxProps {
 	disabled: boolean;
 	mode: Mode;
 	agentMode: AgentMode;
+	model: string;
 	cwd: string;
 	pollManager: PollManager;
 	skillManager: SkillManager | null;
@@ -24,6 +25,7 @@ export function InputBox({
 	disabled,
 	mode,
 	agentMode,
+	model,
 	cwd,
 	pollManager,
 	skillManager,
@@ -253,6 +255,7 @@ export function InputBox({
 				<text fg={agentMode === "planner" ? colors.warning : colors.success}>
 					{agentMode === "planner" ? "⏸ planner" : "▶ standard"}{" "}
 				</text>
+				<text fg={colors.secondary}>{model} </text>
 				<text fg={colors.textMuted}>{icons.folder} </text>
 				<text fg={colors.textMuted}>
 					{pathDisplay}
