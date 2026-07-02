@@ -41,6 +41,8 @@ export interface NotificationsConfig {
 	sound?: boolean;
 	/** Bash duration threshold in milliseconds before a "long bash" notification fires. */
 	bashThresholdMs?: number;
+	/** How long the TUI toast stays visible before auto-dismissing (milliseconds). */
+	toastDismissMs?: number;
 	events?: NotificationEventsConfig;
 	channels?: NotificationChannelsConfig;
 }
@@ -50,6 +52,7 @@ export interface ResolvedNotificationsConfig {
 	enabled: boolean;
 	sound: boolean;
 	bashThresholdMs: number;
+	toastDismissMs: number;
 	events: Required<NotificationEventsConfig>;
 	channels: Required<NotificationChannelsConfig>;
 }
@@ -61,4 +64,6 @@ export interface NotificationPayload {
 	message: string;
 	/** When true, only deliver via TUI toast, skip OSC/OS channels. */
 	toastOnly?: boolean;
+	/** When true, skip TUI toast and only deliver via external channels (OSC/OS). */
+	skipToast?: boolean;
 }

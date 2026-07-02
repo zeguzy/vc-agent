@@ -9,6 +9,9 @@ import type { NotificationsConfig, ResolvedNotificationsConfig } from "./types.j
 /** Default bash duration before a "long bash" notification fires (10 seconds). */
 export const DEFAULT_BASH_THRESHOLD_MS = 10_000;
 
+/** Default auto-dismiss delay for the TUI toast (4 seconds). */
+export const DEFAULT_TOAST_DISMISS_MS = 4_000;
+
 /**
  * Returns the fully-resolved default config (everything on).
  * Used when `Config.notifications` is entirely absent.
@@ -18,6 +21,7 @@ export function getDefaultNotificationsConfig(): ResolvedNotificationsConfig {
 		enabled: true,
 		sound: true,
 		bashThresholdMs: DEFAULT_BASH_THRESHOLD_MS,
+		toastDismissMs: DEFAULT_TOAST_DISMISS_MS,
 		events: {
 			agentEnd: true,
 			toolError: true,
@@ -52,6 +56,7 @@ export function resolveNotificationsConfig(
 		enabled: config.enabled ?? defaults.enabled,
 		sound: config.sound ?? defaults.sound,
 		bashThresholdMs: config.bashThresholdMs ?? defaults.bashThresholdMs,
+		toastDismissMs: config.toastDismissMs ?? defaults.toastDismissMs,
 		events: {
 			agentEnd: config.events?.agentEnd ?? defaults.events.agentEnd,
 			toolError: config.events?.toolError ?? defaults.events.toolError,
