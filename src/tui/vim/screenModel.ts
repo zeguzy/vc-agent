@@ -95,9 +95,11 @@ export function extractText(model: ScreenCell[][], start: Position, end: Positio
 	}
 
 	const parts: string[] = [];
-	parts.push(extractLineRange(model, start.row, start.col, model[start.row].length - 1));
+	const startLine = model[start.row];
+	parts.push(extractLineRange(model, start.row, start.col, startLine ? startLine.length - 1 : -1));
 	for (let row = start.row + 1; row < end.row; row++) {
-		parts.push(extractLineRange(model, row, 0, model[row].length - 1));
+		const line = model[row];
+		parts.push(extractLineRange(model, row, 0, line ? line.length - 1 : -1));
 	}
 	parts.push(extractLineRange(model, end.row, 0, end.col));
 	return parts.join("\n");
@@ -105,6 +107,74 @@ export function extractText(model: ScreenCell[][], start: Position, end: Positio
 
 export function findFirstNonEmpty(model: ScreenCell[][]): Position | null {
 	for (let row = 0; row < model.length; row++) {
+		const line = model[row];
+		for (let col = 0; col < line.length; col++) {
+			if (!line[col].isEmpty) {
+				return { row, col };
+			}
+		}
+	}
+	return null;
+}
+
+function isBoxDrawing(c: string): boolean {
+	const code = c.codePointAt(0) ?? 0;
+	return code >= 0x2500 && code <= 0x257f;
+}
+
+export function findFirstContent(model: ScreenCell[][]): Position | null {
+	for (let row = 0; row < model.length; row++) {
+		const line = model[row];
+		for (let col = 0; col < line.length; col++) {
+			const c = line[col];
+			if (c.isEmpty || c.isContinuation || isBoxDrawing(c.char) || c.char === " ") continue;
+			return { row, col };
+		}
+	}
+	return null;
+}
+
+export function findLastContent(model: ScreenCell[][]): Position | null {
+	for (let row = model.length - 1; row >= 0; row--) {
+		const line = model[row];
+		for (let col = 0; col < line.length; col++) {
+			const c = line[col];
+			if (c.isEmpty || c.isContinuation || isBoxDrawing(c.char) || c.char === " ") continue;
+			return { row, col };
+		}
+	}
+	return null;
+}
+
+export function findLineByPrefix(model: ScreenCell[][], prefix: string): Position | null {
+	const needle = prefix.trim();
+	if (!needle) return null;
+	for (let row = 0; row < model.length; row++) {
+		const line = model[row];
+		if (!line) continue;
+		const chars: string[] = [];
+		let started = false;
+		for (let col = 0; col < line.length; col++) {
+			const cell = line[col];
+			if (cell.isContinuation) continue;
+			if (!started && (cell.isEmpty || cell.char === " " || isBoxDrawing(cell.char))) continue;
+			started = true;
+			chars.push(cell.char);
+		}
+		if (chars.join("").startsWith(needle)) {
+			for (let col = 0; col < line.length; col++) {
+				const cell = line[col];
+				if (cell.isContinuation || cell.isEmpty || cell.char === " " || isBoxDrawing(cell.char))
+					continue;
+				return { row, col };
+			}
+		}
+	}
+	return null;
+}
+
+export function findLastNonEmpty(model: ScreenCell[][]): Position | null {
+	for (let row = model.length - 1; row >= 0; row--) {
 		const line = model[row];
 		for (let col = 0; col < line.length; col++) {
 			if (!line[col].isEmpty) {

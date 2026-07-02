@@ -58,6 +58,9 @@ export function handleKey(key: string, state: VimState, model: ScreenCell[][]): 
 	let yankText: string | undefined;
 	let needsRender = false;
 
+	// 空 model 下任何操作都无意义且可能越界（G/yy 等会算出 row=-1）
+	if (model.length === 0) return { state: newState, needsRender: false };
+
 	if (newState.easymotion) {
 		if (key === "escape") {
 			newState.easymotion = null;
@@ -82,6 +85,17 @@ export function handleKey(key: string, state: VimState, model: ScreenCell[][]): 
 
 	if (newState.pending) {
 		const pending = newState.pending;
+
+		// operator 后接 count（y4h / d3w）；findChar/tillChar/easymotion/gotoLine
+		// 后接的是目标字符，数字不可当 count，否则 f4（找字符 '4'）会坏
+		if (pending.type === "yank" && /^[1-9]$/.test(key)) {
+			pending.motionCountStr = (pending.motionCountStr ?? "") + key;
+			return { state: newState, needsRender: false };
+		}
+		if (pending.type === "yank" && key === "0" && pending.motionCountStr) {
+			pending.motionCountStr += "0";
+			return { state: newState, needsRender: false };
+		}
 
 		if (pending.type === "findChar" || pending.type === "tillChar") {
 			newState.pending = null;
@@ -115,6 +129,10 @@ export function handleKey(key: string, state: VimState, model: ScreenCell[][]): 
 			newState.pending = null;
 			if (key === "g") {
 				const cnt = pending.count ?? 1;
+				// 无 count 的 gg 跳文档顶：交由 overlay 绝对滚动
+				if (cnt === 1) {
+					return { state: newState, needsRender: true, scrollEdge: "top" };
+				}
 				const targetRow = Math.min(cnt - 1, model.length - 1);
 				newState.cursor = clampToNonEmpty(
 					model,
@@ -127,7 +145,9 @@ export function handleKey(key: string, state: VimState, model: ScreenCell[][]): 
 
 		if (pending.type === "yank") {
 			newState.pending = null;
-			const cnt = pending.count ?? 1;
+			// operator-count × motion-count（vim 规范：4y3h = yank 12 字符）
+			const motionCount = pending.motionCountStr ? Number.parseInt(pending.motionCountStr, 10) : 1;
+			const cnt = (pending.count ?? 1) * motionCount;
 
 			if (key === "y") {
 				const endRow = Math.min(newState.cursor.row + cnt - 1, model.length - 1);
@@ -136,6 +156,22 @@ export function handleKey(key: string, state: VimState, model: ScreenCell[][]): 
 					{ row: newState.cursor.row, col: 0 },
 					{ row: endRow, col: lastNonEmptyCol(model, endRow) },
 				);
+				needsRender = true;
+				return { state: newState, yankText, needsRender };
+			}
+
+			// j/k 是 linewise yank：y2j = 当前行 + 下方 2 行（共 3 行），count 是步数
+			if (key === "j" || key === "k") {
+				const step = key === "j" ? cnt : -cnt;
+				const targetRow = Math.max(0, Math.min(newState.cursor.row + step, model.length - 1));
+				const startRow = Math.min(newState.cursor.row, targetRow);
+				const endRow = Math.max(newState.cursor.row, targetRow);
+				yankText = extractText(
+					model,
+					{ row: startRow, col: 0 },
+					{ row: endRow, col: lastNonEmptyCol(model, endRow) },
+				);
+				newState.cursor = { row: startRow, col: newState.cursor.col };
 				needsRender = true;
 				return { state: newState, yankText, needsRender };
 			}
@@ -271,7 +307,11 @@ export function handleKey(key: string, state: VimState, model: ScreenCell[][]): 
 			break;
 		}
 		case "G": {
-			const targetRow = count > 1 ? Math.min(count - 1, model.length - 1) : model.length - 1;
+			// 无 count 的 G 跳文档底：视口扫描看不到全文，交由 overlay 绝对滚动
+			if (count === 1) {
+				return { state: newState, needsRender: true, scrollEdge: "bottom" };
+			}
+			const targetRow = Math.min(count - 1, model.length - 1);
 			newState.cursor = clampToNonEmpty(
 				model,
 				motions.firstNonBlank(model, { row: targetRow, col: 0 }),

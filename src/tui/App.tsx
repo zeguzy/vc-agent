@@ -137,14 +137,44 @@ export function App({
 				return { x: vp.screenX, y: vp.screenY, width: vp.width, height: vp.height };
 			},
 			scrollBy: (delta: number) => scrollRef.current?.scrollBy(delta),
+			scrollToBottom: () => {
+				const sb = scrollRef.current;
+				if (!sb) return;
+				// stickyScroll 大距离滚动后可能把 scrollTop 拉回中部，临时禁用确保到底
+				const wasSticky = sb.stickyScroll;
+				sb.stickyScroll = false;
+				sb.scrollTo(sb.scrollHeight);
+				sb.stickyScroll = wasSticky;
+			},
+			scrollToTop: () => {
+				const sb = scrollRef.current;
+				if (!sb) return;
+				const wasSticky = sb.stickyScroll;
+				sb.stickyScroll = false;
+				sb.scrollTo(0);
+				sb.stickyScroll = wasSticky;
+			},
 			onYank: (text: string) => {
 				copyToClipboard(text);
+				const lines = text.split("\n").length;
+				toastPushRef.current({
+					event: "yank",
+					title: "Yanked",
+					message: lines > 1 ? `${lines} lines` : `${[...text].length} chars`,
+					toastOnly: true,
+				});
 			},
 			getInitialCursorText: () => {
 				const userMsgs = messagesRef.current.filter((m) => m.role === "user" && !m.queued);
 				const latest = userMsgs[userMsgs.length - 1];
 				if (!latest?.content) return null;
 				return [...latest.content].slice(0, 15).join("");
+			},
+			getFirstUserMessageText: () => {
+				const userMsgs = messagesRef.current.filter((m) => m.role === "user" && !m.queued);
+				const first = userMsgs[0];
+				if (!first?.content) return null;
+				return [...first.content.split("\n")[0]].slice(0, 25).join("").trim();
 			},
 		});
 		return () => {
