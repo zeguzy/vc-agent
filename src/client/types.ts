@@ -4,7 +4,7 @@ import type { CommandContext } from "../commands/registry.js";
 import type { Message } from "../message.js";
 import type { SessionInfo } from "../session/list.js";
 
-export type AgentMode = "standard" | "planner";
+export type AgentMode = "standard" | "planner" | "orchestrator";
 
 export type Unsubscribe = () => void;
 export type EventHandler = (event: AgentSessionEvent) => void;
