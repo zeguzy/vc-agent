@@ -25,10 +25,12 @@ import { useSessionPicker } from "./hooks/useSessionPicker.js";
 import { useStreamingBuffer } from "./hooks/useStreamingBuffer.js";
 import { useToasts } from "./hooks/useToasts.js";
 import { type Mode, resolveKey } from "./keymap.js";
+import { copyToClipboard } from "./utils/clipboard.js";
 import { getGitBranch, getGitDirty } from "./utils/git.js";
 import { loadHistory, saveHistory } from "./utils/history.js";
 import { copySelection } from "./utils/selection.js";
 import { colors } from "./utils/theme.js";
+import { createVimOverlay, type VimOverlay } from "./vim/index.js";
 
 const WELCOME_MESSAGE = createAssistantMessage("");
 
@@ -78,6 +80,7 @@ export function App({
 	const [copyFeedback, setCopyFeedback] = useState<{ ts: number } | null>(null);
 	const [pendingQuestion, setPendingQuestion] = useState<QuestionData | null>(null);
 	const scrollRef = useRef<ScrollBoxRenderable>(null);
+	const vimOverlayRef = useRef<VimOverlay | null>(null);
 	const pollManagerRef = useRef(new PollManager());
 
 	const streaming = useStreamingBuffer();
@@ -123,6 +126,42 @@ export function App({
 			router.setToastHandler(undefined);
 		};
 	}, [renderer]);
+
+	useEffect(() => {
+		if (!renderer) return;
+		vimOverlayRef.current = createVimOverlay({
+			renderer,
+			getBounds: () => {
+				const vp = scrollRef.current?.viewport;
+				if (!vp) return { x: 0, y: 0, width: 0, height: 0 };
+				return { x: vp.screenX, y: vp.screenY, width: vp.width, height: vp.height };
+			},
+			scrollBy: (delta: number) => scrollRef.current?.scrollBy(delta),
+			onYank: (text: string) => {
+				copyToClipboard(text);
+			},
+			getInitialCursorText: () => {
+				const userMsgs = messagesRef.current.filter((m) => m.role === "user" && !m.queued);
+				const latest = userMsgs[userMsgs.length - 1];
+				if (!latest?.content) return null;
+				return [...latest.content].slice(0, 15).join("");
+			},
+		});
+		return () => {
+			vimOverlayRef.current?.cleanup();
+			vimOverlayRef.current = null;
+		};
+	}, [renderer]);
+
+	useEffect(() => {
+		const overlay = vimOverlayRef.current;
+		if (!overlay) return;
+		if (mode === "normal") {
+			overlay.activate();
+		} else {
+			overlay.deactivate();
+		}
+	}, [mode, renderer]);
 
 	useEffect(() => {
 		if (commandRegistry.size === 0) {
@@ -271,6 +310,14 @@ export function App({
 			renderer.clearSelection();
 			return;
 		}
+		if (modeRef.current === "normal" && !key.ctrl && !key.super) {
+			const overlay = vimOverlayRef.current;
+			if (overlay) {
+				const keyStr =
+					key.name === "escape" ? "escape" : key.sequence?.length === 1 ? key.sequence : key.name;
+				if (overlay.handleKey(keyStr)) return;
+			}
+		}
 		const action = resolveKey(modeRef.current, key);
 		if (showSettingsRef.current || showSessionPickerRef.current) {
 			if (action === "ctrlC") {
@@ -414,6 +461,7 @@ export function App({
 						disabled={isRunning}
 						mode={showSettings || picker.showSessionPicker ? "normal" : mode}
 						agentMode={agentMode}
+						model={modelDisplay}
 						cwd={cwd}
 						pollManager={pollManagerRef.current}
 						skillManager={client.getSkillManager()}
@@ -423,7 +471,6 @@ export function App({
 					/>
 				)}
 				<StatusBar
-					model={modelDisplay}
 					mode={mode}
 					contextPercent={contextUsage.percent}
 					contextTokens={contextUsage.tokens}
