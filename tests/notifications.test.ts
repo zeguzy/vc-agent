@@ -94,11 +94,10 @@ function event(partial: { type: string } & Record<string, unknown>): AgentSessio
 }
 
 describe("NotificationRouter.handleEvent", () => {
-	it("fires toast on agent_end", async () => {
+	it("skips toast on agent_end (external only)", async () => {
 		const { router, toasts } = makeRouter({});
 		await router.handleEvent(event({ type: "agent_end" }));
-		expect(toasts).toHaveLength(1);
-		expect(toasts[0].event).toBe("agentEnd");
+		expect(toasts).toHaveLength(0);
 	});
 
 	it("fires toast on tool_execution_end with isError", async () => {
@@ -214,10 +213,26 @@ describe("NotificationRouter setters", () => {
 	it("setEnabled toggles runtime behavior", async () => {
 		const { router, toasts } = makeRouter({});
 		router.setEnabled(false);
-		await router.handleEvent(event({ type: "agent_end" }));
+		await router.handleEvent(
+			event({
+				type: "tool_execution_end",
+				toolCallId: "tc-en1",
+				toolName: "bash",
+				isError: true,
+				result: "",
+			}),
+		);
 		expect(toasts).toHaveLength(0);
 		router.setEnabled(true);
-		await router.handleEvent(event({ type: "agent_end" }));
+		await router.handleEvent(
+			event({
+				type: "tool_execution_end",
+				toolCallId: "tc-en2",
+				toolName: "bash",
+				isError: true,
+				result: "",
+			}),
+		);
 		expect(toasts).toHaveLength(1);
 	});
 
