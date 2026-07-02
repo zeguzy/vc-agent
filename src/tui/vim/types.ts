@@ -19,8 +19,9 @@ export interface Bounds {
 export type VimMode = "normal" | "visual";
 
 export interface PendingMotion {
-	type: "findChar" | "tillChar" | "easymotion" | "gotoLine";
+	type: "findChar" | "tillChar" | "easymotion" | "gotoLine" | "yank";
 	backward?: boolean;
+	count?: number;
 }
 
 export interface EasymotionState {
@@ -35,6 +36,7 @@ export interface VimState {
 	pending: PendingMotion | null;
 	easymotion: EasymotionState | null;
 	visualAnchor: Position | null;
+	countStr: string | null;
 }
 
 export interface HandleResult {

@@ -185,15 +185,18 @@ export function findChar(
 	model: ScreenCell[][],
 	pos: Position,
 	char: string,
-	opts: { till?: boolean; backward?: boolean },
+	opts: { till?: boolean; backward?: boolean; count?: number },
 ): Position | null {
 	const line = model[pos.row];
 	if (!line) return null;
-	const { till = false, backward = false } = opts;
+	const { till = false, backward = false, count = 1 } = opts;
+	let found = 0;
 
 	if (backward) {
 		for (let col = pos.col - 1; col >= 0; col--) {
 			if (line[col].char === char) {
+				found++;
+				if (found < count) continue;
 				let resultCol = till ? col + 1 : col;
 				if (till && line[resultCol]?.isContinuation) {
 					resultCol++;
@@ -204,6 +207,8 @@ export function findChar(
 	} else {
 		for (let col = pos.col + 1; col < line.length; col++) {
 			if (line[col].char === char) {
+				found++;
+				if (found < count) continue;
 				let resultCol = till ? col - 1 : col;
 				if (till && line[resultCol]?.isContinuation) {
 					resultCol--;
