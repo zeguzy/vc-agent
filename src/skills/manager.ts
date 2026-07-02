@@ -74,6 +74,7 @@ export class SkillManager {
 		cwd: string,
 		config: Config,
 		settingsManager: SettingsManager,
+		appendSystemPrompt?: string[],
 	): Promise<DefaultResourceLoader> {
 		this._cwd = cwd;
 		this._agentDir = join(homedir(), ".config", "openagent");
@@ -99,6 +100,7 @@ export class SkillManager {
 			additionalSkillPaths: skillPaths,
 			noSkills: true,
 			systemPrompt,
+			...(appendSystemPrompt ? { appendSystemPrompt } : {}),
 			skillsOverride: (base: { skills: Skill[]; diagnostics: ResourceDiagnostic[] }) => {
 				if (disabledSet.size === 0) return base;
 				return {

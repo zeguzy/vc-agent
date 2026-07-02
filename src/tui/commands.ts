@@ -1,3 +1,4 @@
+import type { AgentMode } from "../client/types.js";
 import { type CommandContext, commandRegistry } from "../commands/registry.js";
 import { writeConfig } from "../config.js";
 import { createAssistantMessage, createUserMessage } from "../message.js";
@@ -116,21 +117,33 @@ export function registerBuiltinCommands(): void {
 
 	commandRegistry.register({
 		name: "plan",
-		description: "Toggle planner mode (read-only exploration)",
+		description: "Cycle agent mode (standard → planner → orchestrator)",
 		usage: "/plan",
 		handler: (_args: string, ctx: CommandContext) => {
 			ctx.setAgentMode((prev) => {
-				const next = prev === "standard" ? "planner" : "standard";
+				const cycle: Record<string, AgentMode> = {
+					standard: "planner",
+					planner: "orchestrator",
+					orchestrator: "standard",
+				};
+				const next = cycle[prev] ?? "standard";
 				ctx.client.setAgentMode(next);
-				ctx.setMessages((msgs) => [
-					...msgs,
-					createAssistantMessage(
-						next === "planner"
-							? "📋 Planner mode — edit/write tools disabled. Use /plan or Tab to switch back."
-							: "▶ Standard mode — all tools available.",
-					),
-				]);
 				return next;
+			});
+		},
+	});
+
+	commandRegistry.register({
+		name: "orchestrate",
+		description: "Switch to orchestrator mode (proactive subagent delegation)",
+		usage: "/orchestrate",
+		handler: (_args: string, ctx: CommandContext) => {
+			ctx.setAgentMode((prev) => {
+				if (prev === "orchestrator") {
+					return prev;
+				}
+				ctx.client.setAgentMode("orchestrator");
+				return "orchestrator";
 			});
 		},
 	});
@@ -431,6 +444,6 @@ export function buildHelpText(): string {
 		"    j · k          Scroll down / up",
 		"    g · G          Scroll to top / bottom",
 		"    t              Toggle thinking collapse",
-		"    Tab            Toggle planner mode (read-only)",
+		"    Tab            Cycle agent mode (standard/planner/orchestrator)",
 	].join("\n");
 }

@@ -15,6 +15,7 @@ import {
 	SettingsManager,
 } from "@earendil-works/pi-coding-agent";
 import type { Config, ProviderConfig } from "../config.js";
+import { ORCHESTRATOR_SYSTEM_PROMPT } from "../context-files.js";
 import { createLspToolDefinitions, LspClient } from "../lsp/index.js";
 import { listSessions, resolveSessionRef } from "../session/list.js";
 import { resolveSessionDir } from "../session/storage.js";
@@ -22,9 +23,10 @@ import { SkillManager } from "../skills/manager.js";
 import { createNotifyTool } from "../tools/notify.js";
 import { createQuestionTool } from "../tools/question.js";
 import { clearBridge, type QuestionBridge } from "../tools/question-bridge.js";
+import { createSubagentTool } from "../tools/subagent.js";
 import { createTodoTool } from "../tools/todo.js";
 
-const BUILTIN_TOOLS = ["read", "bash", "edit", "write", "grep", "find"];
+export const BUILTIN_TOOLS = ["read", "bash", "edit", "write", "grep", "find"];
 const LSP_TOOL_NAMES = ["lsp"];
 const ALL_TOOLS = [...BUILTIN_TOOLS, ...LSP_TOOL_NAMES];
 
@@ -36,7 +38,7 @@ const PLANNER_TOOLS = ["read", "bash", "grep", "find", ...LSP_TOOL_NAMES];
  * setActiveToolsByName() on mode toggle. Always includes the `todo` tool so
  * task tracking survives mode switches.
  */
-export const STANDARD_ACTIVE_TOOLS = [...ALL_TOOLS, "todo", "question"];
+export const STANDARD_ACTIVE_TOOLS = [...ALL_TOOLS, "todo", "question", "subagent"];
 export const PLANNER_ACTIVE_TOOLS = [...PLANNER_TOOLS, "todo", "question"];
 
 export function activeToolsFor(agentMode: AgentMode): string[] {
@@ -44,7 +46,11 @@ export function activeToolsFor(agentMode: AgentMode): string[] {
 }
 
 /** Agent runtime mode — controls tool availability and system prompt. */
-export type AgentMode = "standard" | "planner";
+export type AgentMode = "standard" | "planner" | "orchestrator";
+
+export function appendSystemPromptFor(agentMode: AgentMode): string[] | undefined {
+	return agentMode === "orchestrator" ? [ORCHESTRATOR_SYSTEM_PROMPT] : undefined;
+}
 
 /**
  * How the initial SessionManager should be constructed at startup.
@@ -96,7 +102,7 @@ export interface RuntimeResult {
  * newSession (the SDK factory contract allows this; only the SessionManager
  * differs across switches).
  */
-interface InitializedServices {
+export interface InitializedServices {
 	authStorage: AuthStorage;
 	modelRegistry: ModelRegistry;
 	settingsManager: SettingsManager;
@@ -110,6 +116,7 @@ async function initServices(opts: {
 	cwd: string;
 	config?: Config;
 	modelStr?: string;
+	appendSystemPrompt?: string[];
 }): Promise<InitializedServices> {
 	const authStorage = AuthStorage.inMemory();
 	const modelRegistry = ModelRegistry.inMemory(authStorage);
@@ -133,6 +140,7 @@ async function initServices(opts: {
 		opts.cwd,
 		opts.config ?? {},
 		settingsManager,
+		opts.appendSystemPrompt,
 	);
 
 	const lspClient = new LspClient(opts.cwd);
@@ -181,6 +189,11 @@ export async function createSession(options: SessionOptions): Promise<SessionRes
 			createTodoTool(),
 			createQuestionTool(options.bridge),
 			createNotifyTool(),
+			createSubagentTool({
+				cwd: options.cwd,
+				services: svc,
+				parentModel: svc.model,
+			}),
 		],
 		sessionManager: SessionManager.inMemory(),
 	});
@@ -205,6 +218,7 @@ export async function createRuntime(options: RuntimeOptions): Promise<RuntimeRes
 		cwd,
 		config: options.config,
 		modelStr: options.model ?? options.config?.model,
+		appendSystemPrompt: appendSystemPromptFor(agentMode),
 	});
 
 	const factory: CreateAgentSessionRuntimeFactory = async ({
@@ -226,6 +240,11 @@ export async function createRuntime(options: RuntimeOptions): Promise<RuntimeRes
 				createTodoTool(),
 				createQuestionTool(options.bridge),
 				createNotifyTool(),
+				createSubagentTool({
+					cwd: fCwd,
+					services: svc,
+					parentModel: svc.model,
+				}),
 			],
 			sessionManager: fSessionManager,
 		});
@@ -312,7 +331,7 @@ function registerCustomProvider(registry: ModelRegistry, name: string, config: P
 	});
 }
 
-function resolveModel(registry: ModelRegistry, modelStr?: string) {
+export function resolveModel(registry: ModelRegistry, modelStr?: string) {
 	if (!modelStr) return undefined;
 
 	if (modelStr.includes(":")) {

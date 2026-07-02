@@ -161,7 +161,7 @@ export function App({
 		} else {
 			overlay.deactivate();
 		}
-	}, [mode, renderer]);
+	}, [mode]);
 
 	useEffect(() => {
 		if (commandRegistry.size === 0) {
@@ -355,17 +355,14 @@ export function App({
 				setThinkingCollapsed((v) => !v);
 				return;
 			case "toggleAgentMode": {
-				const next: AgentMode = agentModeRef.current === "standard" ? "planner" : "standard";
+				const cycle: Record<string, AgentMode> = {
+					standard: "planner",
+					planner: "orchestrator",
+					orchestrator: "standard",
+				};
+				const next = cycle[agentModeRef.current] ?? "standard";
 				client.setAgentMode(next);
 				setAgentMode(next);
-				setMessages((prev) => [
-					...prev,
-					createAssistantMessage(
-						next === "planner"
-							? "📋 Planner mode — edit/write tools disabled. Use Tab or /plan to switch back."
-							: "▶ Standard mode — all tools available.",
-					),
-				]);
 				return;
 			}
 			case "ctrlC": {

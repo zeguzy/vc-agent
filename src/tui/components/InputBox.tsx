@@ -252,8 +252,20 @@ export function InputBox({
 				paddingRight={1}
 				marginTop={disabled ? 1 : 0}
 			>
-				<text fg={agentMode === "planner" ? colors.warning : colors.success}>
-					{agentMode === "planner" ? "⏸ planner" : "▶ standard"}{" "}
+				<text
+					fg={
+						agentMode === "planner"
+							? colors.warning
+							: agentMode === "orchestrator"
+								? colors.accent
+								: colors.success
+					}
+				>
+					{agentMode === "planner"
+						? "⏸ planner"
+						: agentMode === "orchestrator"
+							? "🎯 orchestrator"
+							: "▶ standard"}{" "}
 				</text>
 				<text fg={colors.secondary}>{model} </text>
 				<text fg={colors.textMuted}>{icons.folder} </text>

@@ -12,6 +12,7 @@ import type {
 import type { CommandContext } from "../commands/registry.js";
 import { commandRegistry } from "../commands/registry.js";
 import { readConfig } from "../config.js";
+import { ORCHESTRATOR_SYSTEM_PROMPT } from "../context-files.js";
 import { NotificationRouter, setGlobalRouter } from "../notifications/notifier.js";
 import { listSessions } from "../session/list.js";
 import { mapSdkMessagesToTui } from "../session/render.js";
@@ -137,6 +138,9 @@ export class AgentServer {
 
 	handleSetAgentMode(mode: AgentMode): void {
 		this.session.setActiveToolsByName(activeToolsFor(mode));
+		if (mode === "orchestrator") {
+			this.session.steer(ORCHESTRATOR_SYSTEM_PROMPT);
+		}
 	}
 
 	async handleListSessions(): Promise<import("../session/list.js").SessionInfo[]> {
