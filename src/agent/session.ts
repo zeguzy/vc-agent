@@ -19,6 +19,7 @@ import { createLspToolDefinitions, LspClient } from "../lsp/index.js";
 import { listSessions, resolveSessionRef } from "../session/list.js";
 import { resolveSessionDir } from "../session/storage.js";
 import { SkillManager } from "../skills/manager.js";
+import { createNotifyTool } from "../tools/notify.js";
 import { createQuestionTool } from "../tools/question.js";
 import { clearBridge, type QuestionBridge } from "../tools/question-bridge.js";
 import { createTodoTool } from "../tools/todo.js";
@@ -179,6 +180,7 @@ export async function createSession(options: SessionOptions): Promise<SessionRes
 			...createLspToolDefinitions({ client: svc.lspClient }),
 			createTodoTool(),
 			createQuestionTool(options.bridge),
+			createNotifyTool(),
 		],
 		sessionManager: SessionManager.inMemory(),
 	});
@@ -223,6 +225,7 @@ export async function createRuntime(options: RuntimeOptions): Promise<RuntimeRes
 				...createLspToolDefinitions({ client: svc.lspClient }),
 				createTodoTool(),
 				createQuestionTool(options.bridge),
+				createNotifyTool(),
 			],
 			sessionManager: fSessionManager,
 		});

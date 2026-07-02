@@ -1,4 +1,5 @@
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
+import { getNotificationBus } from "../notifications/event-bus.js";
 import type { AgentServer } from "./index.js";
 
 export interface HttpServerOptions {
@@ -105,6 +106,10 @@ async function handleRequest(server: AgentServer, req: IncomingMessage, res: Ser
 		return createSSEResponse(server, req, res);
 	}
 
+	if (method === "GET" && path === "/sse/notifications") {
+		return createNotificationSSEResponse(req, res);
+	}
+
 	sendJson(res, { error: "Not found" }, 404);
 }
 
@@ -130,6 +135,23 @@ function createSSEResponse(server: AgentServer, req: IncomingMessage, res: Serve
 
 	const unsub = server.handleSubscribe((event) => {
 		res.write(`data: ${JSON.stringify(event)}\n\n`);
+	});
+
+	req.on("close", () => {
+		unsub();
+		res.end();
+	});
+}
+
+function createNotificationSSEResponse(req: IncomingMessage, res: ServerResponse): void {
+	res.writeHead(200, {
+		"Content-Type": "text/event-stream",
+		"Cache-Control": "no-cache",
+		Connection: "keep-alive",
+	});
+
+	const unsub = getNotificationBus().subscribe((payload) => {
+		res.write(`data: ${JSON.stringify(payload)}\n\n`);
 	});
 
 	req.on("close", () => {

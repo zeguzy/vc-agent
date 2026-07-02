@@ -12,6 +12,7 @@ import { sendMacNotification } from "./channels/os-mac.js";
 import { sendWindowsNotification } from "./channels/os-windows.js";
 import { sendOscNotification } from "./channels/osc.js";
 import { resolveNotificationsConfig } from "./config.js";
+import { getNotificationBus } from "./event-bus.js";
 import { shouldAttemptOsChannel } from "./guard.js";
 import type {
 	NotificationPayload,
@@ -103,33 +104,34 @@ export class NotificationRouter {
 		}
 	}
 
-	/** Dispatch a payload through every enabled channel. */
-	async notify(payload: NotificationPayload): Promise<void> {
+	/** Dispatch a payload through every enabled channel + the event bus. */
+	notify(payload: NotificationPayload): void {
 		if (!this.config.enabled) return;
-		this.sendToast(payload);
+		if (!payload.skipToast) this.sendToast(payload);
 		if (!payload.toastOnly) {
-			await this.sendExternal(payload.title, payload.message);
+			void this.sendExternal(payload.title, payload.message);
 		}
+		getNotificationBus().emit(payload);
 	}
 
 	/** Consume a raw Pi SDK event and notify (or no-op) accordingly. */
 	async handleEvent(event: AgentSessionEvent): Promise<void> {
 		if (!this.config.enabled) return;
 		const payload = this.translate(event);
-		if (payload) await this.notify(payload);
+		if (payload) this.notify(payload);
 	}
 
 	/** Direct hook for the `question` tool (not an AgentSessionEvent). */
-	notifyNeedsInput(message = "Agent 正在等待你的回答"): Promise<void> {
-		if (!this.config.enabled || !this.config.events.needsInput) return Promise.resolve();
-		return this.notify({ event: "needsInput", title: "openagent", message });
+	notifyNeedsInput(message = "等待回复"): void {
+		if (!this.config.enabled || !this.config.events.needsInput) return;
+		this.notify({ event: "needsInput", title: "openagent", message });
 	}
 
 	private translate(event: AgentSessionEvent): NotificationPayload | null {
 		switch (event.type) {
 			case "agent_end":
 				return this.config.events.agentEnd
-					? { event: "agentEnd", title: "openagent", message: "Agent 已完成本轮响应" }
+					? { event: "agentEnd", title: "openagent", message: "回复完成", skipToast: true }
 					: null;
 
 			case "tool_execution_start":
@@ -143,7 +145,7 @@ export class NotificationRouter {
 					return {
 						event: "toolError",
 						title: "openagent",
-						message: `工具 ${event.toolName} 执行失败`,
+						message: `${event.toolName} 失败`,
 					};
 				}
 				if (event.toolName === "bash" && this.config.events.longBash) {
@@ -155,7 +157,7 @@ export class NotificationRouter {
 							return {
 								event: "longBash",
 								title: "openagent",
-								message: `长时 bash 完成 (${Math.round(elapsedMs / 1000)}s)`,
+								message: `bash 完成 (${Math.round(elapsedMs / 1000)}s)`,
 							};
 						}
 					}
@@ -169,7 +171,7 @@ export class NotificationRouter {
 				return {
 					event: "compactionEnd",
 					title: "openagent",
-					message: "上下文压缩完成",
+					message: "压缩完成",
 					toastOnly: true,
 				};
 
