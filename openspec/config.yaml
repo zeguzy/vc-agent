@@ -12,7 +12,7 @@ context: |
   
   设计理念：
   - 全屏 TUI（Alternate screen buffer）
-  - 比 Pi 默认 TUI 更简洁（不做 diff 渲染、kill ring、fuzzy 等复杂功能）
+  - 比 Pi 默认 TUI 更简洁（不做 kill ring、fuzzy 等复杂功能；edit 工具消费 unified diff 支持编辑前确认，对齐 opencode）
   - 利用 OpenTUI 内置组件（ScrollBox/Input/Code），不重复造轮子
   - React 绑定管理 UI 状态（消息列表、输入、运行状态）
   

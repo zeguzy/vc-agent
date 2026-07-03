@@ -9,9 +9,11 @@ import { resolveNotificationsConfig } from "../notifications/config.js";
 import { getGlobalRouter } from "../notifications/notifier.js";
 import { PollManager } from "../poll/manager.js";
 import type { SettingContext } from "../settings/types.js";
+import type { EditConfirmBridge } from "../tools/edit-confirm-bridge.js";
 import type { QuestionBridge, QuestionData } from "../tools/question-bridge.js";
 import { formatError } from "../utils/formatError.js";
 import { registerBuiltinCommands } from "./commands.js";
+import { DiffConfirmBox } from "./components/DiffConfirmBox.js";
 import { InputBox } from "./components/InputBox.js";
 import { MessageList } from "./components/MessageList.js";
 import { QuestionBox } from "./components/QuestionBox.js";
@@ -40,6 +42,7 @@ interface AppProps {
 	cwd: string;
 	config?: Config;
 	bridge?: QuestionBridge;
+	editBridge?: EditConfirmBridge;
 	initialResumeList?: boolean;
 	initialAgentMode?: AgentMode;
 }
@@ -50,6 +53,7 @@ export function App({
 	cwd,
 	config,
 	bridge,
+	editBridge,
 	initialResumeList,
 	initialAgentMode,
 }: AppProps) {
@@ -76,6 +80,7 @@ export function App({
 	);
 	const [copyFeedback, setCopyFeedback] = useState<{ ts: number } | null>(null);
 	const [pendingQuestion, setPendingQuestion] = useState<QuestionData | null>(null);
+	const [pendingEditConfirm, setPendingEditConfirm] = useState(false);
 	const scrollRef = useRef<ScrollBoxRenderable>(null);
 	const vimOverlayRef = useRef<VimOverlay | null>(null);
 	const pollManagerRef = useRef(new PollManager());
@@ -90,6 +95,14 @@ export function App({
 		setContextUsage,
 		bridge ? setPendingQuestion : undefined,
 	);
+
+	useEffect(() => {
+		if (!editBridge) return;
+		editBridge.onPending = () => setPendingEditConfirm(true);
+		return () => {
+			editBridge.onPending = undefined;
+		};
+	}, [editBridge]);
 
 	const modeRef = useRef<Mode>("insert");
 	modeRef.current = mode;
@@ -466,7 +479,15 @@ export function App({
 				paddingTop={1}
 				paddingBottom={1}
 			>
-				{pendingQuestion && bridge ? (
+				{pendingEditConfirm && editBridge ? (
+					<DiffConfirmBox
+						bridge={editBridge}
+						onDecision={(decision) => {
+							editBridge.resolve?.(decision);
+							setPendingEditConfirm(false);
+						}}
+					/>
+				) : pendingQuestion && bridge ? (
 					<QuestionBox
 						questionData={pendingQuestion}
 						onSubmit={(answers) => {
