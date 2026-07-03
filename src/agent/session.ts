@@ -25,6 +25,7 @@ import { createQuestionTool } from "../tools/question.js";
 import { clearBridge, type QuestionBridge } from "../tools/question-bridge.js";
 import { createSubagentTool } from "../tools/subagent.js";
 import { createTodoTool } from "../tools/todo.js";
+import { createWebfetchTool } from "../tools/webfetch.js";
 
 export const BUILTIN_TOOLS = ["read", "bash", "edit", "write", "grep", "find"];
 const LSP_TOOL_NAMES = ["lsp"];
@@ -38,8 +39,8 @@ const PLANNER_TOOLS = ["read", "bash", "grep", "find", ...LSP_TOOL_NAMES];
  * setActiveToolsByName() on mode toggle. Always includes the `todo` tool so
  * task tracking survives mode switches.
  */
-export const STANDARD_ACTIVE_TOOLS = [...ALL_TOOLS, "todo", "question", "subagent"];
-export const PLANNER_ACTIVE_TOOLS = [...PLANNER_TOOLS, "todo", "question"];
+export const STANDARD_ACTIVE_TOOLS = [...ALL_TOOLS, "todo", "question", "subagent", "webfetch"];
+export const PLANNER_ACTIVE_TOOLS = [...PLANNER_TOOLS, "todo", "question", "webfetch"];
 
 export function activeToolsFor(agentMode: AgentMode): string[] {
 	return agentMode === "planner" ? PLANNER_ACTIVE_TOOLS : STANDARD_ACTIVE_TOOLS;
@@ -189,6 +190,7 @@ export async function createSession(options: SessionOptions): Promise<SessionRes
 			createTodoTool(),
 			createQuestionTool(options.bridge),
 			createNotifyTool(),
+			createWebfetchTool(),
 			createSubagentTool({
 				cwd: options.cwd,
 				services: svc,
@@ -240,6 +242,7 @@ export async function createRuntime(options: RuntimeOptions): Promise<RuntimeRes
 				createTodoTool(),
 				createQuestionTool(options.bridge),
 				createNotifyTool(),
+				createWebfetchTool(),
 				createSubagentTool({
 					cwd: fCwd,
 					services: svc,
