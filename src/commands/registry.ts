@@ -15,9 +15,6 @@ export interface CommandContext {
 		percent: null | number;
 	}) => void;
 	setThinkingCollapsed: (collapsed: boolean) => void;
-	setContextDisplay: (
-		display: "compact" | "full" | ((prev: "compact" | "full") => "compact" | "full"),
-	) => void;
 	cwd: string;
 	setShowSettings: (v: boolean) => void;
 	getConfig: () => Config;

@@ -1,6 +1,5 @@
 import {
 	compactionEnabledSetting,
-	contextModeSetting,
 	modelSetting,
 	notificationsBashThresholdSetting,
 	notificationsEnabledSetting,
@@ -13,7 +12,6 @@ import type { Setting } from "./types.js";
 
 export const settings: Setting<unknown>[] = [
 	thinkingCollapsedSetting,
-	contextModeSetting,
 	compactionEnabledSetting,
 	modelSetting,
 	thinkingLevelSetting,

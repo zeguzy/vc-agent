@@ -69,9 +69,6 @@ export function App({
 		window: number | null;
 		percent: number | null;
 	}>({ tokens: null, window: null, percent: null });
-	const [contextDisplay, setContextDisplay] = useState<"compact" | "full">(
-		config?.display?.contextMode ?? "compact",
-	);
 	const [showSettings, setShowSettings] = useState(false);
 	const [configState, setConfigState] = useState<Config>(config ?? {});
 	const [toastDismissMs, setToastDismissMs] = useState(
@@ -237,7 +234,6 @@ export function App({
 		authStorage: client.getAuthStorage(),
 		setUi: {
 			thinkingCollapsed: setThinkingCollapsed,
-			contextDisplay: setContextDisplay,
 			toastDismissMs: setToastDismissMs,
 		},
 		cwd,
@@ -251,7 +247,6 @@ export function App({
 			setIsRunning,
 			setContextUsage,
 			setThinkingCollapsed,
-			setContextDisplay,
 			cwd,
 			setShowSettings,
 			getConfig: () => configRef.current,
@@ -502,7 +497,6 @@ export function App({
 					contextPercent={contextUsage.percent}
 					contextTokens={contextUsage.tokens}
 					contextWindow={contextUsage.window}
-					contextDisplay={contextDisplay}
 					copyFeedback={copyFeedback}
 					onCopyFeedbackClear={() => setCopyFeedback(null)}
 				/>

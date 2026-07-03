@@ -24,9 +24,7 @@ export interface ThinkingConfig {
 	collapsed?: boolean;
 }
 
-export interface DisplayConfig {
-	contextMode?: "compact" | "full";
-}
+export type DisplayConfig = {};
 
 export interface CompactionConfig {
 	enabled?: boolean;

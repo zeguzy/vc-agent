@@ -85,15 +85,6 @@ export function registerBuiltinCommands(): void {
 	});
 
 	commandRegistry.register({
-		name: "context",
-		description: "Toggle context display (compact/full)",
-		usage: "/context",
-		handler: (_args: string, ctx: CommandContext) => {
-			ctx.setContextDisplay((d) => (d === "compact" ? "full" : "compact"));
-		},
-	});
-
-	commandRegistry.register({
 		name: "todos",
 		description: "Show current TODO list",
 		usage: "/todos",

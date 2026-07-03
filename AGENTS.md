@@ -61,7 +61,7 @@ src/
 
 1. **探索**（自动）：`/opsx-explore` 理清需求，并行创建 worktree
 2. **提案**（★ 用户）：`/opsx-propose` 生成 proposal/design/tasks + spec delta，用户确认方向
-3. **审核**（自动）：质量门禁检查（完整性、Non-goals、任务粒度、设计合理性、规范一致、覆盖完整）
+3. **审核**（自动）：① 格式门禁（完整性、Non-goals、任务粒度、规范一致、覆盖完整）→ ② Oracle 技术评审（架构合理性、替代方案、边界条件、性能、安全、依赖、可维护性）
 4. **实施**（自动）：`/opsx-apply` 逐项执行 tasks，每项完成跑 `bun run check`
 5. **归档**（自动）：`/opsx-archive` 归档 change + 同步 spec
 6. **验收**（★ 用户）：展示变更全貌，用户确认

@@ -15,7 +15,6 @@ export interface SettingContext {
 	settingsManager: SettingsManager;
 	setUi: {
 		thinkingCollapsed(v: boolean): void;
-		contextDisplay(v: "compact" | "full"): void;
 		toastDismissMs(v: number): void;
 	};
 	cwd: string;
