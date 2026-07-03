@@ -45,6 +45,37 @@ src/
 - **提交钩子**：lefthook 自动 biome 修复 + typecheck（见 `lefthook.yml`），勿用 `--no-verify` 绕过
 - **规格变更**：走 OpenSpec 流程（`openspec/specs/`），用 `/openspec-*` 命令驱动
 
+## 开发流程
+
+所有非平凡的开发需求（新功能、重构、架构调整、非琐碎 bug 修复）一律走 **Harness** 流水线（`.opencode/skills/harness/SKILL.md`），不要直接上手写业务代码。
+
+**触发**：用户提出非平凡开发需求时自动进入 `/harness` 流程。
+
+**不触发**（直接做）：拼写修正、格式化、依赖升级、文档错别字等纯机械改动。
+
+**七步流水线**（用户只在 ★ 标记的两步介入，其余自动流转）：
+
+```
+探索 → 提案★ → 审核 → 实施 → 归档 → 验收★ → 合并清理
+```
+
+1. **探索**（自动）：`/opsx-explore` 理清需求，并行创建 worktree
+2. **提案**（★ 用户）：`/opsx-propose` 生成 proposal/design/tasks + spec delta，用户确认方向
+3. **审核**（自动）：质量门禁检查（完整性、Non-goals、任务粒度、设计合理性、规范一致、覆盖完整）
+4. **实施**（自动）：`/opsx-apply` 逐项执行 tasks，每项完成跑 `bun run check`
+5. **归档**（自动）：`/opsx-archive` 归档 change + 同步 spec
+6. **验收**（★ 用户）：展示变更全貌，用户确认
+7. **合并清理**（自动）：merge 回 main + push + 删除 worktree 和分支
+
+**护栏**：
+- 不跳过审核和验收——验收前不合并到 main
+- 探索/提案阶段只读代码库、生成 artifact，不写业务代码
+- 所有开发操作在 `.git/worktree/<change>` 内进行，分支命名 `change/<change-id>`
+- 一个 worktree 对应一个 change，用完即删
+- `check` 失败必须修复，不得 `--no-verify` 绕过
+
+详见 SKILL.md。
+
 ## 通知系统
 
 原生通知（OS Notification Center + TUI 内 Toast），默认开启，覆盖 TUI / headless run / serve+attach 全部模式。
