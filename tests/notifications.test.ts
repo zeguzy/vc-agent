@@ -17,6 +17,7 @@ describe("resolveNotificationsConfig", () => {
 			longBash: true,
 			needsInput: true,
 			compactionEnd: true,
+			yank: true,
 		});
 		expect(cfg.channels).toEqual({ toast: true, osc: true, os: true });
 	});

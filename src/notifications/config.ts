@@ -28,6 +28,7 @@ export function getDefaultNotificationsConfig(): ResolvedNotificationsConfig {
 			longBash: true,
 			needsInput: true,
 			compactionEnd: true,
+			yank: true,
 		},
 		channels: {
 			toast: true,
@@ -63,6 +64,7 @@ export function resolveNotificationsConfig(
 			longBash: config.events?.longBash ?? defaults.events.longBash,
 			needsInput: config.events?.needsInput ?? defaults.events.needsInput,
 			compactionEnd: config.events?.compactionEnd ?? defaults.events.compactionEnd,
+			yank: config.events?.yank ?? defaults.events.yank,
 		},
 		channels: {
 			toast: config.channels?.toast ?? defaults.channels.toast,
