@@ -120,8 +120,7 @@ function formatToolDetail(toolName: string, args: unknown): { label: string; lin
 			return { label: "bash", lines: [cmd.length > 100 ? `${cmd.slice(0, 97)}...` : cmd] };
 		}
 		case "edit": {
-			const fp = String(a.path ?? a.filePath ?? "");
-			return { label: "edit", lines: [fp] };
+			return { label: "edit", lines: [] };
 		}
 		case "write": {
 			const fp = String(a.path ?? a.filePath ?? "");
@@ -238,9 +237,10 @@ const ToolMessageView = memo(function ToolMessageView({ message }: { message: Me
 
 	const { label, lines } = formatToolDetail(message.toolName, message.toolArgs);
 	const editPatch = message.toolName === "edit" ? getEditPatch(message) : undefined;
-	const editFilePath = editPatch
-		? String(((message.toolArgs as Record<string, unknown>) ?? {}).path ?? "")
-		: "";
+	const editFilePath =
+		message.toolName === "edit"
+			? String(((message.toolArgs as Record<string, unknown>) ?? {}).path ?? "")
+			: "";
 	const resultLines =
 		message.toolName !== "read" &&
 		!editPatch &&
@@ -261,6 +261,7 @@ const ToolMessageView = memo(function ToolMessageView({ message }: { message: Me
 			<box flexDirection="row" paddingLeft={1} paddingRight={1} paddingTop={0} paddingBottom={0}>
 				<text fg={statusFg}>{icon} </text>
 				<text fg={colors.secondary}>{label}</text>
+				{editFilePath && <text fg={colors.textMuted}> {editFilePath}</text>}
 			</box>
 			{lines.length > 0 && (
 				<box flexDirection="column" paddingLeft={3} paddingRight={1} paddingBottom={0}>
@@ -283,7 +284,11 @@ const ToolMessageView = memo(function ToolMessageView({ message }: { message: Me
 					}
 				</box>
 			)}
-			{editPatch && <EditDiffView patch={editPatch} filePath={editFilePath} />}
+			{editPatch && (
+				<box paddingLeft={1} paddingRight={1} paddingTop={1} paddingBottom={1}>
+					<EditDiffView patch={editPatch} filePath={editFilePath} />
+				</box>
+			)}
 			{resultLines.length > 0 && (
 				<box
 					flexDirection="column"

@@ -18,16 +18,17 @@ import {
 } from "./edit-confirm-bridge.js";
 
 /**
- * 创建 edit 工具（拦截器方案）。
+ * Crée l'outil d'édition (approche par intercepteur).
  *
- * 复用 SDK 的 `createEditToolDefinition`，通过 `operations.writeFile` 注入拦截：
- * SDK execute 完成 access/readFile/匹配/应用后调用 `ops.writeFile`（edit.js:208 裸 await
- * 无 try/catch），拦截器在此算 unified patch → 经 EditConfirmBridge 等待用户确认 →
- * accept 真写盘 / reject throw 传播为 isError 工具结果。
+ * Réutilise `createEditToolDefinition` du SDK, en injectant l'interception via `operations.writeFile` :
+ * Après que le SDK execute termine access/readFile/match/apply, il appelle `ops.writeFile`
+ * (edit.js:208, await nu sans try/catch). L'intercepteur calcule ici un patch unifié →
+ * attend la confirmation de l'utilisateur via EditConfirmBridge → accept écrit sur disque / reject lève
+ * une erreur qui se propage comme résultat d'outil isError.
  *
- * - `bridge` 为 undefined（headless/serve 非交互模式）时，writeFile 降级为直写。
- * - 设 `executionMode: "sequential"` 防并行 batch 覆盖 bridge 单槽导致死锁。
- * - 包装 execute 注册 signal.abort 监听（customOps.writeFile 拿不到 signal，需在 execute 层处理）。
+ * - Quand `bridge` est undefined (mode non-interactif headless/serve), writeFile bascule en écriture directe.
+ * - Définit `executionMode: "sequential"` pour éviter que des lots parallèles écrasent le slot unique du bridge, causant des deadlocks.
+ * - Enveloppe execute pour enregistrer un listener signal.abort (customOps.writeFile n'a pas accès à signal, donc cela doit être géré au niveau execute).
  */
 export function createEditTool(cwd: string, bridge?: EditConfirmBridge): ToolDefinition {
 	const operations: EditOperations = {

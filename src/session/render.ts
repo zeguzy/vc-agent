@@ -7,31 +7,27 @@ import {
 } from "../message.js";
 import { extractAssistantContent } from "../utils/content.js";
 
-/**
- * Minimal structural shape of a Pi SDK message we read during restoration.
- *
- * The SDK message content is either a plain string or an array of content
- * blocks (Anthropic-style: text / thinking / tool_use / tool_result). We keep
- * the shape loose and degrade unknown blocks to plain text (see design.md
- * Decision 5).
- */
 interface SdkContentBlock {
 	type: string;
 	text?: string;
 	thinking?: string;
 	name?: string;
-	input?: unknown;
+	arguments?: unknown;
+	id?: string;
 }
+
 interface SdkMessage {
 	role?: string;
 	content?: string | SdkContentBlock[];
+	toolCallId?: string;
+	toolName?: string;
+	details?: unknown;
+	isError?: boolean;
 }
 
 function extractUserText(content: SdkMessage["content"]): string {
 	if (typeof content === "string") return content;
 	if (Array.isArray(content)) {
-		// Concatenate text blocks; ignore tool_result blocks (MVP renders tool
-		// calls as summaries from the assistant turn that issued them).
 		return content
 			.filter((b) => b?.type === "text" && typeof b.text === "string")
 			.map((b) => (b.text as string) ?? "")
@@ -40,22 +36,17 @@ function extractUserText(content: SdkMessage["content"]): string {
 	return "";
 }
 
-/**
- * Map restored SDK messages to the TUI `Message[]` shape so a resumed /
- * hot-switched session renders its full history.
- *
- * - user     → createUserMessage(text)
- * - assistant→ createAssistantMessage(text) + thinking; each tool_use block
- *              becomes a createToolMessage(name, input, "done") summary
- * - a separator is inserted before each user turn that follows an assistant
- *   turn (mirrors the live `agent_end` separator behaviour)
- * - unknown roles / block types degrade to text, never throw
- *
- * Pure function for unit testing.
- */
 export function mapSdkMessagesToTui(sdkMessages: unknown): Message[] {
 	if (!Array.isArray(sdkMessages)) return [];
 	const messages = sdkMessages as SdkMessage[];
+
+	const toolResults = new Map<string, SdkMessage>();
+	for (const m of messages) {
+		if (m?.role === "toolResult" && typeof m.toolCallId === "string") {
+			toolResults.set(m.toolCallId, m);
+		}
+	}
+
 	const out: Message[] = [];
 	let prevRole: string | undefined;
 
@@ -72,14 +63,17 @@ export function mapSdkMessagesToTui(sdkMessages: unknown): Message[] {
 			out.push(assistant);
 			if (Array.isArray(m.content)) {
 				for (const block of m.content) {
-					if (block?.type === "tool_use" && typeof block.name === "string") {
-						out.push(createToolMessage(block.name, block.input, "done"));
+					if (block?.type === "toolCall" && typeof block.name === "string") {
+						const msg = createToolMessage(block.name, block.arguments, "done");
+						if (typeof block.id === "string") {
+							const result = toolResults.get(block.id);
+							if (result) msg.toolResult = result;
+						}
+						out.push(msg);
 					}
 				}
 			}
 		}
-		// Unknown roles (system/tool/etc.) are ignored at MVP — degrading to
-		// text would mix non-conversational content into the transcript.
 		if (role === "user" || role === "assistant") prevRole = role;
 	}
 

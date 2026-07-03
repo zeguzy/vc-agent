@@ -2,6 +2,7 @@ import type { KeyEvent, TextareaRenderable } from "@opentui/core";
 import { useKeyboard } from "@opentui/react";
 import { useRef, useState } from "react";
 import type { EditConfirmBridge, EditConfirmDecision } from "../../tools/edit-confirm-bridge.js";
+import { useTerminalWidth } from "../hooks/useTerminalWidth.js";
 import { pathToFiletype } from "../utils/filetype.js";
 import { syntaxStyle } from "../utils/syntax.js";
 import { colors } from "../utils/theme.js";
@@ -15,6 +16,7 @@ type Phase = "choose" | "reject-feedback";
 
 export function DiffConfirmBox({ bridge, onDecision }: DiffConfirmBoxProps) {
 	const pending = bridge.pending;
+	const width = useTerminalWidth();
 	const [cursor, setCursor] = useState(0);
 	const [phase, setPhase] = useState<Phase>("choose");
 	const textareaRef = useRef<TextareaRenderable | null>(null);
@@ -58,7 +60,7 @@ export function DiffConfirmBox({ bridge, onDecision }: DiffConfirmBoxProps) {
 	};
 
 	return (
-		<box flexDirection="column" flexShrink={0} paddingLeft={1} paddingRight={1}>
+		<box flexDirection="column" flexShrink={0} paddingLeft={1} paddingRight={1} paddingBottom={1}>
 			<box height={1} flexDirection="row">
 				<text fg={colors.warning}>△ </text>
 				<text fg={colors.secondary}>确认 edit · </text>
@@ -69,7 +71,7 @@ export function DiffConfirmBox({ bridge, onDecision }: DiffConfirmBoxProps) {
 					diff={pending.patch}
 					filetype={filetype}
 					syntaxStyle={syntaxStyle}
-					view="unified"
+					view={width > 120 ? "split" : "unified"}
 					showLineNumbers={true}
 					width="100%"
 					wrapMode="word"
@@ -123,26 +125,18 @@ export function DiffConfirmBox({ bridge, onDecision }: DiffConfirmBoxProps) {
 				</box>
 			) : (
 				<box flexDirection="row" paddingLeft={1} paddingTop={1}>
-					<box
-						borderStyle="rounded"
-						border={["top", "right", "bottom", "left"]}
-						borderColor={cursor === 0 ? colors.warning : colors.borderSoft}
-						backgroundColor={cursor === 0 ? colors.warning : colors.backgroundMenu}
-						paddingLeft={1}
-						paddingRight={1}
-					>
-						<text fg={cursor === 0 ? colors.background : colors.text}>Allow once</text>
+					<box flexDirection="row">
+						<text fg={cursor === 0 ? colors.success : colors.textSubtle}>
+							{cursor === 0 ? "▶ " : "  "}
+						</text>
+						<text fg={cursor === 0 ? colors.secondary : colors.text}>Allow once</text>
 					</box>
-					<text>{"  "}</text>
-					<box
-						borderStyle="rounded"
-						border={["top", "right", "bottom", "left"]}
-						borderColor={cursor === 1 ? colors.error : colors.borderSoft}
-						backgroundColor={cursor === 1 ? colors.error : colors.backgroundMenu}
-						paddingLeft={1}
-						paddingRight={1}
-					>
-						<text fg={cursor === 1 ? colors.background : colors.text}>Reject</text>
+					<text>{"    "}</text>
+					<box flexDirection="row">
+						<text fg={cursor === 1 ? colors.error : colors.textSubtle}>
+							{cursor === 1 ? "▶ " : "  "}
+						</text>
+						<text fg={cursor === 1 ? colors.secondary : colors.text}>Reject</text>
 					</box>
 				</box>
 			)}
