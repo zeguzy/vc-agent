@@ -6,13 +6,14 @@
  * dispatches through the cascading channel strategy (OSC → OS native → no-op).
  */
 
-/** Logical notification event categories that map onto Pi SDK events. */
+/** Logical notification event categories. Most map onto Pi SDK events; "yank" is a TUI-only vim feedback event. */
 export type NotificationEvent =
 	| "agentEnd"
 	| "toolError"
 	| "longBash"
 	| "needsInput"
-	| "compactionEnd";
+	| "compactionEnd"
+	| "yank";
 
 /** Per-event enable flags. Undefined = default (on). */
 export interface NotificationEventsConfig {
@@ -21,6 +22,7 @@ export interface NotificationEventsConfig {
 	longBash?: boolean;
 	needsInput?: boolean;
 	compactionEnd?: boolean;
+	yank?: boolean;
 }
 
 /** Per-channel enable flags. Undefined = default (on). */

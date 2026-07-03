@@ -1,3 +1,6 @@
+import type { SubagentToolDetails } from "./agents/types.js";
+
+export type { SubagentToolDetails };
 export type MessageRole = "user" | "assistant" | "tool" | "separator";
 
 export interface Message {
@@ -9,6 +12,7 @@ export interface Message {
 	toolArgs?: unknown;
 	toolStatus?: "running" | "done" | "error";
 	toolResult?: unknown;
+	subagentDetails?: SubagentToolDetails;
 	queued?: boolean;
 }
 

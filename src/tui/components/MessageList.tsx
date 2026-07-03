@@ -3,6 +3,7 @@ import { memo } from "react";
 import type { Message } from "../../message.js";
 import { syntaxStyle } from "../utils/syntax.js";
 import { colors, icons } from "../utils/theme.js";
+import { SubagentMessageView } from "./SubagentMessageView.js";
 
 export interface ReadEntry {
 	path: string;
@@ -483,6 +484,8 @@ export function MessageList({
 						return <UserMessageView key={msg.id} message={msg} index={item.index} />;
 					if (msg.role === "tool") {
 						if (msg.toolName === "todo") return <TodoMessageView key={msg.id} message={msg} />;
+						if (msg.toolName === "subagent")
+							return <SubagentMessageView key={msg.id} message={msg} />;
 						return <ToolMessageView key={msg.id} message={msg} />;
 					}
 					return (
