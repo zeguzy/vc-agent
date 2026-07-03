@@ -55,7 +55,10 @@ export function useSessionEvents(
 					if (msg?.role === "assistant") {
 						const { text, thinking } = extractAssistantContent(msg.content);
 						const newMsg = createAssistantMessage(text);
-						if (thinking) newMsg.thinking = thinking;
+						if (thinking) {
+							newMsg.thinking = thinking;
+							newMsg.thinkingStreaming = !text;
+						}
 						setMessages((prev) => [...prev, newMsg]);
 					}
 					break;
@@ -68,7 +71,7 @@ export function useSessionEvents(
 					};
 					if (msg?.role === "assistant") {
 						const { text, thinking } = extractAssistantContent(msg.content);
-						streaming.setPending(text, thinking);
+						streaming.setPending(text, thinking, !!(thinking && !text));
 						streaming.scheduleUpdate(setMessages);
 					}
 					break;

@@ -1,5 +1,5 @@
 import type { ScrollBoxRenderable } from "@opentui/core";
-import { memo } from "react";
+import { memo, useEffect, useState } from "react";
 import type { Message } from "../../message.js";
 import { syntaxStyle } from "../utils/syntax.js";
 import { colors, icons } from "../utils/theme.js";
@@ -55,6 +55,20 @@ const UserMessageView = memo(function UserMessageView({
 	);
 });
 
+const SPINNER_FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"] as const;
+const SPINNER_INTERVAL_MS = 80;
+
+const ThinkingSpinner = memo(function ThinkingSpinner({ fg }: { fg: string }) {
+	const [frame, setFrame] = useState(0);
+	useEffect(() => {
+		const id = setInterval(() => {
+			setFrame((v) => (v + 1) % SPINNER_FRAMES.length);
+		}, SPINNER_INTERVAL_MS);
+		return () => clearInterval(id);
+	}, []);
+	return <text fg={fg}>{`${SPINNER_FRAMES[frame]} `}</text>;
+});
+
 const AssistantMessageView = memo(function AssistantMessageView({
 	message,
 	thinkingCollapsed,
@@ -68,7 +82,14 @@ const AssistantMessageView = memo(function AssistantMessageView({
 		<box paddingLeft={3} marginTop={1} flexShrink={0} flexDirection="column">
 			{hasThinking && (
 				<box flexDirection="column" flexShrink={0}>
-					<text fg={colors.warning}>{collapsed ? "+ Thinking …" : "- Thinking"}</text>
+					<box flexDirection="row">
+						<text fg={colors.warning}>{collapsed ? "+ " : "- "}</text>
+						{message.thinkingStreaming ? <ThinkingSpinner fg={colors.warning} /> : null}
+						<text fg={colors.warning}>
+							{message.thinkingStreaming ? "thinking" : "through"}
+							{collapsed ? " …" : ""}
+						</text>
+					</box>
 					{!collapsed && (
 						<box flexDirection="column" marginTop={0}>
 							{message.thinking

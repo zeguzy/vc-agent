@@ -13,7 +13,7 @@ export interface StreamingBuffer {
 		thinking?: string,
 	) => void;
 	/** Update the pending refs for the next throttled flush. */
-	setPending: (text: string, thinking?: string) => void;
+	setPending: (text: string, thinking?: string, thinkingStreaming?: boolean) => void;
 }
 
 /**
@@ -26,11 +26,13 @@ export interface StreamingBuffer {
 export function useStreamingBuffer(): StreamingBuffer {
 	const pendingTextRef = useRef<string | null>(null);
 	const pendingThinkingRef = useRef<string | null>(null);
+	const pendingThinkingStreamingRef = useRef<boolean>(false);
 	const flushTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-	const setPending = (text: string, thinking?: string) => {
+	const setPending = (text: string, thinking?: string, thinkingStreaming?: boolean) => {
 		pendingTextRef.current = text;
 		if (thinking !== undefined) pendingThinkingRef.current = thinking;
+		pendingThinkingStreamingRef.current = !!thinkingStreaming;
 	};
 
 	const scheduleUpdate = (
@@ -41,6 +43,7 @@ export function useStreamingBuffer(): StreamingBuffer {
 				flushTimerRef.current = null;
 				const pending = pendingTextRef.current;
 				const pendingThinking = pendingThinkingRef.current;
+				const pendingThinkingStreaming = pendingThinkingStreamingRef.current;
 				if (pending !== null) {
 					pendingTextRef.current = null;
 					pendingThinkingRef.current = null;
@@ -52,6 +55,7 @@ export function useStreamingBuffer(): StreamingBuffer {
 									...updated[i],
 									content: pending,
 									thinking: pendingThinking ?? undefined,
+									thinkingStreaming: pendingThinkingStreaming,
 								};
 								break;
 							}
@@ -78,7 +82,12 @@ export function useStreamingBuffer(): StreamingBuffer {
 			const updated = [...prev];
 			for (let i = updated.length - 1; i >= 0; i--) {
 				if (updated[i].role === "assistant") {
-					updated[i] = { ...updated[i], content: text, thinking: thinking || undefined };
+					updated[i] = {
+						...updated[i],
+						content: text,
+						thinking: thinking || undefined,
+						thinkingStreaming: false,
+					};
 					break;
 				}
 			}

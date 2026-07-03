@@ -5,6 +5,7 @@ export interface Message {
 	role: MessageRole;
 	content: string;
 	thinking?: string;
+	thinkingStreaming?: boolean;
 	toolName?: string;
 	toolArgs?: unknown;
 	toolStatus?: "running" | "done" | "error";
