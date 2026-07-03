@@ -25,7 +25,7 @@ import { createQuestionTool } from "../tools/question.js";
 import { clearBridge, type QuestionBridge } from "../tools/question-bridge.js";
 import { createSubagentTool } from "../tools/subagent.js";
 import { createTodoTool } from "../tools/todo.js";
-import { createWebfetchTool } from "../tools/webfetch.js";
+import { createWebfetchTool } from "../tools/webfetch/index.js";
 
 export const BUILTIN_TOOLS = ["read", "bash", "edit", "write", "grep", "find"];
 const LSP_TOOL_NAMES = ["lsp"];

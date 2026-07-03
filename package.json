@@ -21,6 +21,7 @@
 		"@modelcontextprotocol/sdk": "^1.29.0",
 		"@opentui/core": "^0.4.1",
 		"@opentui/react": "^0.4.1",
+		"playwright": "^1.61.1",
 		"react": "^19.0.0",
 		"typebox": "^1.1.38"
 	},
