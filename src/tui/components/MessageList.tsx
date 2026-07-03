@@ -3,6 +3,7 @@ import { memo } from "react";
 import type { Message } from "../../message.js";
 import { syntaxStyle } from "../utils/syntax.js";
 import { colors, icons } from "../utils/theme.js";
+import { EditDiffView } from "./EditDiffView.js";
 
 export interface ReadEntry {
 	path: string;
@@ -120,17 +121,7 @@ function formatToolDetail(toolName: string, args: unknown): { label: string; lin
 		}
 		case "edit": {
 			const fp = String(a.path ?? a.filePath ?? "");
-			const lines = [fp];
-			const edits = a.edits as Array<Record<string, unknown>> | undefined;
-			if (edits && edits.length > 0) {
-				const first = edits[0];
-				const oldT = truncate(String(first.oldText ?? first.oldString ?? ""), 80);
-				const newT = truncate(String(first.newText ?? first.newString ?? ""), 80);
-				lines.push(`- ${oldT}`);
-				lines.push(`+ ${newT}`);
-				if (edits.length > 1) lines.push(`... ${edits.length - 1} more edits`);
-			}
-			return { label: "edit", lines };
+			return { label: "edit", lines: [fp] };
 		}
 		case "write": {
 			const fp = String(a.path ?? a.filePath ?? "");
@@ -213,9 +204,13 @@ function formatToolResult(result: unknown): string[] {
 	return [...allLines.slice(0, MAX_LINES), `... (${allLines.length - MAX_LINES} more lines)`];
 }
 
-function truncate(s: string, max: number): string {
-	const firstLine = s.split("\n")[0];
-	return firstLine.length > max ? `${firstLine.slice(0, max - 3)}...` : firstLine;
+function getEditPatch(message: Message): string | undefined {
+	const result = message.toolResult;
+	if (!result || typeof result !== "object") return undefined;
+	const details = (result as Record<string, unknown>).details;
+	if (!details || typeof details !== "object") return undefined;
+	const patch = (details as Record<string, unknown>).patch;
+	return typeof patch === "string" && patch.length > 0 ? patch : undefined;
 }
 
 const ToolMessageView = memo(function ToolMessageView({ message }: { message: Message }) {
@@ -242,8 +237,14 @@ const ToolMessageView = memo(function ToolMessageView({ message }: { message: Me
 				: colors.borderSoft;
 
 	const { label, lines } = formatToolDetail(message.toolName, message.toolArgs);
+	const editPatch = message.toolName === "edit" ? getEditPatch(message) : undefined;
+	const editFilePath = editPatch
+		? String(((message.toolArgs as Record<string, unknown>) ?? {}).path ?? "")
+		: "";
 	const resultLines =
-		message.toolName !== "read" && (message.toolStatus === "done" || message.toolStatus === "error")
+		message.toolName !== "read" &&
+		!editPatch &&
+		(message.toolStatus === "done" || message.toolStatus === "error")
 			? formatToolResult(message.toolResult)
 			: [];
 
@@ -282,6 +283,7 @@ const ToolMessageView = memo(function ToolMessageView({ message }: { message: Me
 					}
 				</box>
 			)}
+			{editPatch && <EditDiffView patch={editPatch} filePath={editFilePath} />}
 			{resultLines.length > 0 && (
 				<box
 					flexDirection="column"

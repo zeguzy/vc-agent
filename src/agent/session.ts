@@ -20,6 +20,8 @@ import { createLspToolDefinitions, LspClient } from "../lsp/index.js";
 import { listSessions, resolveSessionRef } from "../session/list.js";
 import { resolveSessionDir } from "../session/storage.js";
 import { SkillManager } from "../skills/manager.js";
+import { createEditTool } from "../tools/edit.js";
+import { clearEditConfirmBridge, type EditConfirmBridge } from "../tools/edit-confirm-bridge.js";
 import { createNotifyTool } from "../tools/notify.js";
 import { createQuestionTool } from "../tools/question.js";
 import { clearBridge, type QuestionBridge } from "../tools/question-bridge.js";
@@ -27,7 +29,7 @@ import { createSubagentTool } from "../tools/subagent.js";
 import { createTodoTool } from "../tools/todo.js";
 import { createWebfetchTool } from "../tools/webfetch/index.js";
 
-export const BUILTIN_TOOLS = ["read", "bash", "edit", "write", "grep", "find"];
+export const BUILTIN_TOOLS = ["read", "bash", "write", "grep", "find"];
 const LSP_TOOL_NAMES = ["lsp"];
 const ALL_TOOLS = [...BUILTIN_TOOLS, ...LSP_TOOL_NAMES];
 
@@ -39,7 +41,14 @@ const PLANNER_TOOLS = ["read", "bash", "grep", "find", ...LSP_TOOL_NAMES];
  * setActiveToolsByName() on mode toggle. Always includes the `todo` tool so
  * task tracking survives mode switches.
  */
-export const STANDARD_ACTIVE_TOOLS = [...ALL_TOOLS, "todo", "question", "subagent", "webfetch"];
+export const STANDARD_ACTIVE_TOOLS = [
+	...ALL_TOOLS,
+	"edit",
+	"todo",
+	"question",
+	"subagent",
+	"webfetch",
+];
 export const PLANNER_ACTIVE_TOOLS = [...PLANNER_TOOLS, "todo", "question", "webfetch"];
 
 export function activeToolsFor(agentMode: AgentMode): string[] {
@@ -66,6 +75,7 @@ export interface SessionOptions {
 	model?: string;
 	config?: Config;
 	bridge?: QuestionBridge;
+	editBridge?: EditConfirmBridge;
 }
 
 export interface SessionResult {
@@ -88,6 +98,7 @@ export interface RuntimeOptions {
 	agentMode?: AgentMode;
 	/** QuestionBridge for interactive question tool. Omit in non-interactive modes. */
 	bridge?: QuestionBridge;
+	editBridge?: EditConfirmBridge;
 }
 
 export interface RuntimeResult {
@@ -188,6 +199,7 @@ export async function createSession(options: SessionOptions): Promise<SessionRes
 		customTools: [
 			...createLspToolDefinitions({ client: svc.lspClient }),
 			createTodoTool(),
+			createEditTool(options.cwd, options.editBridge),
 			createQuestionTool(options.bridge),
 			createNotifyTool(),
 			createWebfetchTool(),
@@ -229,6 +241,7 @@ export async function createRuntime(options: RuntimeOptions): Promise<RuntimeRes
 		sessionManager: fSessionManager,
 	}) => {
 		if (options.bridge) clearBridge(options.bridge);
+		if (options.editBridge) clearEditConfirmBridge(options.editBridge);
 		const result = await createAgentSession({
 			cwd: fCwd,
 			authStorage: svc.authStorage,
@@ -240,6 +253,7 @@ export async function createRuntime(options: RuntimeOptions): Promise<RuntimeRes
 			customTools: [
 				...createLspToolDefinitions({ client: svc.lspClient }),
 				createTodoTool(),
+				createEditTool(fCwd, options.editBridge),
 				createQuestionTool(options.bridge),
 				createNotifyTool(),
 				createWebfetchTool(),

@@ -48,6 +48,12 @@ export const colors = {
 
 	diffAdded: "#30D158",
 	diffRemoved: "#FF453A",
+	diffAddedBg: "#20303b",
+	diffRemovedBg: "#37222c",
+	diffContextBg: "#1c1c1e",
+	diffLineNumber: "#8f8f8f",
+	diffAddedLineNumberBg: "#1b2b34",
+	diffRemovedLineNumberBg: "#2d1f26",
 
 	agent: "#0A84FF",
 } as const;

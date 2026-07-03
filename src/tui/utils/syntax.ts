@@ -162,10 +162,12 @@ const extmarkRules: ThemeTokenStyle[] = [
 	},
 ];
 
-/** Diff scope —— 仅 foreground（vc-agent 当前不渲染 diff，无 *Bg 字段）。 */
 const diffRules: ThemeTokenStyle[] = [
-	{ scope: ["diff.plus"], style: { foreground: colors.diffAdded } },
-	{ scope: ["diff.minus"], style: { foreground: colors.diffRemoved } },
+	{ scope: ["diff.plus"], style: { foreground: colors.diffAdded, background: colors.diffAddedBg } },
+	{
+		scope: ["diff.minus"],
+		style: { foreground: colors.diffRemoved, background: colors.diffRemovedBg },
+	},
 	{ scope: ["diff.delta"], style: { foreground: colors.textSubtle } },
 ];
 
