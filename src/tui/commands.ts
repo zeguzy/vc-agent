@@ -104,13 +104,23 @@ export function registerBuiltinCommands(): void {
 				return;
 			}
 			const completed = todos.filter((t) => t.status === "completed").length;
-			const lines = todos.map(
-				(t) =>
-					`  [${t.status === "completed" ? "✓" : t.status === "in_progress" ? "•" : " "}] ${t.content}`,
-			);
+			const cancelled = todos.filter((t) => t.status === "cancelled").length;
+			const effective = todos.length - cancelled;
+			const lines = todos.map((t) => {
+				const mark =
+					t.status === "completed"
+						? "✓"
+						: t.status === "in_progress"
+							? "•"
+							: t.status === "cancelled"
+								? "✗"
+								: " ";
+				return `  [${mark}] ${t.content}`;
+			});
+			const progress = `# Todos (${completed}/${effective}${cancelled > 0 ? `, ${cancelled} cancelled` : ""})`;
 			ctx.setMessages((prev) => [
 				...prev,
-				createAssistantMessage(`# Todos (${completed}/${todos.length})\n${lines.join("\n")}`),
+				createAssistantMessage(`${progress}\n${lines.join("\n")}`),
 			]);
 		},
 	});
