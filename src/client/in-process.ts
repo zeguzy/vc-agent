@@ -3,7 +3,16 @@ import type { AgentSession, AgentSessionRuntime } from "../agent/session.js";
 import type { CommandContext } from "../commands/registry.js";
 import type { AgentServer } from "../server/index.js";
 import type { SkillManager } from "../skills/manager.js";
-import type { AgentClientEvent, WorkerId, WorkerSnapshot, WorkerStatus } from "../teams/types.js";
+import type {
+	AgentClientEvent,
+	MemberId,
+	TeamMember,
+	TeamMessage,
+	TeamTask,
+	WorkerId,
+	WorkerSnapshot,
+	WorkerStatus,
+} from "../teams/types.js";
 import type {
 	AgentClient,
 	ContextUsage,
@@ -146,6 +155,55 @@ export class InProcessClient implements AgentClient {
 
 	subscribeTeam(handler: (event: AgentClientEvent) => void): Unsubscribe {
 		return this.server.handleSubscribeTeam(handler);
+	}
+
+	// V2 Team methods
+	async createMember(opts: {
+		name: string;
+		role: string;
+		goal: string;
+		model?: string;
+		tools?: string[];
+		systemPrompt?: string;
+	}): Promise<TeamMember> {
+		return this.server.handleCreateMember(opts);
+	}
+
+	async removeMember(id: MemberId): Promise<void> {
+		return this.server.handleRemoveMember(id);
+	}
+
+	getMember(id: MemberId): TeamMember | undefined {
+		return this.server.handleGetMember(id);
+	}
+
+	listMembers(): TeamMember[] {
+		return this.server.handleListMembers();
+	}
+
+	async assignTask(opts: {
+		title: string;
+		description: string;
+		memberId: MemberId;
+		priority?: "high" | "medium" | "low";
+	}): Promise<TeamTask> {
+		return this.server.handleAssignTask(opts);
+	}
+
+	listTasks(): TeamTask[] {
+		return this.server.handleListTasks();
+	}
+
+	taskStatus(taskId: string): TeamTask | undefined {
+		return this.server.handleTaskStatus(taskId);
+	}
+
+	async sendMessage(from: MemberId, to: MemberId | "team", content: string): Promise<void> {
+		return this.server.handleSendMessage(from, to, content);
+	}
+
+	readInbox(memberId?: MemberId): TeamMessage[] {
+		return this.server.handleReadInbox(memberId);
 	}
 }
 

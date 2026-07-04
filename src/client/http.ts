@@ -243,6 +243,49 @@ export class HttpClient implements AgentClient {
 	subscribeTeam(_handler: (event: AgentClientEvent) => void): Unsubscribe {
 		throw new NotSupportedError("subscribeTeam");
 	}
+
+	// V2 Team methods (not supported over HTTP)
+	async createMember(
+		_opts: Parameters<AgentClient["createMember"]>[0],
+	): ReturnType<AgentClient["createMember"]> {
+		throw new NotSupportedError("createMember");
+	}
+	async removeMember(
+		_id: Parameters<AgentClient["removeMember"]>[0],
+	): ReturnType<AgentClient["removeMember"]> {
+		throw new NotSupportedError("removeMember");
+	}
+	getMember(_id: Parameters<AgentClient["getMember"]>[0]): ReturnType<AgentClient["getMember"]> {
+		throw new NotSupportedError("getMember");
+	}
+	listMembers(): ReturnType<AgentClient["listMembers"]> {
+		throw new NotSupportedError("listMembers");
+	}
+	async assignTask(
+		_opts: Parameters<AgentClient["assignTask"]>[0],
+	): ReturnType<AgentClient["assignTask"]> {
+		throw new NotSupportedError("assignTask");
+	}
+	listTasks(): ReturnType<AgentClient["listTasks"]> {
+		throw new NotSupportedError("listTasks");
+	}
+	taskStatus(
+		_taskId: Parameters<AgentClient["taskStatus"]>[0],
+	): ReturnType<AgentClient["taskStatus"]> {
+		throw new NotSupportedError("taskStatus");
+	}
+	async sendMessage(
+		_from: Parameters<AgentClient["sendMessage"]>[0],
+		_to: Parameters<AgentClient["sendMessage"]>[1],
+		_content: Parameters<AgentClient["sendMessage"]>[2],
+	): ReturnType<AgentClient["sendMessage"]> {
+		throw new NotSupportedError("sendMessage");
+	}
+	readInbox(
+		_memberId?: Parameters<AgentClient["readInbox"]>[0],
+	): ReturnType<AgentClient["readInbox"]> {
+		throw new NotSupportedError("readInbox");
+	}
 }
 
 export function createHttpClient(baseUrl: string): AgentClient {

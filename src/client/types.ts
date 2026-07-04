@@ -3,7 +3,16 @@ import type { AgentSession, AgentSessionEvent } from "../agent/session.js";
 import type { CommandContext } from "../commands/registry.js";
 import type { Message } from "../message.js";
 import type { SessionInfo } from "../session/list.js";
-import type { AgentClientEvent, WorkerId, WorkerSnapshot, WorkerStatus } from "../teams/types.js";
+import type {
+	AgentClientEvent,
+	MemberId,
+	TeamMember,
+	TeamMessage,
+	TeamTask,
+	WorkerId,
+	WorkerSnapshot,
+	WorkerStatus,
+} from "../teams/types.js";
 
 export type AgentMode = "standard" | "planner" | "orchestrator" | "team";
 
@@ -89,10 +98,41 @@ export interface AgentClient {
 
 	executeCommand(name: string, args: string, ctx: CommandContext): Promise<boolean>;
 
+	// V1 Worker methods — deprecated, use V2 member methods
+	/** @deprecated Use createMember() + assignTask() */
 	listWorkers(): WorkerSnapshot[];
+	/** @deprecated Use getMember() */
 	getWorker(id: WorkerId): WorkerSnapshot | undefined;
+	/** @deprecated Use createMember() + assignTask() */
 	spawnWorker(agent: string, task: string): Promise<{ workerId: WorkerId; status: WorkerStatus }>;
+	/** @deprecated Use cancelMember() */
 	cancelWorker(workerId: WorkerId): Promise<void>;
+	/** @deprecated Use cancelAllMembers() */
 	cancelAllWorkers(): Promise<void>;
 	subscribeTeam(handler: (event: AgentClientEvent) => void): Unsubscribe;
+
+	// V2 Team methods
+	createMember(opts: {
+		name: string;
+		role: string;
+		goal: string;
+		model?: string;
+		tools?: string[];
+		systemPrompt?: string;
+	}): Promise<TeamMember>;
+	removeMember(id: MemberId): Promise<void>;
+	getMember(id: MemberId): TeamMember | undefined;
+	listMembers(): TeamMember[];
+
+	assignTask(opts: {
+		title: string;
+		description: string;
+		memberId: MemberId;
+		priority?: "high" | "medium" | "low";
+	}): Promise<TeamTask>;
+	listTasks(): TeamTask[];
+	taskStatus(taskId: string): TeamTask | undefined;
+
+	sendMessage(from: MemberId, to: MemberId | "team", content: string): Promise<void>;
+	readInbox(memberId?: MemberId): TeamMessage[];
 }
