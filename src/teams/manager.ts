@@ -18,6 +18,7 @@ export class WorkerSessionPool implements WorkerSessionPoolLike {
 	private readonly config: ResolvedTeamConfig;
 	private readonly services: SubagentServices;
 	private disposed = false;
+	private readonly slotResolvers: Array<() => void> = [];
 	static workerFactory: WorkerFactory = WorkerClass.create;
 
 	constructor(config: ResolvedTeamConfig, services: SubagentServices) {
@@ -39,9 +40,10 @@ export class WorkerSessionPool implements WorkerSessionPoolLike {
 	): Promise<{ workerId: WorkerId; status: WorkerStatus }> {
 		if (this.disposed) throw new Error("worker pool is disposed");
 		if (this.runningCount() >= this.config.maxWorkers) {
-			throw new Error(
-				`worker pool exhausted (maxWorkers=${this.config.maxWorkers}) — current running=${this.runningCount()}`,
-			);
+			await new Promise<void>((resolve) => {
+				this.slotResolvers.push(resolve);
+			});
+			if (this.disposed) throw new Error("worker pool was disposed while queued");
 		}
 		const worker = await WorkerSessionPool.workerFactory({
 			agent: opts.agent,
@@ -49,6 +51,7 @@ export class WorkerSessionPool implements WorkerSessionPoolLike {
 			cwd: opts.cwd,
 			services: this.services,
 			parentModel: opts.parentModel,
+			defaultMaxTurns: this.config.defaultMaxTurns,
 			signal: opts.signal,
 			onDelta: opts.onDelta,
 		});
@@ -60,6 +63,10 @@ export class WorkerSessionPool implements WorkerSessionPoolLike {
 				} catch (err) {
 					console.error(`[teams] pool event listener threw: ${err}`);
 				}
+			}
+			if (event.kind === "agent_end" || event.kind === "error" || event.kind === "cancelled") {
+				const next = this.slotResolvers.shift();
+				if (next) next();
 			}
 		});
 		return { workerId: worker.id, status: worker.getStatus() };
@@ -79,6 +86,8 @@ export class WorkerSessionPool implements WorkerSessionPoolLike {
 		const w = this.workers.get(id);
 		if (!w) return;
 		await w.cancel();
+		const next = this.slotResolvers.shift();
+		if (next) next();
 	}
 
 	async cancelAll(): Promise<void> {
@@ -92,6 +101,10 @@ export class WorkerSessionPool implements WorkerSessionPoolLike {
 				}
 			}),
 		);
+		for (const w of entries) {
+			const next = this.slotResolvers.shift();
+			if (next) next();
+		}
 	}
 
 	subscribe(listener: (event: WorkerEventEnvelope) => void): () => void {
@@ -102,6 +115,8 @@ export class WorkerSessionPool implements WorkerSessionPoolLike {
 	async dispose(): Promise<void> {
 		if (this.disposed) return;
 		this.disposed = true;
+		for (const resolve of this.slotResolvers) resolve();
+		this.slotResolvers.length = 0;
 		await this.cancelAll();
 		for (const w of this.workers.values()) w.dispose();
 		this.workers.clear();

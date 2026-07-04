@@ -5,7 +5,7 @@ import type { Message } from "../message.js";
 import type { SessionInfo } from "../session/list.js";
 import type { AgentClientEvent, WorkerId, WorkerSnapshot, WorkerStatus } from "../teams/types.js";
 
-export type AgentMode = "standard" | "planner" | "orchestrator";
+export type AgentMode = "standard" | "planner" | "orchestrator" | "team";
 
 export type Unsubscribe = () => void;
 export type EventHandler = (event: AgentSessionEvent) => void;

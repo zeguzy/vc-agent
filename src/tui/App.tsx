@@ -401,7 +401,8 @@ export function App({
 				const cycle: Record<string, AgentMode> = {
 					standard: "planner",
 					planner: "orchestrator",
-					orchestrator: "standard",
+					orchestrator: "team",
+					team: "standard",
 				};
 				const next = cycle[agentModeRef.current] ?? "standard";
 				client.setAgentMode(next);

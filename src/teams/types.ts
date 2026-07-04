@@ -195,12 +195,12 @@ export interface WorkerEventEmitter {
 type ResolvedModel = ReturnType<ModelRegistry["getAll"]>[number];
 
 export interface WorkerSpawnOptions {
-	/** 已解析（含新增 frontmatter 字段）的 agent 定义。 */
 	agent: AgentConfig;
 	task: string;
 	cwd: string;
 	services: SubagentServices;
 	parentModel?: ResolvedModel;
+	defaultMaxTurns?: number;
 	signal?: AbortSignal;
 	onDelta?: (text: string) => void;
 }

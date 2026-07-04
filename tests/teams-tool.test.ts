@@ -101,11 +101,15 @@ describe("team tool", () => {
 		expect(result.content[0].text).toContain("not found");
 	});
 
-	it("spawn errors on background:false agent", async () => {
-		writeFileSync(join(agentsDir, "fg-agent.md"), makeAgentMd("fg-agent", "background: false\n"));
+	it("spawn accepts agent without background field", async () => {
+		writeFileSync(join(agentsDir, "plain-agent.md"), makeAgentMd("plain-agent", "\n"));
+		const spawns: WorkerSpawnOptions[] = [];
 		const poolRef: WorkerPoolRef = {
 			current: {
-				spawnWorker: async () => ({ workerId: "wkr_new", status: "running" as const }),
+				spawnWorker: async (opts) => {
+					spawns.push(opts);
+					return { workerId: "wkr_new", status: "running" as const };
+				},
 				get: () => undefined,
 				list: () => [],
 				runningCount: () => 0,
@@ -119,10 +123,11 @@ describe("team tool", () => {
 		const tool = makeTool(tempDir, poolRef);
 		const result = await tool.execute(
 			"call-1",
-			{ action: "spawn", agent: "fg-agent", task: "do thing" },
+			{ action: "spawn", agent: "plain-agent", task: "do thing" },
 			undefined as never,
 		);
-		expect(result.content[0].text).toContain("background:false");
+		expect(result.content[0].text).toContain("wkr_new");
+		expect(spawns).toHaveLength(1);
 	});
 
 	it("spawn succeeds with valid agent", async () => {

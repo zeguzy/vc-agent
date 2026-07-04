@@ -195,7 +195,7 @@ export class Worker {
 		const worker = new Worker({
 			id,
 			agent: agent.name,
-			maxTurns: agent.maxTurns ?? 8,
+			maxTurns: agent.maxTurns ?? opts.defaultMaxTurns ?? 8,
 			eventBus,
 			disposer: () => session.dispose(),
 		});

@@ -203,14 +203,15 @@ export function registerBuiltinCommands(): void {
 
 	commandRegistry.register({
 		name: "plan",
-		description: "Cycle agent mode (standard → planner → orchestrator)",
+		description: "Cycle agent mode (standard → planner → orchestrator → team)",
 		usage: "/plan",
 		handler: (_args: string, ctx: CommandContext) => {
 			ctx.setAgentMode((prev) => {
 				const cycle: Record<string, AgentMode> = {
 					standard: "planner",
 					planner: "orchestrator",
-					orchestrator: "standard",
+					orchestrator: "team",
+					team: "standard",
 				};
 				const next = cycle[prev] ?? "standard";
 				ctx.client.setAgentMode(next);
@@ -694,7 +695,7 @@ export function buildHelpText(): string {
 		"    j · k          Scroll down / up",
 		"    g · G          Scroll to top / bottom",
 		"    t              Toggle thinking collapse",
-		"    Tab            Cycle agent mode (standard/planner/orchestrator)",
+		"    Tab            Cycle agent mode (standard/planner/orchestrator/team)",
 	].join("\n");
 }
 

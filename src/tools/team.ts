@@ -16,18 +16,19 @@ interface TeamToolOptions {
 }
 
 const ActionSchema = Type.Union(
-	[Type.Literal("spawn"), Type.Literal("poll"), Type.Literal("cancel")],
+	[Type.Literal("spawn"), Type.Literal("poll"), Type.Literal("cancel"), Type.Literal("continue")],
 	{
 		description:
-			"spawn=fire-and-forget a background worker, poll=check status, cancel=stop workers",
+			"spawn=new worker, poll=check status, cancel=stop worker, continue=follow-up to existing worker",
 	},
 );
 
 const TeamParamsSchema = Type.Object({
 	action: ActionSchema,
 	agent: Type.Optional(Type.String({ description: "Agent name for spawn action" })),
-	task: Type.Optional(Type.String({ description: "Task description for spawn action" })),
-	workerId: Type.Optional(Type.String({ description: "Worker id for poll/cancel single worker" })),
+	task: Type.Optional(Type.String({ description: "Task description for spawn" })),
+	message: Type.Optional(Type.String({ description: "Follow-up message for continue action" })),
+	workerId: Type.Optional(Type.String({ description: "Worker id for poll/cancel/continue single worker" })),
 	workerIds: Type.Optional(
 		Type.Array(Type.String(), { description: "Worker ids for poll (check specific workers)" }),
 	),
@@ -76,13 +77,12 @@ export function createTeamTool(options: TeamToolOptions): ToolDefinition {
 	const agentList = formatAgentNames(initialAgents);
 
 	const agentTable = initialAgents
-		.filter((a) => a.background !== false)
 		.map((a) => `'${a.name}' — ${a.description.split("\n")[0]}`)
 		.join(" ");
 
 	const DESCRIPTION = [
 		"Spawn background workers for parallel task execution. Workers run asynchronously — spawn one or more, then poll for results later.",
-		`Available agents: ${agentTable || "(none — create .openagent/agents/*.md files with background:true)"}.`,
+		`Available agents: ${agentTable || "(none — create .openagent/agents/*.md files)"}.`,
 		"",
 		"spawn: Fire-and-forget a worker. Returns workerId immediately. Worker runs with limited tools (read/grep/find only — no write/edit unless permissionMode=acceptEdits).",
 		"poll: Check worker status. Without wait, returns current snapshot. With wait=true, blocks until workers finish (max 60s).",
@@ -99,9 +99,10 @@ export function createTeamTool(options: TeamToolOptions): ToolDefinition {
 		parameters: TeamParamsSchema,
 		async execute(_toolCallId, rawParams, _signal) {
 			const p = rawParams as {
-				action: "spawn" | "poll" | "cancel";
+				action: "spawn" | "poll" | "cancel" | "continue";
 				agent?: string;
 				task?: string;
+				message?: string;
 				workerId?: string;
 				workerIds?: string[];
 				wait?: boolean;
@@ -126,12 +127,6 @@ export function createTeamTool(options: TeamToolOptions): ToolDefinition {
 				if (!agentConfig) {
 					return errorResult(
 						`agent "${p.agent}" not found. Available: ${formatAgentNames(agents)}`,
-					);
-				}
-
-				if (agentConfig.background === false) {
-					return errorResult(
-						`agent "${p.agent}" has background:false — cannot be used as a team worker. Set background:true in frontmatter.`,
 					);
 				}
 
@@ -198,6 +193,42 @@ export function createTeamTool(options: TeamToolOptions): ToolDefinition {
 					: `${finished}/${snapshots.length} workers finished, ${running} running | total cost $${totalCost.toFixed(4)}`;
 
 				return textResult(`${header}\n\n${parts.join("\n\n")}`);
+			}
+
+			if (p.action === "continue") {
+				if (!p.workerId || !p.message) {
+					return errorResult("workerId and message required for continue action");
+				}
+
+				const prev = pool.get(p.workerId);
+				const agentName = prev?.agent ?? "unknown";
+				const prevSummary = prev?.lastSummary ?? "";
+
+				const { agents } = discoverAgents(options.cwd);
+				const agentMap = new Map(agents.map((a) => [a.name, a]));
+				const agentConfig = agentMap.get(agentName);
+
+				if (!agentConfig) {
+					return errorResult(
+						`agent "${agentName}" not found. Available: ${formatAgentNames(agents)}`,
+					);
+				}
+
+				const contextTask = prevSummary
+					? `[Previous worker output]\n${prevSummary.slice(0, 2000)}\n\n[New instructions]\n${p.message}`
+					: p.message;
+
+				const worker = await pool.spawnWorker({
+					agent: agentConfig,
+					task: contextTask,
+					cwd: options.cwd,
+					services: options.services,
+					parentModel: options.parentModel,
+				});
+
+				return textResult(
+					`Worker continued: ${worker.workerId} (${agentName}) — status: ${worker.status}\nPrevious context included. Use team.poll(workerId="${worker.workerId}") to check progress.`,
+				);
 			}
 
 			if (p.workerId) {

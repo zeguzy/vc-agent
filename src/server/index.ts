@@ -149,6 +149,17 @@ export class AgentServer {
 		if (!this.workerPoolUnsub) {
 			this.workerPoolUnsub = this.workerPool.subscribe((event: WorkerEventEnvelope) => {
 				this.broadcastTeamEvent(event);
+				if (event.kind === "agent_end" || event.kind === "error") {
+					const snap = this.workerPool.get(event.workerId);
+					if (snap) {
+						const status = snap.status;
+						const summary = snap.lastSummary?.slice(0, 2000) ?? "(no output)";
+						const error = snap.lastError ? `\nError: ${snap.lastError}` : "";
+						const costStr = snap.cost > 0 ? ` | cost $${snap.cost.toFixed(4)}` : "";
+						const note = `[Worker ${event.workerId.slice(0, 10)}/${event.workerAgent} ${status}${costStr}]\n${summary}${error}`;
+						this.session.steer(note);
+					}
+				}
 			});
 		}
 	}
@@ -226,9 +237,9 @@ export class AgentServer {
 		this.session.setActiveToolsByName(activeToolsFor(mode));
 		if (mode === "orchestrator") {
 			this.session.steer(ORCHESTRATOR_SYSTEM_PROMPT);
-			if (this.teamConfig.enabled) {
-				this.session.steer(TEAM_ORCHESTRATOR_PROMPT);
-			}
+		}
+		if ((mode === "orchestrator" || mode === "team") && this.teamConfig.enabled) {
+			this.session.steer(TEAM_ORCHESTRATOR_PROMPT);
 		}
 	}
 

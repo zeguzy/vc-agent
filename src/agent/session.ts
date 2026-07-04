@@ -52,24 +52,23 @@ export const STANDARD_ACTIVE_TOOLS = [
 	"webfetch",
 ];
 export const PLANNER_ACTIVE_TOOLS = [...PLANNER_TOOLS, "todo", "question", "webfetch"];
+export const TEAM_ACTIVE_TOOLS = [...STANDARD_ACTIVE_TOOLS, "team"];
 
 export function activeToolsFor(agentMode: AgentMode): string[] {
-	return agentMode === "planner" ? PLANNER_ACTIVE_TOOLS : STANDARD_ACTIVE_TOOLS;
+	if (agentMode === "planner") return PLANNER_ACTIVE_TOOLS;
+	if (agentMode === "team") return TEAM_ACTIVE_TOOLS;
+	return STANDARD_ACTIVE_TOOLS;
 }
 
 /** Agent runtime mode — controls tool availability and system prompt. */
-export type AgentMode = "standard" | "planner" | "orchestrator";
+export type AgentMode = "standard" | "planner" | "orchestrator" | "team";
 
 export function appendSystemPromptFor(agentMode: AgentMode, config?: Config): string[] | undefined {
+	if (agentMode === "team") return [TEAM_ORCHESTRATOR_PROMPT];
 	if (agentMode === "orchestrator") {
 		const prompts = [ORCHESTRATOR_SYSTEM_PROMPT];
-		if (config?.teams?.enabled !== false) {
-			prompts.push(TEAM_ORCHESTRATOR_PROMPT);
-		}
+		if (config?.teams?.enabled !== false) prompts.push(TEAM_ORCHESTRATOR_PROMPT);
 		return prompts;
-	}
-	if (agentMode === "standard" && config?.teams?.enabled !== false) {
-		return [TEAM_ORCHESTRATOR_PROMPT];
 	}
 	return undefined;
 }
@@ -253,7 +252,7 @@ export async function createRuntime(options: RuntimeOptions): Promise<RuntimeRes
 	const sessionDir = resolveSessionDir();
 	const sessionManager = await buildSessionManager(options, sessionDir);
 	const agentDir = join(homedir(), ".config", "openagent");
-	const agentMode = options.agentMode ?? "standard";
+	const agentMode = options.agentMode ?? (options.config?.teams?.enabled !== false ? "team" : "standard");
 
 	const svc = await initServices({
 		cwd,

@@ -174,7 +174,7 @@ describe("teams integration", () => {
 		}
 	});
 
-	it("maxWorkers hard reject", async () => {
+	it("spawnWorker queues when pool is full", async () => {
 		const pool = new WorkerSessionPool(makeConfig({ maxWorkers: 1 }), makeServices());
 		const originalFactory = WorkerSessionPool.workerFactory;
 
@@ -187,22 +187,21 @@ describe("teams integration", () => {
 		}) as typeof originalFactory;
 
 		try {
-			await pool.spawnWorker({
-				agent: makeAgent("w1"),
-				task: "task 1",
-				cwd: "/tmp",
-				services: makeServices(),
+			const r1 = await pool.spawnWorker({
+				agent: makeAgent("w1"), task: "task 1", cwd: "/tmp", services: makeServices(),
 			});
 			expect(pool.runningCount()).toBe(1);
 
-			await expect(
-				pool.spawnWorker({
-					agent: makeAgent("w2"),
-					task: "task 2",
-					cwd: "/tmp",
-					services: makeServices(),
-				}),
-			).rejects.toThrow("worker pool exhausted");
+			let resolved = false;
+			const queued = pool.spawnWorker({
+				agent: makeAgent("w2"), task: "task 2", cwd: "/tmp", services: makeServices(),
+			}).then(() => { resolved = true; });
+			await new Promise((r) => setTimeout(r, 50));
+			expect(resolved).toBe(false);
+
+			await pool.cancel(r1.workerId);
+			await queued;
+			expect(resolved).toBe(true);
 		} finally {
 			WorkerSessionPool.workerFactory = originalFactory;
 		}

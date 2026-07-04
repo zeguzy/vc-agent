@@ -151,12 +151,25 @@ describe("WorkerSessionPool", () => {
 		expect(pool.runningCount()).toBe(2);
 	});
 
-	it("spawnWorker hard-rejects beyond maxWorkers", async () => {
+	it("spawnWorker queues when pool is full", async () => {
 		installFakeFactory();
 		const pool = new WorkerSessionPool(makeConfig({ maxWorkers: 1 }), makeServices());
 		await pool.spawnWorker(makeSpawnOptions());
 		expect(pool.runningCount()).toBe(1);
-		await expect(pool.spawnWorker(makeSpawnOptions())).rejects.toThrow("worker pool exhausted");
+
+		let resolved = false;
+		const queued = pool.spawnWorker(makeSpawnOptions()).then(() => {
+			resolved = true;
+			return pool.list()[0];
+		});
+		await new Promise((r) => setTimeout(r, 50));
+		expect(resolved).toBe(false);
+
+		const [first] = [pool.list()[0]?.id].filter(Boolean) as string[];
+		expect(first).toBeTruthy();
+		await pool.cancel(first);
+		await queued;
+		expect(resolved).toBe(true);
 	});
 
 	it("spawnWorker rejects after dispose", async () => {
