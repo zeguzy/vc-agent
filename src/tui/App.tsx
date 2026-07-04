@@ -5,6 +5,7 @@ import type { AgentClient, AgentMode } from "../client/index.js";
 import { getBaseMode } from "../agent/session.js";
 import { commandRegistry } from "../commands/registry.js";
 import type { Config } from "../config.js";
+import { readConfig } from "../config.js";
 import { createAssistantMessage, createUserMessage, type Message } from "../message.js";
 import { resolveNotificationsConfig } from "../notifications/config.js";
 import { getGlobalRouter } from "../notifications/notifier.js";
@@ -98,6 +99,15 @@ export function App({
 		setContextUsage,
 		bridge ? setPendingQuestion : undefined,
 	);
+
+	useEffect(() => {
+		const teamsEnabled = configState.teams?.enabled !== false;
+		const expected: AgentMode = teamsEnabled ? "team" : "standard";
+		if (agentMode !== expected && (agentMode === "standard" || agentMode === "team")) {
+			setAgentMode(expected);
+			client.setAgentMode(expected);
+		}
+	}, [configState.teams?.enabled, client]);
 
 	useEffect(() => {
 		if (!editBridge) return;
@@ -466,7 +476,10 @@ export function App({
 				<SettingsPanel
 					config={configState}
 					ctx={settingCtx}
-					onClose={() => setShowSettings(false)}
+					onClose={() => {
+					setShowSettings(false);
+					setConfigState(readConfig(cwd));
+				}}
 				/>
 			)}
 			{picker.showSessionPicker && (

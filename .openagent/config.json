@@ -4,5 +4,8 @@
   },
   "display": {
     "contextMode": "full"
+  },
+  "teams": {
+    "enabled": true
   }
 }
