@@ -63,6 +63,10 @@ export function activeToolsFor(agentMode: AgentMode): string[] {
 /** Agent runtime mode — controls tool availability and system prompt. */
 export type AgentMode = "standard" | "planner" | "orchestrator" | "team";
 
+export function getBaseMode(config?: Config): AgentMode {
+	return config?.teams?.enabled !== false ? "team" : "standard";
+}
+
 export function appendSystemPromptFor(agentMode: AgentMode, config?: Config): string[] | undefined {
 	if (agentMode === "team") return [TEAM_ORCHESTRATOR_PROMPT];
 	if (agentMode === "orchestrator") {

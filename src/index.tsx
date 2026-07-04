@@ -1,7 +1,7 @@
 #!/usr/bin/env bun
 import { createCliRenderer } from "@opentui/core";
 import { createRoot } from "@opentui/react";
-import { type AgentMode, createRuntime, type SessionMode } from "./agent/session.js";
+import { type AgentMode, createRuntime, getBaseMode, type SessionMode } from "./agent/session.js";
 import { createHttpClient } from "./client/http.js";
 import { createClient } from "./client/index.js";
 import { readConfig } from "./config.js";
@@ -107,8 +107,7 @@ async function runHeadless(promptText: string, argv: string[]): Promise<void> {
 	const cwd = process.cwd();
 	const mode = resolveMode(args);
 	const config = readConfig(cwd);
-	const teamDefault: AgentMode = config.teams?.enabled !== false ? "team" : "standard";
-	const agentMode: AgentMode = args.plan ? "planner" : teamDefault;
+	const agentMode: AgentMode = args.plan ? "planner" : getBaseMode(config);
 
 	const runner = new HeadlessRunner({
 		cwd,
@@ -140,7 +139,7 @@ async function runServe(argv: string[]): Promise<void> {
 		model: config.model,
 		config,
 		mode: "new",
-		agentMode: config.teams?.enabled !== false ? "team" : "standard",
+		agentMode: getBaseMode(config),
 		poolRef,
 	});
 	const server = createServer({ runtime, skillManager, cwd, poolRef });
@@ -173,8 +172,7 @@ async function runTui(argv: string[]): Promise<void> {
 	const config = readConfig(cwd);
 	const model = args.model ?? config.model;
 	const mode = resolveMode(args);
-	const teamDefault: AgentMode = config.teams?.enabled !== false ? "team" : "standard";
-	const agentMode: AgentMode = args.plan ? "planner" : teamDefault;
+	const agentMode: AgentMode = args.plan ? "planner" : getBaseMode(config);
 
 	const questionBridge = createQuestionBridge();
 	const editBridge = createEditConfirmBridge();

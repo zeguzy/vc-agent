@@ -2,6 +2,7 @@ import type { ScrollBoxRenderable } from "@opentui/core";
 import { useKeyboard, useRenderer } from "@opentui/react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { AgentClient, AgentMode } from "../client/index.js";
+import { getBaseMode } from "../agent/session.js";
 import { commandRegistry } from "../commands/registry.js";
 import type { Config } from "../config.js";
 import { createAssistantMessage, createUserMessage, type Message } from "../message.js";
@@ -401,11 +402,11 @@ export function App({
 				const cycle: Record<string, AgentMode> = {
 					standard: "planner",
 					planner: "orchestrator",
-					orchestrator: "team",
-					team: "standard",
+					orchestrator: "standard",
 				};
 				const next = cycle[agentModeRef.current] ?? "standard";
-				client.setAgentMode(next);
+				client.setAgentMode(next === "standard" ? getBaseMode(configState) : next);
+				setAgentMode(next);
 				setAgentMode(next);
 				return;
 			}
@@ -510,7 +511,7 @@ export function App({
 					<InputBox
 						disabled={isRunning}
 						mode={showSettings || picker.showSessionPicker ? "normal" : mode}
-						agentMode={agentMode}
+						agentMode={agentMode === "standard" ? getBaseMode(configState) : agentMode}
 						model={modelDisplay}
 						cwd={cwd}
 						pollManager={pollManagerRef.current}

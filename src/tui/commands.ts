@@ -1,4 +1,5 @@
 import type { AgentMode } from "../client/types.js";
+import { getBaseMode } from "../agent/session.js";
 import { type CommandContext, commandRegistry } from "../commands/registry.js";
 import { writeConfig } from "../config.js";
 import {
@@ -203,18 +204,17 @@ export function registerBuiltinCommands(): void {
 
 	commandRegistry.register({
 		name: "plan",
-		description: "Cycle agent mode (standard → planner → orchestrator → team)",
+		description: "Cycle agent mode (standard → planner → orchestrator)",
 		usage: "/plan",
 		handler: (_args: string, ctx: CommandContext) => {
 			ctx.setAgentMode((prev) => {
 				const cycle: Record<string, AgentMode> = {
 					standard: "planner",
 					planner: "orchestrator",
-					orchestrator: "team",
-					team: "standard",
+					orchestrator: "standard",
 				};
 				const next = cycle[prev] ?? "standard";
-				ctx.client.setAgentMode(next);
+				ctx.client.setAgentMode(next === "standard" ? getBaseMode(ctx.getConfig()) : next);
 				return next;
 			});
 		},
@@ -695,7 +695,7 @@ export function buildHelpText(): string {
 		"    j · k          Scroll down / up",
 		"    g · G          Scroll to top / bottom",
 		"    t              Toggle thinking collapse",
-		"    Tab            Cycle agent mode (standard/planner/orchestrator/team)",
+		"    Tab            Cycle agent mode (standard/planner/orchestrator)",
 	].join("\n");
 }
 
