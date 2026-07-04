@@ -415,8 +415,7 @@ export function App({
 					orchestrator: "standard",
 				};
 				const next = cycle[agentModeRef.current] ?? "standard";
-				client.setAgentMode(next === "standard" ? getBaseMode(configState) : next);
-				setAgentMode(next);
+				client.setAgentMode(next === "standard" ? getBaseMode(configRef.current) : next);
 				setAgentMode(next);
 				return;
 			}
