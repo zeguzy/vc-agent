@@ -1,5 +1,5 @@
-import type { AgentMode } from "../client/types.js";
 import { getBaseMode } from "../agent/session.js";
+import type { AgentMode } from "../client/types.js";
 import { type CommandContext, commandRegistry } from "../commands/registry.js";
 import { writeConfig } from "../config.js";
 import {
@@ -465,8 +465,9 @@ export function registerBuiltinCommands(): void {
 
 	commandRegistry.register({
 		name: "team",
-		description: "Team worker management: spawn / poll / cancel",
-		usage: "/team spawn <agent> <task> | /team poll [workerId] | /team cancel [workerId]",
+		description: "Team management: create-member / assign-task / poll / cancel / send-message",
+		usage:
+			"/team create-member <name> <role> <goal> | /team assign-task | /team poll [memberId] | /team cancel [memberId]",
 		handler: (args: string, ctx: CommandContext) => {
 			const config = ctx.getConfig();
 			if (config.teams?.enabled === false) {

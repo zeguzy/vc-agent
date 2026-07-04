@@ -106,6 +106,12 @@ export interface TeamConfig {
 	cancelOrphansOnSessionChange?: boolean;
 	/** worker 工具收口配置。 */
 	workerPermissions?: TeamWorkerPermissions;
+	/** V2: idle 成员数上限，默认 maxWorkers * 2 */
+	maxIdleMembers?: number;
+	/** V2: 消息历史保留条数，默认 100 */
+	messageHistoryLimit?: number;
+	/** V2: 每成员每分钟消息发送上限，默认 5 */
+	messageRateLimitPerMinute?: number;
 }
 
 /** 把缺省字段补齐后的 Team 配置（内部直接消费）。 */
@@ -118,6 +124,12 @@ export interface ResolvedTeamConfig {
 	cancelOrphansOnSessionChange: boolean;
 	defaultWorkerModel?: string;
 	workerPermissions?: TeamWorkerPermissions;
+	/** idle 成员数上限 */
+	maxIdleMembers: number;
+	/** 消息历史保留条数 */
+	messageHistoryLimit: number;
+	/** 每成员每分钟消息发送上限 */
+	messageRateLimitPerMinute: number;
 }
 
 /** 简化了 V1 默认配置集合（fields 必填，options 仍可缺省）。 */
@@ -129,6 +141,9 @@ export const DEFAULT_TEAM_CONFIG: Pick<
 	| "isolation"
 	| "cancelOrphansOnAgentEnd"
 	| "cancelOrphansOnSessionChange"
+	| "maxIdleMembers"
+	| "messageHistoryLimit"
+	| "messageRateLimitPerMinute"
 > = {
 	enabled: true,
 	maxWorkers: 4,
@@ -136,6 +151,9 @@ export const DEFAULT_TEAM_CONFIG: Pick<
 	isolation: "none",
 	cancelOrphansOnAgentEnd: true,
 	cancelOrphansOnSessionChange: true,
+	maxIdleMembers: 8,
+	messageHistoryLimit: 100,
+	messageRateLimitPerMinute: 5,
 };
 
 /** 把未填字段补齐为解析后的全量配置。无 undefined 字段简化下游使用。 */
@@ -154,6 +172,9 @@ export function resolveTeamConfig(raw: TeamConfig | undefined): ResolvedTeamConf
 			raw.cancelOrphansOnSessionChange ?? d.cancelOrphansOnSessionChange,
 		defaultWorkerModel: raw.defaultWorkerModel,
 		workerPermissions: raw.workerPermissions,
+		maxIdleMembers: raw.maxIdleMembers ?? d.maxIdleMembers,
+		messageHistoryLimit: raw.messageHistoryLimit ?? d.messageHistoryLimit,
+		messageRateLimitPerMinute: raw.messageRateLimitPerMinute ?? d.messageRateLimitPerMinute,
 	};
 }
 
@@ -167,6 +188,28 @@ export interface WorkerSessionPoolLike {
 	cancelAll(): Promise<void>;
 	dispose(): Promise<void>;
 	subscribe(listener: (event: WorkerEventEnvelope) => void): () => void;
+	// V2 team methods
+	createMember(opts: {
+		name: string;
+		role: string;
+		goal: string;
+		model?: string;
+		tools?: string[];
+		systemPrompt?: string;
+	}): TeamMember;
+	removeMember(id: MemberId): void;
+	getMember(id: MemberId): TeamMember | undefined;
+	listMembers(): TeamMember[];
+	assignTask(opts: {
+		title: string;
+		description: string;
+		memberId: MemberId;
+		priority?: "high" | "medium" | "low";
+	}): TeamTask;
+	listTasks(): TeamTask[];
+	taskStatus(taskId: string): TeamTask | undefined;
+	sendMessage(from: MemberId, to: MemberId | "team", content: string): void;
+	readInbox(memberId?: MemberId): TeamMessage[];
 }
 
 /**
@@ -191,8 +234,128 @@ export interface WorkerEventEmitter {
 	dispose(): void;
 }
 
-/** `Worker.spawn` 工厂入参。复用 `src/agents/types.SubagentServices` 保证 authStorage/modelRegistry/settingsManager 句柄一致。 */
-type ResolvedModel = ReturnType<ModelRegistry["getAll"]>[number];
+// ============================================================================
+// Team Member Model — V2 团队成员系统（替换 Worker 模型）
+// ============================================================================
+
+/** 成员 id，稳定生命周期唯一。格式：`mem_<8 字符 base32>`。 */
+export type MemberId = string;
+
+/** 成员生命周期状态。 */
+export type MemberStatus =
+	| "idle" // 已创建但未启动
+	| "working" // session.prompt 进行中
+	| "done" // agent_end 正常完成
+	| "error" // prompt reject / maxTurns 命中 / 网络 drop
+	| "cancelled"; // 被 cancel 主动中止
+
+/** 团队成员身份模型。Leader 动态创建，不限预设角色。 */
+export interface TeamMember {
+	id: MemberId;
+	/** Leader 指定的拟人化名字 */
+	name: string;
+	/** Leader 指定的职责描述 */
+	role: string;
+	/** Leader 指定的目标 */
+	goal: string;
+	status: MemberStatus;
+	model: string;
+	tools?: string[];
+	systemPrompt?: string;
+	permissionMode?: "default" | "plan" | "acceptEdits";
+	/** 对话历史摘要 */
+	context: string[];
+	turnCount: number;
+	inputTokens: number;
+	outputTokens: number;
+	cost: number;
+	lastSummary: string | null;
+	lastError: string | null;
+	createdAt: number;
+}
+
+/** 任务优先级。 */
+export type TaskPriority = "high" | "medium" | "low";
+
+/** 任务状态。 */
+export type TaskStatus = "open" | "assigned" | "in_progress" | "done" | "blocked";
+
+/** 任务池中的任务。 */
+export interface TeamTask {
+	id: string;
+	title: string;
+	description: string;
+	assignedTo?: MemberId;
+	status: TaskStatus;
+	priority: TaskPriority;
+	result?: string;
+	blockReason?: string;
+}
+
+/** 团队成员间消息。 */
+export interface TeamMessage {
+	id: string;
+	from: MemberId;
+	to: MemberId | "team";
+	content: string;
+	timestamp: number;
+}
+
+/** 成员事件分类 kind — 与 WorkerEventKind 对齐。 */
+export type MemberEventKind = WorkerEventKind;
+
+/** TeamSession 转发给订阅者的成员事件。 */
+export interface TeamMemberEvent {
+	readonly type: "team_member_event";
+	readonly memberId: MemberId;
+	readonly memberName: string;
+	readonly kind: MemberEventKind;
+	readonly payload: AgentSessionEvent;
+}
+
+/** AgentServer 事件总线统一类型（V2 成员事件加入）。 */
+export type AgentClientEventV2 =
+	| AgentSessionEvent
+	| WorkerEventEnvelope
+	| TeamMemberEvent
+	| TeamOrphansCancelledEvent;
+
+/** 团队配置扩展。 */
+export interface TeamConfigV2 extends TeamConfig {
+	/** idle 成员数上限，默认 maxWorkers * 2 */
+	maxIdleMembers?: number;
+	/** 消息历史保留条数，默认 100 */
+	messageHistoryLimit?: number;
+	/** 每成员每分钟消息发送上限，默认 5 */
+	messageRateLimitPerMinute?: number;
+}
+
+// ============================================================================
+// Deprecated — V1 Worker 模型，保留兼容层
+// ============================================================================
+
+/** @deprecated V2 成员模型替代。保留 `generateMemberId` 和 `TeamMember` 系统。 */
+export type ResolvedModel = ReturnType<ModelRegistry["getAll"]>[number];
+
+/**
+ * @deprecated 使用 `generateMemberId()` 替代。
+ * 生成形如 `mem_<8 字符 base32>` 的新 memberId。
+ */
+export function generateMemberId(): MemberId {
+	const alphabet = "abcdefghijklmnopqrstuvwxyz234567";
+	const rand = new Uint8Array(8);
+	(globalThis.crypto as Crypto).getRandomValues(rand);
+	let suffix = "";
+	for (const b of rand) suffix += alphabet[b % 32];
+	return `mem_${suffix}`;
+}
+
+/**
+ * @deprecated 使用 `generateMemberId()` 替代。
+ */
+export function generateWorkerId(): WorkerId {
+	return generateMemberId().replace(/^mem_/, "wkr_");
+}
 
 export interface WorkerSpawnOptions {
 	agent: AgentConfig;
@@ -201,16 +364,7 @@ export interface WorkerSpawnOptions {
 	services: SubagentServices;
 	parentModel?: ResolvedModel;
 	defaultMaxTurns?: number;
+	defaultWorkerModel?: string;
 	signal?: AbortSignal;
 	onDelta?: (text: string) => void;
-}
-
-/** 生成形如 `wkr_<8 字符 base32>` 的新 workerId；带时间前缀避免短间隔依赖伪随机碰撞。 */
-export function generateWorkerId(): WorkerId {
-	const alphabet = "abcdefghijklmnopqrstuvwxyz234567";
-	const rand = new Uint8Array(8);
-	(globalThis.crypto as Crypto).getRandomValues(rand);
-	let suffix = "";
-	for (const b of rand) suffix += alphabet[b % 32];
-	return `wkr_${suffix}`;
 }

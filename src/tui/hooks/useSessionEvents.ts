@@ -162,15 +162,23 @@ export function useSessionEvents(
 
 	useEffect(() => {
 		const onWorkerEvent = (event: AgentClientEvent) => {
-			if (event.type !== "team_worker_event") return;
+			const type = (event as { type: string }).type;
+			if (type !== "team_worker_event" && type !== "team_member_event") return;
 
-			const { workerId, workerAgent, kind } = event;
-			const existingId = workerMsgMap.current.get(workerId);
+			const te = event as {
+				kind: string;
+				payload: { message?: { content?: unknown; usage?: { cost?: { total?: number } } } };
+				workerId?: string;
+				memberId?: string;
+				workerAgent?: string;
+				memberName?: string;
+			};
+			const wid = te.workerId ?? te.memberId ?? "";
+			const wAgent = te.workerAgent ?? te.memberName ?? "";
+			const existingId = workerMsgMap.current.get(wid);
 
-			if (kind === "message_delta") {
-				const deltaContent = extractAssistantContent(
-					(event.payload as { message?: { content?: unknown } }).message?.content,
-				).text;
+			if (te.kind === "message_delta") {
+				const deltaContent = extractAssistantContent(te.payload.message?.content).text;
 
 				if (existingId) {
 					setMessages((prev) =>
@@ -179,16 +187,14 @@ export function useSessionEvents(
 						),
 					);
 				} else {
-					const msg = createWorkerMessage(workerId, workerAgent, deltaContent);
-					workerMsgMap.current.set(workerId, msg.id);
+					const msg = createWorkerMessage(wid, wAgent, deltaContent);
+					workerMsgMap.current.set(wid, msg.id);
 					setMessages((prev) => [...prev, msg]);
 				}
 			}
 
-			if (kind === "message_end") {
-				const usage = (event.payload as { message?: { usage?: { cost?: { total?: number } } } })
-					.message?.usage;
-				const cost = usage?.cost?.total;
+			if (te.kind === "message_end") {
+				const cost = te.payload.message?.usage?.cost?.total;
 
 				if (existingId) {
 					setMessages((prev) =>
@@ -199,7 +205,7 @@ export function useSessionEvents(
 				}
 			}
 
-			if (kind === "agent_end") {
+			if (te.kind === "agent_end") {
 				if (existingId) {
 					setMessages((prev) =>
 						prev.map((m) =>
@@ -213,13 +219,13 @@ export function useSessionEvents(
 						),
 					);
 				} else {
-					const msg = createWorkerSummaryMessage(workerId, workerAgent, "done");
-					workerMsgMap.current.set(workerId, msg.id);
+					const msg = createWorkerSummaryMessage(wid, wAgent, "done");
+					workerMsgMap.current.set(wid, msg.id);
 					setMessages((prev) => [...prev, msg]);
 				}
 			}
 
-			if (kind === "error") {
+			if (te.kind === "error") {
 				if (existingId) {
 					setMessages((prev) =>
 						prev.map((m) =>
@@ -233,8 +239,8 @@ export function useSessionEvents(
 						),
 					);
 				} else {
-					const msg = createWorkerSummaryMessage(workerId, workerAgent, "error");
-					workerMsgMap.current.set(workerId, msg.id);
+					const msg = createWorkerSummaryMessage(wid, wAgent, "error");
+					workerMsgMap.current.set(wid, msg.id);
 					setMessages((prev) => [...prev, msg]);
 				}
 			}

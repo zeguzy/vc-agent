@@ -22,7 +22,11 @@ import type { SkillManager } from "../skills/manager.js";
 import { WorkerSessionPool } from "../teams/manager.js";
 import type {
 	AgentClientEvent,
+	MemberId,
+	TeamMember,
+	TeamMessage,
 	TeamOrphansCancelledEvent,
+	TeamTask,
 	WorkerEventEnvelope,
 	WorkerId,
 	WorkerPoolRef,
@@ -327,6 +331,55 @@ export class AgentServer {
 
 	async handleCancelAllWorkers(): Promise<void> {
 		await this.workerPool.cancelAll();
+	}
+
+	// V2 Team methods
+	async handleCreateMember(opts: {
+		name: string;
+		role: string;
+		goal: string;
+		model?: string;
+		tools?: string[];
+		systemPrompt?: string;
+	}): Promise<TeamMember> {
+		return this.workerPool.createMember(opts);
+	}
+
+	async handleRemoveMember(id: MemberId): Promise<void> {
+		return this.workerPool.removeMember(id);
+	}
+
+	handleGetMember(id: MemberId): TeamMember | undefined {
+		return this.workerPool.getMember(id);
+	}
+
+	handleListMembers(): TeamMember[] {
+		return this.workerPool.listMembers();
+	}
+
+	async handleAssignTask(opts: {
+		title: string;
+		description: string;
+		memberId: MemberId;
+		priority?: "high" | "medium" | "low";
+	}): Promise<TeamTask> {
+		return this.workerPool.assignTask(opts);
+	}
+
+	handleListTasks(): TeamTask[] {
+		return this.workerPool.listTasks();
+	}
+
+	handleTaskStatus(taskId: string): TeamTask | undefined {
+		return this.workerPool.taskStatus(taskId);
+	}
+
+	async handleSendMessage(from: MemberId, to: MemberId | "team", content: string): Promise<void> {
+		return this.workerPool.sendMessage(from, to, content);
+	}
+
+	handleReadInbox(memberId?: MemberId): TeamMessage[] {
+		return this.workerPool.readInbox(memberId);
 	}
 }
 
