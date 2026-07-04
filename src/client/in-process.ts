@@ -3,6 +3,7 @@ import type { AgentSession, AgentSessionRuntime } from "../agent/session.js";
 import type { CommandContext } from "../commands/registry.js";
 import type { AgentServer } from "../server/index.js";
 import type { SkillManager } from "../skills/manager.js";
+import type { AgentClientEvent, WorkerId, WorkerSnapshot, WorkerStatus } from "../teams/types.js";
 import type {
 	AgentClient,
 	ContextUsage,
@@ -118,6 +119,33 @@ export class InProcessClient implements AgentClient {
 
 	async executeCommand(name: string, args: string, ctx: CommandContext): Promise<boolean> {
 		return this.server.handleExecuteCommand(name, args, ctx);
+	}
+
+	listWorkers(): WorkerSnapshot[] {
+		return this.server.handleListWorkers();
+	}
+
+	getWorker(id: WorkerId): WorkerSnapshot | undefined {
+		return this.server.handleGetWorker(id);
+	}
+
+	async spawnWorker(
+		agent: string,
+		task: string,
+	): Promise<{ workerId: WorkerId; status: WorkerStatus }> {
+		return this.server.handleSpawnWorker(agent, task);
+	}
+
+	async cancelWorker(workerId: WorkerId): Promise<void> {
+		return this.server.handleCancelWorker(workerId);
+	}
+
+	async cancelAllWorkers(): Promise<void> {
+		return this.server.handleCancelAllWorkers();
+	}
+
+	subscribeTeam(handler: (event: AgentClientEvent) => void): Unsubscribe {
+		return this.server.handleSubscribeTeam(handler);
 	}
 }
 

@@ -2,6 +2,7 @@ import type { AgentSessionEvent } from "../agent/session.js";
 import type { CommandContext } from "../commands/registry.js";
 import type { Message } from "../message.js";
 import type { SessionInfo } from "../session/list.js";
+import type { AgentClientEvent, WorkerId, WorkerSnapshot, WorkerStatus } from "../teams/types.js";
 import type {
 	AgentClient,
 	AgentMode,
@@ -214,6 +215,33 @@ export class HttpClient implements AgentClient {
 
 	async executeCommand(_name: string, _args: string, _ctx: CommandContext): Promise<boolean> {
 		throw new NotSupportedError("executeCommand");
+	}
+
+	listWorkers(): WorkerSnapshot[] {
+		throw new NotSupportedError("listWorkers");
+	}
+
+	getWorker(_id: WorkerId): WorkerSnapshot | undefined {
+		throw new NotSupportedError("getWorker");
+	}
+
+	async spawnWorker(
+		_agent: string,
+		_task: string,
+	): Promise<{ workerId: WorkerId; status: WorkerStatus }> {
+		throw new NotSupportedError("spawnWorker");
+	}
+
+	async cancelWorker(_workerId: WorkerId): Promise<void> {
+		throw new NotSupportedError("cancelWorker");
+	}
+
+	async cancelAllWorkers(): Promise<void> {
+		throw new NotSupportedError("cancelAllWorkers");
+	}
+
+	subscribeTeam(_handler: (event: AgentClientEvent) => void): Unsubscribe {
+		throw new NotSupportedError("subscribeTeam");
 	}
 }
 

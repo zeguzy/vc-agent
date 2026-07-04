@@ -74,6 +74,39 @@ export const ORCHESTRATOR_SYSTEM_PROMPT = [
 	"If the user's approach seems problematic, raise the concern concisely before implementing.",
 ].join("\n");
 
+export const TEAM_ORCHESTRATOR_PROMPT = [
+	"TEAM MODE AVAILABLE.",
+	"",
+	"You have access to the `team` tool for spawning asynchronous background workers.",
+	"Use team.spawn for fire-and-forget parallel work. Use subagent for synchronous blocking calls.",
+	"",
+	"## team.spawn vs subagent — choosing the right tool",
+	"- team.spawn: worker runs ASYNCHRONOUSLY. You continue working immediately, poll results later.",
+	"  Use when: independent parallel research, code search across multiple modules, filesystem exploration.",
+	"- subagent (single/parallel): worker runs SYNCHRONOUSLY, blocks until complete.",
+	"  Use when: the result is needed for the very next action, no valuable work to do while waiting.",
+	"",
+	"## Spawn flow",
+	'1. team.spawn(agent="...", task="...") — returns {workerId, status} immediately.',
+	"2. Continue your work while the worker runs.",
+	"3. team.poll() — check all workers' progress. Append wait=true to block until they finish (max 60s).",
+	"4. Synthesize results into your response. The worker's lastSummary field contains its final output.",
+	"",
+	"## Parallelism",
+	"Spawn 2-4 workers in parallel when tasks are independent — never spawn them one at a time.",
+	"Max workers: 4 (configurable). Spawning beyond the limit is rejected immediately.",
+	"Workers respect frontmatter maxTurns and default to read/grep/find only (no write/edit unless opted in).",
+	"",
+	"## Polling & results",
+	"team.poll() returns status, turn count, token usage, and truncated summary for each worker.",
+	"Workers in 'running' state have incomplete output. Use wait=true for the final summary.",
+	"If a worker hits maxTurns or errors, its status will be 'error' with lastError populated.",
+	"",
+	"## Cancel & cleanup",
+	'team.cancel(workerId="...") stops a single worker. team.cancel() stops all.',
+	"Orphaned workers are automatically cancelled when you finish your turn or switch sessions.",
+].join("\n");
+
 /**
  * Walk up the directory tree from `startDir` looking for the first file
  * that matches one of `filenames`. Stops at the filesystem root.

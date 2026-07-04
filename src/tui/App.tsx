@@ -22,6 +22,7 @@ import { SettingsPanel } from "./components/SettingsPanel.js";
 import { StatusBar } from "./components/StatusBar.js";
 import { Toast } from "./components/Toast.js";
 import { WelcomeBanner } from "./components/WelcomeBanner.js";
+import { WorkersView } from "./components/WorkersView.js";
 import { useSessionEvents } from "./hooks/useSessionEvents.js";
 import { useSessionPicker } from "./hooks/useSessionPicker.js";
 import { useStreamingBuffer } from "./hooks/useStreamingBuffer.js";
@@ -74,6 +75,7 @@ export function App({
 		percent: number | null;
 	}>({ tokens: null, window: null, percent: null });
 	const [showSettings, setShowSettings] = useState(false);
+	const [showWorkers, setShowWorkers] = useState(false);
 	const [configState, setConfigState] = useState<Config>(config ?? {});
 	const [toastDismissMs, setToastDismissMs] = useState(
 		resolveNotificationsConfig(config?.notifications).toastDismissMs,
@@ -114,6 +116,8 @@ export function App({
 	messagesRef.current = messages;
 	const showSettingsRef = useRef(showSettings);
 	showSettingsRef.current = showSettings;
+	const showWorkersRef = useRef(showWorkers);
+	showWorkersRef.current = showWorkers;
 	const pendingQuestionRef = useRef<QuestionData | null>(null);
 	pendingQuestionRef.current = pendingQuestion;
 	const showSessionPickerRef = useRef(false);
@@ -262,6 +266,7 @@ export function App({
 			setThinkingCollapsed,
 			cwd,
 			setShowSettings,
+			setShowWorkers,
 			getConfig: () => configRef.current,
 			setConfig: setConfigState,
 			openSessionPicker: picker.openSessionPicker,
@@ -357,7 +362,7 @@ export function App({
 			}
 		}
 		const action = resolveKey(modeRef.current, key);
-		if (showSettingsRef.current || showSessionPickerRef.current) {
+		if (showSettingsRef.current || showSessionPickerRef.current || showWorkersRef.current) {
 			if (action === "ctrlC") {
 				const now = Date.now();
 				if (now - lastCtrlCRef.current < 1000) process.exit(0);
@@ -471,6 +476,7 @@ export function App({
 					onRename={picker.handlePickerRename}
 				/>
 			)}
+			{showWorkers && <WorkersView client={client} onClose={() => setShowWorkers(false)} />}
 			<box
 				flexDirection="column"
 				flexShrink={0}

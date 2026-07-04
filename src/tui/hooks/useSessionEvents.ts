@@ -5,8 +5,11 @@ import {
 	createAssistantMessage,
 	createSeparator,
 	createToolMessage,
+	createWorkerMessage,
+	createWorkerSummaryMessage,
 	type Message,
 } from "../../message.js";
+import type { AgentClientEvent } from "../../teams/types.js";
 import type { QuestionData } from "../../tools/question-bridge.js";
 import { extractAssistantContent } from "../../utils/content.js";
 import type { StreamingBuffer } from "./useStreamingBuffer.js";
@@ -154,6 +157,92 @@ export function useSessionEvents(
 		});
 		return unsubscribe;
 	}, [client, streaming, setMessages, setIsRunning, setContextUsage, onQuestionAsked]);
+
+	const workerMsgMap = useRef<Map<string, string>>(new Map());
+
+	useEffect(() => {
+		const onWorkerEvent = (event: AgentClientEvent) => {
+			if (event.type !== "team_worker_event") return;
+
+			const { workerId, workerAgent, kind } = event;
+			const existingId = workerMsgMap.current.get(workerId);
+
+			if (kind === "message_delta") {
+				const deltaContent = extractAssistantContent(
+					(event.payload as { message?: { content?: unknown } }).message?.content,
+				).text;
+
+				if (existingId) {
+					setMessages((prev) =>
+						prev.map((m) =>
+							m.id === existingId ? { ...m, content: `${m.content}${deltaContent}` } : m,
+						),
+					);
+				} else {
+					const msg = createWorkerMessage(workerId, workerAgent, deltaContent);
+					workerMsgMap.current.set(workerId, msg.id);
+					setMessages((prev) => [...prev, msg]);
+				}
+			}
+
+			if (kind === "message_end") {
+				const usage = (event.payload as { message?: { usage?: { cost?: { total?: number } } } })
+					.message?.usage;
+				const cost = usage?.cost?.total;
+
+				if (existingId) {
+					setMessages((prev) =>
+						prev.map((m) =>
+							m.id === existingId ? { ...m, workerCost: (m.workerCost ?? 0) + (cost ?? 0) } : m,
+						),
+					);
+				}
+			}
+
+			if (kind === "agent_end") {
+				if (existingId) {
+					setMessages((prev) =>
+						prev.map((m) =>
+							m.id === existingId
+								? {
+										...m,
+										role: "worker-summary",
+										workerStatus: "done",
+									}
+								: m,
+						),
+					);
+				} else {
+					const msg = createWorkerSummaryMessage(workerId, workerAgent, "done");
+					workerMsgMap.current.set(workerId, msg.id);
+					setMessages((prev) => [...prev, msg]);
+				}
+			}
+
+			if (kind === "error") {
+				if (existingId) {
+					setMessages((prev) =>
+						prev.map((m) =>
+							m.id === existingId
+								? {
+										...m,
+										role: "worker-summary",
+										workerStatus: "error",
+									}
+								: m,
+						),
+					);
+				} else {
+					const msg = createWorkerSummaryMessage(workerId, workerAgent, "error");
+					workerMsgMap.current.set(workerId, msg.id);
+					setMessages((prev) => [...prev, msg]);
+				}
+			}
+		};
+
+		const unsub = client.subscribeTeam(onWorkerEvent);
+		return () => unsub();
+	}, [client, setMessages]);
 
 	return { toolCallIdToMsgId };
 }

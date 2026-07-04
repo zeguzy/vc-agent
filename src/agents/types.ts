@@ -11,7 +11,13 @@ export interface AgentConfig {
 	systemPrompt: string;
 	source: AgentSource;
 	filePath: string;
+	disallowedTools?: string[];
+	maxTurns?: number;
+	background?: boolean;
+	permissionMode?: AgentPermissionMode;
 }
+
+export type AgentPermissionMode = "default" | "plan" | "acceptEdits";
 
 export interface AgentDiscoveryResult {
 	agents: AgentConfig[];

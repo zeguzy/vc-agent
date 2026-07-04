@@ -4,7 +4,7 @@ import { writeConfig } from "../config.js";
 import {
 	type CompressNotificationSummary,
 	getDcpConfig,
-	type getDcpState,
+	getDcpState,
 	isDcpEnabled,
 	setCompressNotifier,
 	setDcpRuntimeEnabled,
@@ -17,7 +17,6 @@ import {
 	createUserMessage,
 	type Message,
 } from "../message.js";
-import { contextPruningEnabledSetting } from "../settings/context-pruning.js";
 import { modelSetting } from "../settings/definitions.js";
 import type { SkillManager } from "../skills/manager.js";
 import { extractTodoItems } from "../tools/todo.js";
@@ -75,7 +74,11 @@ export function registerBuiltinCommands(): void {
 			if (arg === "on" || arg === "off") {
 				const value = arg === "on";
 				setDcpRuntimeEnabled(value);
-				const newConfig = contextPruningEnabledSetting.persist(ctx.getConfig(), value);
+				const prev = ctx.getConfig();
+				const newConfig = {
+					...prev,
+					contextPruning: { ...prev.contextPruning, enabled: value },
+				};
 				ctx.setConfig(newConfig);
 				try {
 					writeConfig(ctx.cwd, newConfig, "project");
@@ -93,7 +96,10 @@ export function registerBuiltinCommands(): void {
 					createAssistantMessage(`DCP 已${value ? "开启" : "关闭"}，立刻生效。`),
 				]);
 			} else {
-				ctx.setShowDcp(true);
+				ctx.setMessages((prev) => [
+					...prev,
+					createAssistantMessage(formatDcpStatus(getDcpConfig(), getDcpState())),
+				]);
 			}
 		},
 	});
@@ -453,6 +459,170 @@ export function registerBuiltinCommands(): void {
 						: `撤销失败: ${formatError(err)}`;
 				ctx.setMessages((prev) => [...prev, createAssistantMessage(msg)]);
 			}
+		},
+	});
+
+	commandRegistry.register({
+		name: "team",
+		description: "Team worker management: spawn / poll / cancel",
+		usage: "/team spawn <agent> <task> | /team poll [workerId] | /team cancel [workerId]",
+		handler: (args: string, ctx: CommandContext) => {
+			const config = ctx.getConfig();
+			if (config.teams?.enabled === false) {
+				ctx.setMessages((prev) => [
+					...prev,
+					createAssistantMessage("Teams mode is disabled in config (teams.enabled=false)."),
+				]);
+				return;
+			}
+
+			const parts = args.trim().split(/\s+/);
+			const sub = parts[0]?.toLowerCase();
+
+			if (sub === "spawn") {
+				const rest = parts.slice(1).join(" ");
+				const spaceIdx = rest.indexOf(" ");
+				if (spaceIdx === -1 || rest.length === 0) {
+					ctx.setMessages((prev) => [
+						...prev,
+						createAssistantMessage(
+							'/team spawn <agent> "<task>" — e.g. /team spawn lysosome "search X"',
+						),
+					]);
+					return;
+				}
+				const agent = rest.slice(0, spaceIdx);
+				const task = rest
+					.slice(spaceIdx + 1)
+					.replace(/^["']|["']$/g, "")
+					.trim();
+				if (!task) {
+					ctx.setMessages((prev) => [
+						...prev,
+						createAssistantMessage('/team spawn <agent> "<task>" — task is required'),
+					]);
+					return;
+				}
+				ctx.client
+					.spawnWorker(agent, task)
+					.then((result) => {
+						ctx.setMessages((prev) => [
+							...prev,
+							createAssistantMessage(
+								`Worker spawned: ${result.workerId} (${agent}) — status: ${result.status}\nCheck progress with /team poll or /workers panel.`,
+							),
+						]);
+					})
+					.catch((err) => {
+						ctx.setMessages((prev) => [
+							...prev,
+							createAssistantMessage(`Failed to spawn worker: ${formatError(err)}`),
+						]);
+					});
+				return;
+			}
+
+			if (sub === "poll") {
+				const ids = parts.slice(1).filter(Boolean);
+				const snapshots =
+					ids.length > 0
+						? ids.map((id) => ctx.client.getWorker(id)).filter(Boolean)
+						: ctx.client.listWorkers();
+
+				if (snapshots.length === 0) {
+					ctx.setMessages((prev) => [
+						...prev,
+						createAssistantMessage("No workers found. Spawn one with /team spawn."),
+					]);
+					return;
+				}
+
+				const running = snapshots.filter(
+					(s) => s && (s.status === "running" || s.status === "idle"),
+				).length;
+				const totalCost = snapshots.reduce((acc, s) => acc + (s?.cost ?? 0), 0);
+				const header = `${snapshots.length - running}/${snapshots.length} finished, ${running} running | cost $${totalCost.toFixed(4)}`;
+				const lines = snapshots.map((s) => {
+					if (!s) return "";
+					const preview =
+						s.lastSummary?.split("\n")[0]?.slice(0, 60) ??
+						(s.lastError ? `error: ${s.lastError.slice(0, 50)}` : "");
+					return `  [${s.status}] ${s.id} (${s.agent}) t=${s.turnCount} in=${s.inputTokens} out=${s.outputTokens}${preview ? ` — ${preview}` : ""}`;
+				});
+				ctx.setMessages((prev) => [
+					...prev,
+					createAssistantMessage(`${header}\n${lines.join("\n")}`),
+				]);
+				return;
+			}
+
+			if (sub === "cancel") {
+				const workerId = parts[1];
+				if (workerId) {
+					ctx.client
+						.cancelWorker(workerId)
+						.then(() => {
+							ctx.setMessages((prev) => [
+								...prev,
+								createAssistantMessage(`Worker ${workerId} cancelled.`),
+							]);
+						})
+						.catch((err) => {
+							ctx.setMessages((prev) => [
+								...prev,
+								createAssistantMessage(`Cancel failed: ${formatError(err)}`),
+							]);
+						});
+				} else {
+					ctx.client
+						.cancelAllWorkers()
+						.then(() => {
+							ctx.setMessages((prev) => [
+								...prev,
+								createAssistantMessage("All workers cancelled."),
+							]);
+						})
+						.catch((err) => {
+							ctx.setMessages((prev) => [
+								...prev,
+								createAssistantMessage(`Cancel all failed: ${formatError(err)}`),
+							]);
+						});
+				}
+				return;
+			}
+
+			ctx.setMessages((prev) => [
+				...prev,
+				createAssistantMessage(
+					"/team spawn <agent> <task> | /team poll [workerId...] | /team cancel [workerId]",
+				),
+			]);
+		},
+	});
+
+	commandRegistry.register({
+		name: "workers",
+		description: "Show background workers panel",
+		usage: "/workers",
+		handler: (_args: string, ctx: CommandContext) => {
+			const config = ctx.getConfig();
+			if (config.teams?.enabled === false) {
+				ctx.setMessages((prev) => [
+					...prev,
+					createAssistantMessage("Teams mode is disabled in config (teams.enabled=false)."),
+				]);
+				return;
+			}
+			const snapshots = ctx.client.listWorkers();
+			if (snapshots.length === 0) {
+				ctx.setMessages((prev) => [
+					...prev,
+					createAssistantMessage("No active workers. Spawn one with /team spawn."),
+				]);
+				return;
+			}
+			ctx.setShowWorkers(true);
 		},
 	});
 }

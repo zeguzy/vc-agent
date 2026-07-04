@@ -17,6 +17,7 @@ export interface CommandContext {
 	setThinkingCollapsed: (collapsed: boolean) => void;
 	cwd: string;
 	setShowSettings: (v: boolean) => void;
+	setShowWorkers: (v: boolean) => void;
 	getConfig: () => Config;
 	setConfig: (updater: Config | ((prev: Config) => Config)) => void;
 	openSessionPicker: (sessions: SessionInfo[]) => void;

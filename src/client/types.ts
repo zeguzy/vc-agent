@@ -3,6 +3,7 @@ import type { AgentSession, AgentSessionEvent } from "../agent/session.js";
 import type { CommandContext } from "../commands/registry.js";
 import type { Message } from "../message.js";
 import type { SessionInfo } from "../session/list.js";
+import type { AgentClientEvent, WorkerId, WorkerSnapshot, WorkerStatus } from "../teams/types.js";
 
 export type AgentMode = "standard" | "planner" | "orchestrator";
 
@@ -87,4 +88,11 @@ export interface AgentClient {
 	getRuntime(): import("../agent/session.js").AgentSessionRuntime;
 
 	executeCommand(name: string, args: string, ctx: CommandContext): Promise<boolean>;
+
+	listWorkers(): WorkerSnapshot[];
+	getWorker(id: WorkerId): WorkerSnapshot | undefined;
+	spawnWorker(agent: string, task: string): Promise<{ workerId: WorkerId; status: WorkerStatus }>;
+	cancelWorker(workerId: WorkerId): Promise<void>;
+	cancelAllWorkers(): Promise<void>;
+	subscribeTeam(handler: (event: AgentClientEvent) => void): Unsubscribe;
 }

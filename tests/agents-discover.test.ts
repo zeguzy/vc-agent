@@ -102,6 +102,54 @@ describe("discoverAgents", () => {
 		expect(flagella.description).toBe("Overridden");
 	});
 
+	it("parses disallowedTools, maxTurns, background, permissionMode frontmatter", () => {
+		writeProjectAgent(
+			"worker",
+			[
+				"---",
+				"name: worker",
+				"description: Background worker",
+				"tools: read, grep, find",
+				"disallowedTools:",
+				"  - edit",
+				"  - write",
+				"maxTurns: 12",
+				"background: true",
+				"permissionMode: plan",
+				"---",
+				"body",
+				"",
+			].join("\n"),
+		);
+		const { agents } = discoverAgents(tempDir, "project");
+		const worker = agents.find((a) => a.name === "worker")!;
+		expect(worker.disallowedTools).toEqual(["edit", "write"]);
+		expect(worker.maxTurns).toBe(12);
+		expect(worker.background).toBe(true);
+		expect(worker.permissionMode).toBe("plan");
+	});
+
+	it("ignores invalid permissionMode and warns on stderr", () => {
+		writeProjectAgent(
+			"badperm",
+			"---\nname: badperm\ndescription: Bad\npermissionMode: bypass\n---\nbody\n",
+		);
+		const { agents } = discoverAgents(tempDir, "project");
+		const badperm = agents.find((a) => a.name === "badperm")!;
+		expect(badperm.permissionMode).toBeUndefined();
+	});
+
+	it("skips non-finite maxTurns and non-array disallowedTools", () => {
+		writeProjectAgent(
+			"weird",
+			"---\nname: weird\ndescription: Weird\nmaxTurns: Infinity\ndisallowedTools: not-a-list\n---\nbody\n",
+		);
+		const { agents } = discoverAgents(tempDir, "project");
+		const weird = agents.find((a) => a.name === "weird")!;
+		expect(weird.maxTurns).toBeUndefined();
+		expect(weird.disallowedTools).toBeUndefined();
+	});
+
 	it("returns projectAgentsDir when found", () => {
 		writeProjectAgent("test", VALID_AGENT("test", "test"));
 		const { projectAgentsDir } = discoverAgents(tempDir, "project");

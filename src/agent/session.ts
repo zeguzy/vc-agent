@@ -15,17 +15,19 @@ import {
 	SettingsManager,
 } from "@earendil-works/pi-coding-agent";
 import type { Config, ProviderConfig } from "../config.js";
-import { ORCHESTRATOR_SYSTEM_PROMPT } from "../context-files.js";
+import { ORCHESTRATOR_SYSTEM_PROMPT, TEAM_ORCHESTRATOR_PROMPT } from "../context-files.js";
 import { createLspToolDefinitions, LspClient } from "../lsp/index.js";
 import { listSessions, resolveSessionRef } from "../session/list.js";
 import { resolveSessionDir } from "../session/storage.js";
 import { SkillManager } from "../skills/manager.js";
+import type { WorkerPoolRef } from "../teams/types.js";
 import { createEditTool } from "../tools/edit.js";
 import { clearEditConfirmBridge, type EditConfirmBridge } from "../tools/edit-confirm-bridge.js";
 import { createNotifyTool } from "../tools/notify.js";
 import { createQuestionTool } from "../tools/question.js";
 import { clearBridge, type QuestionBridge } from "../tools/question-bridge.js";
 import { createSubagentTool } from "../tools/subagent.js";
+import { createTeamTool } from "../tools/team.js";
 import { createTodoTool } from "../tools/todo.js";
 import { createWebfetchTool } from "../tools/webfetch/index.js";
 
@@ -58,8 +60,18 @@ export function activeToolsFor(agentMode: AgentMode): string[] {
 /** Agent runtime mode — controls tool availability and system prompt. */
 export type AgentMode = "standard" | "planner" | "orchestrator";
 
-export function appendSystemPromptFor(agentMode: AgentMode): string[] | undefined {
-	return agentMode === "orchestrator" ? [ORCHESTRATOR_SYSTEM_PROMPT] : undefined;
+export function appendSystemPromptFor(agentMode: AgentMode, config?: Config): string[] | undefined {
+	if (agentMode === "orchestrator") {
+		const prompts = [ORCHESTRATOR_SYSTEM_PROMPT];
+		if (config?.teams?.enabled !== false) {
+			prompts.push(TEAM_ORCHESTRATOR_PROMPT);
+		}
+		return prompts;
+	}
+	if (agentMode === "standard" && config?.teams?.enabled !== false) {
+		return [TEAM_ORCHESTRATOR_PROMPT];
+	}
+	return undefined;
 }
 
 /**
@@ -76,6 +88,7 @@ export interface SessionOptions {
 	config?: Config;
 	bridge?: QuestionBridge;
 	editBridge?: EditConfirmBridge;
+	poolRef?: WorkerPoolRef;
 }
 
 export interface SessionResult {
@@ -99,6 +112,7 @@ export interface RuntimeOptions {
 	/** QuestionBridge for interactive question tool. Omit in non-interactive modes. */
 	bridge?: QuestionBridge;
 	editBridge?: EditConfirmBridge;
+	poolRef?: WorkerPoolRef;
 }
 
 export interface RuntimeResult {
@@ -188,6 +202,18 @@ export async function createSession(options: SessionOptions): Promise<SessionRes
 		config: options.config,
 		modelStr: options.model ?? options.config?.model,
 	});
+	const teamTool =
+		options.poolRef && options.config?.teams?.enabled !== false
+			? [
+					createTeamTool({
+						poolRef: options.poolRef,
+						cwd: options.cwd,
+						services: svc,
+						parentModel: svc.model,
+					}),
+				]
+			: [];
+
 	const result = await createAgentSession({
 		cwd: options.cwd,
 		authStorage: svc.authStorage,
@@ -208,6 +234,7 @@ export async function createSession(options: SessionOptions): Promise<SessionRes
 				services: svc,
 				parentModel: svc.model,
 			}),
+			...teamTool,
 		],
 		sessionManager: SessionManager.inMemory(),
 	});
@@ -232,7 +259,7 @@ export async function createRuntime(options: RuntimeOptions): Promise<RuntimeRes
 		cwd,
 		config: options.config,
 		modelStr: options.model ?? options.config?.model,
-		appendSystemPrompt: appendSystemPromptFor(agentMode),
+		appendSystemPrompt: appendSystemPromptFor(agentMode, options.config),
 	});
 
 	const factory: CreateAgentSessionRuntimeFactory = async ({
@@ -242,6 +269,17 @@ export async function createRuntime(options: RuntimeOptions): Promise<RuntimeRes
 	}) => {
 		if (options.bridge) clearBridge(options.bridge);
 		if (options.editBridge) clearEditConfirmBridge(options.editBridge);
+		const teamTool =
+			options.poolRef && options.config?.teams?.enabled !== false
+				? [
+						createTeamTool({
+							poolRef: options.poolRef,
+							cwd: fCwd,
+							services: svc,
+							parentModel: svc.model,
+						}),
+					]
+				: [];
 		const result = await createAgentSession({
 			cwd: fCwd,
 			authStorage: svc.authStorage,
@@ -262,6 +300,7 @@ export async function createRuntime(options: RuntimeOptions): Promise<RuntimeRes
 					services: svc,
 					parentModel: svc.model,
 				}),
+				...teamTool,
 			],
 			sessionManager: fSessionManager,
 		});

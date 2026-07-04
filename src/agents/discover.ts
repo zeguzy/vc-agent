@@ -3,7 +3,14 @@ import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { parseFrontmatter } from "@earendil-works/pi-coding-agent";
 import { BUILTIN_AGENTS } from "./defaults.js";
-import type { AgentConfig, AgentDiscoveryResult, AgentScope } from "./types.js";
+import type {
+	AgentConfig,
+	AgentDiscoveryResult,
+	AgentPermissionMode,
+	AgentScope,
+} from "./types.js";
+
+const VALID_PERMISSION_MODES = new Set<AgentPermissionMode>(["default", "plan", "acceptEdits"]);
 
 function isDirectory(p: string): boolean {
 	try {
@@ -36,22 +43,53 @@ function loadAgentsFromDir(dir: string, source: "user" | "project"): AgentConfig
 			continue;
 		}
 
-		const { frontmatter, body } = parseFrontmatter<Record<string, string>>(content);
-		if (!frontmatter.name || !frontmatter.description) continue;
+		const { frontmatter, body } = parseFrontmatter<Record<string, unknown>>(content);
+		if (typeof frontmatter.name !== "string" || typeof frontmatter.description !== "string")
+			continue;
 
-		const tools = frontmatter.tools
-			?.split(",")
-			.map((t) => t.trim())
-			.filter(Boolean);
+		const tools =
+			typeof frontmatter.tools === "string"
+				? frontmatter.tools
+						.split(",")
+						.map((t) => t.trim())
+						.filter(Boolean)
+				: undefined;
+
+		const disallowedTools = Array.isArray(frontmatter.disallowedTools)
+			? frontmatter.disallowedTools.filter((t): t is string => typeof t === "string")
+			: undefined;
+
+		const maxTurns =
+			typeof frontmatter.maxTurns === "number" && Number.isFinite(frontmatter.maxTurns)
+				? frontmatter.maxTurns
+				: undefined;
+
+		const background =
+			typeof frontmatter.background === "boolean" ? frontmatter.background : undefined;
+
+		let permissionMode: AgentPermissionMode | undefined;
+		if (typeof frontmatter.permissionMode === "string") {
+			if (VALID_PERMISSION_MODES.has(frontmatter.permissionMode as AgentPermissionMode)) {
+				permissionMode = frontmatter.permissionMode as AgentPermissionMode;
+			} else {
+				console.error(
+					`[agents] ${entry.name}: invalid permissionMode "${frontmatter.permissionMode}" (must be one of: default, plan, acceptEdits) — ignoring`,
+				);
+			}
+		}
 
 		agents.push({
 			name: frontmatter.name,
 			description: frontmatter.description,
 			tools: tools && tools.length > 0 ? tools : undefined,
-			model: frontmatter.model,
+			model: typeof frontmatter.model === "string" ? frontmatter.model : undefined,
 			systemPrompt: body,
 			source,
 			filePath,
+			disallowedTools: disallowedTools && disallowedTools.length > 0 ? disallowedTools : undefined,
+			maxTurns,
+			background,
+			permissionMode,
 		});
 	}
 

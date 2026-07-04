@@ -1,7 +1,10 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
+import type { ContextPruningUserConfig } from "./dcp/config.js";
 import type { NotificationsConfig } from "./notifications/types.js";
+import type { TeamConfig } from "./teams/types.js";
+import { resolveTeamConfig } from "./teams/types.js";
 import { formatError } from "./utils/formatError.js";
 
 export interface CustomModel {
@@ -52,8 +55,21 @@ export interface Config {
 	skills?: SkillsConfig;
 	/** Native notification settings (OS notifications + TUI toasts). */
 	notifications?: NotificationsConfig;
+	/** teams 模式配置块——异步后台 worker pool。缺省时按 `DEFAULT_TEAM_CONFIG` 生效。 */
+	teams?: TeamConfig;
+	contextPruning?: ContextPruningUserConfig;
 	/** Additional instruction files to inject into system prompt. Supports relative paths, ~/ expansion, globs, and HTTP(S) URLs. */
 	instructions?: string[];
+}
+
+export function resolveConfigTeams(config: Config): ReturnType<typeof resolveTeamConfig> {
+	const resolved = resolveTeamConfig(config.teams);
+	if (resolved.isolation === "worktree") {
+		console.error(
+			'teams.isolation="worktree" not yet implemented, falling back to "none" (V1 reserved field)',
+		);
+	}
+	return resolved;
 }
 
 function readJsonFile(filePath: string): Record<string, unknown> | null {

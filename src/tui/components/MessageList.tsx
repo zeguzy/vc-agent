@@ -5,6 +5,36 @@ import { syntaxStyle } from "../utils/syntax.js";
 import { colors, icons } from "../utils/theme.js";
 import { EditDiffView } from "./EditDiffView.js";
 
+function workerStatusIcon(status: Message["workerStatus"]): string {
+	switch (status) {
+		case "running":
+			return "◌";
+		case "done":
+			return "✓";
+		case "error":
+			return "✗";
+		case "cancelled":
+			return "⊘";
+		default:
+			return "?";
+	}
+}
+
+function workerStatusColor(status: Message["workerStatus"]): string {
+	switch (status) {
+		case "running":
+			return colors.warning;
+		case "done":
+			return colors.success;
+		case "error":
+			return colors.error;
+		case "cancelled":
+			return colors.textMuted;
+		default:
+			return colors.textSubtle;
+	}
+}
+
 export interface ReadEntry {
 	path: string;
 	shortPath: string;
@@ -477,6 +507,67 @@ export function getReadEntries(messages: Message[]): ReadEntry[] {
 	return messages.filter((m) => m.role === "tool" && m.toolName === "read").map(extractReadInfo);
 }
 
+const WorkerMessageView = memo(function WorkerMessageView({ message }: { message: Message }) {
+	const statusColor = workerStatusColor(message.workerStatus);
+	const statusIcon = workerStatusIcon(message.workerStatus);
+	return (
+		<box
+			borderStyle="rounded"
+			border={["top", "right", "bottom", "left"]}
+			borderColor={colors.borderSoft}
+			marginTop={1}
+			flexShrink={0}
+			flexDirection="column"
+		>
+			<box
+				backgroundColor={colors.backgroundPanel}
+				paddingLeft={1}
+				paddingRight={1}
+				flexDirection="row"
+			>
+				<text fg={statusColor}>{statusIcon} </text>
+				<text fg={colors.textMuted}>{message.workerId?.slice(0, 10)}</text>
+				<text fg={colors.textSubtle}>/{message.workerAgent} </text>
+				<text fg={statusColor}>{message.workerStatus}</text>
+			</box>
+			{message.content && (
+				<box paddingLeft={3} paddingRight={1} flexDirection="column">
+					<markdown
+						id={`md-${message.id}`}
+						syntaxStyle={syntaxStyle}
+						streaming={true}
+						content={message.content}
+						fg={colors.markdownText}
+						bg={colors.background}
+					/>
+				</box>
+			)}
+		</box>
+	);
+});
+
+const WorkerSummaryView = memo(function WorkerSummaryView({ message }: { message: Message }) {
+	const statusColor = workerStatusColor(message.workerStatus);
+	const statusIcon = workerStatusIcon(message.workerStatus);
+	const summary = message.content.slice(0, 100) + (message.content.length > 100 ? "…" : "");
+	const costStr = message.workerCost ? ` $${message.workerCost.toFixed(4)}` : "";
+	return (
+		<box paddingLeft={3} marginTop={1} flexShrink={0} flexDirection="row">
+			<text fg={statusColor}>{statusIcon} </text>
+			<text fg={colors.textMuted}>{message.workerId?.slice(0, 10)}</text>
+			<text fg={colors.textSubtle}>/{message.workerAgent} </text>
+			<text fg={statusColor}>{message.workerStatus}</text>
+			<text fg={colors.textMuted}>{costStr}</text>
+			{summary && (
+				<>
+					<text fg={colors.textSubtle}> — </text>
+					<text fg={colors.textSubtle}>{summary}</text>
+				</>
+			)}
+		</box>
+	);
+});
+
 export function MessageList({
 	messages,
 	scrollRef,
@@ -513,6 +604,9 @@ export function MessageList({
 						if (msg.toolName === "todo") return <TodoMessageView key={msg.id} message={msg} />;
 						return <ToolMessageView key={msg.id} message={msg} />;
 					}
+					if (msg.role === "worker") return <WorkerMessageView key={msg.id} message={msg} />;
+					if (msg.role === "worker-summary")
+						return <WorkerSummaryView key={msg.id} message={msg} />;
 					return (
 						<AssistantMessageView
 							key={msg.id}

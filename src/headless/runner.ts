@@ -4,6 +4,7 @@ import type { AgentClient } from "../client/index.js";
 import { createClient } from "../client/index.js";
 import { readConfig } from "../config.js";
 import { createServer } from "../server/index.js";
+import type { AgentClientEvent } from "../teams/types.js";
 import { formatError } from "../utils/formatError.js";
 
 export interface HeadlessOptions {
@@ -103,6 +104,26 @@ export class HeadlessRunner {
 						exit(0);
 						break;
 					}
+				}
+			});
+
+			client.subscribeTeam((event: AgentClientEvent) => {
+				if (event.type === "team_worker_event") {
+					const { workerId, workerAgent, kind } = event;
+					const prefix = `[worker ${workerId.slice(0, 10)}/${workerAgent}]`;
+					switch (kind) {
+						case "agent_end":
+							process.stderr.write(`${prefix} finished\n`);
+							break;
+						case "error":
+							process.stderr.write(`${prefix} error\n`);
+							break;
+					}
+				}
+				if (event.type === "team_orphans_cancelled") {
+					process.stderr.write(
+						`[teams] orphans cancelled: ${event.workerIds.length} workers (${event.cause})\n`,
+					);
 				}
 			});
 

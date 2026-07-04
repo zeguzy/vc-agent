@@ -6,7 +6,7 @@ import type {
 } from "@earendil-works/pi-coding-agent";
 import type { Config } from "../config.js";
 
-export type SettingCategory = "ui" | "session" | "notifications";
+export type SettingCategory = "ui" | "session" | "notifications" | "teams";
 
 export interface SettingContext {
 	session: AgentSession;

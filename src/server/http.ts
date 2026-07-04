@@ -102,8 +102,49 @@ async function handleRequest(server: AgentServer, req: IncomingMessage, res: Ser
 		return sendJson(res, { sessions });
 	}
 
+	if (method === "POST" && path === "/team/spawn") {
+		const body = await readBody<{ agent: string; task: string }>(req);
+		if (!body.agent || !body.task) {
+			return sendJson(res, { error: "agent and task required" }, 400);
+		}
+		try {
+			const result = await server.handleSpawnWorker(body.agent, body.task);
+			return sendJson(res, result);
+		} catch (err) {
+			return sendJson(res, { error: String(err) }, 400);
+		}
+	}
+
+	if (method === "POST" && path.startsWith("/team/cancel/")) {
+		const workerId = path.slice("/team/cancel/".length);
+		if (!workerId) {
+			await server.handleCancelAllWorkers();
+			return sendJson(res, { ok: true });
+		}
+		await server.handleCancelWorker(workerId);
+		return sendJson(res, { ok: true });
+	}
+
+	if (method === "POST" && path === "/team/cancel") {
+		await server.handleCancelAllWorkers();
+		return sendJson(res, { ok: true });
+	}
+
+	if (method === "GET" && path === "/team/workers") {
+		return sendJson(res, { workers: server.handleListWorkers() });
+	}
+
+	if (method === "GET" && path === "/team/worker") {
+		const id = url.searchParams.get("id");
+		if (!id) return sendJson(res, { error: "?id= required" }, 400);
+		const worker = server.handleGetWorker(id);
+		if (!worker) return sendJson(res, { error: "worker not found" }, 404);
+		return sendJson(res, { worker });
+	}
+
 	if (method === "GET" && path === "/events") {
-		return createSSEResponse(server, req, res);
+		const streaming = url.searchParams.get("streaming") === "true";
+		return createSSEResponse(server, req, res, streaming);
 	}
 
 	if (method === "GET" && path === "/sse/notifications") {
@@ -126,7 +167,12 @@ function sendJson(res: ServerResponse, data: unknown, status = 200): void {
 	res.end(JSON.stringify(data));
 }
 
-function createSSEResponse(server: AgentServer, req: IncomingMessage, res: ServerResponse): void {
+function createSSEResponse(
+	server: AgentServer,
+	req: IncomingMessage,
+	res: ServerResponse,
+	streaming = false,
+): void {
 	res.writeHead(200, {
 		"Content-Type": "text/event-stream",
 		"Cache-Control": "no-cache",
@@ -137,8 +183,17 @@ function createSSEResponse(server: AgentServer, req: IncomingMessage, res: Serve
 		res.write(`data: ${JSON.stringify(event)}\n\n`);
 	});
 
+	const streamTeamKinds = new Set(["message_end", "agent_end", "error"]);
+	const teamUnsub = server.handleSubscribeTeam((event) => {
+		if (event.type === "team_worker_event") {
+			if (!streaming && !streamTeamKinds.has(event.kind)) return;
+		}
+		res.write(`data: ${JSON.stringify(event)}\n\n`);
+	});
+
 	req.on("close", () => {
 		unsub();
+		teamUnsub();
 		res.end();
 	});
 }
