@@ -106,7 +106,9 @@ async function runHeadless(promptText: string, argv: string[]): Promise<void> {
 	const args = parseArgs(argv);
 	const cwd = process.cwd();
 	const mode = resolveMode(args);
-	const agentMode: AgentMode = args.plan ? "planner" : "standard";
+	const config = readConfig(cwd);
+	const teamDefault: AgentMode = config.teams?.enabled !== false ? "team" : "standard";
+	const agentMode: AgentMode = args.plan ? "planner" : teamDefault;
 
 	const runner = new HeadlessRunner({
 		cwd,
@@ -138,7 +140,7 @@ async function runServe(argv: string[]): Promise<void> {
 		model: config.model,
 		config,
 		mode: "new",
-		agentMode: "standard",
+		agentMode: config.teams?.enabled !== false ? "team" : "standard",
 		poolRef,
 	});
 	const server = createServer({ runtime, skillManager, cwd, poolRef });
@@ -171,7 +173,8 @@ async function runTui(argv: string[]): Promise<void> {
 	const config = readConfig(cwd);
 	const model = args.model ?? config.model;
 	const mode = resolveMode(args);
-	const agentMode: AgentMode = args.plan ? "planner" : "standard";
+	const teamDefault: AgentMode = config.teams?.enabled !== false ? "team" : "standard";
+	const agentMode: AgentMode = args.plan ? "planner" : teamDefault;
 
 	const questionBridge = createQuestionBridge();
 	const editBridge = createEditConfirmBridge();
