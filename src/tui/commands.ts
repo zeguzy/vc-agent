@@ -1,7 +1,23 @@
 import type { AgentMode } from "../client/types.js";
 import { type CommandContext, commandRegistry } from "../commands/registry.js";
 import { writeConfig } from "../config.js";
-import { createAssistantMessage, createUserMessage } from "../message.js";
+import {
+	type CompressNotificationSummary,
+	getDcpConfig,
+	type getDcpState,
+	isDcpEnabled,
+	setCompressNotifier,
+	setDcpRuntimeEnabled,
+	setPendingManualTrigger,
+	triggerDirectCompress,
+} from "../dcp/config.js";
+import {
+	createAssistantMessage,
+	createSeparator,
+	createUserMessage,
+	type Message,
+} from "../message.js";
+import { contextPruningEnabledSetting } from "../settings/context-pruning.js";
 import { modelSetting } from "../settings/definitions.js";
 import type { SkillManager } from "../skills/manager.js";
 import { extractTodoItems } from "../tools/todo.js";
@@ -47,6 +63,69 @@ export function registerBuiltinCommands(): void {
 					createAssistantMessage(`Compaction failed: ${formatError(err)}`),
 				]);
 			});
+		},
+	});
+
+	commandRegistry.register({
+		name: "dcp",
+		description: "DCP context pruning: status / toggle on|off",
+		usage: "/dcp [on|off]",
+		handler: (args: string, ctx: CommandContext) => {
+			const arg = args.trim().toLowerCase();
+			if (arg === "on" || arg === "off") {
+				const value = arg === "on";
+				setDcpRuntimeEnabled(value);
+				const newConfig = contextPruningEnabledSetting.persist(ctx.getConfig(), value);
+				ctx.setConfig(newConfig);
+				try {
+					writeConfig(ctx.cwd, newConfig, "project");
+				} catch (err) {
+					ctx.setMessages((prev) => [
+						...prev,
+						createAssistantMessage(
+							`DCP 已${value ? "开启" : "关闭"}（未持久化: ${formatError(err)}）`,
+						),
+					]);
+					return;
+				}
+				ctx.setMessages((prev) => [
+					...prev,
+					createAssistantMessage(`DCP 已${value ? "开启" : "关闭"}，立刻生效。`),
+				]);
+			} else {
+				ctx.setShowDcp(true);
+			}
+		},
+	});
+
+	commandRegistry.register({
+		name: "dcp-compress",
+		description: "Immediately compress older messages (keeps recent 4)",
+		usage: "/dcp-compress [topic]",
+		handler: (args: string, ctx: CommandContext) => {
+			const topic = args.trim();
+			const enabled = isDcpEnabled(getDcpConfig());
+			if (!enabled) {
+				ctx.setMessages((prev) => [
+					...prev,
+					createAssistantMessage("DCP 当前未开启。先 /dcp on 再用 /dcp-compress。"),
+				]);
+				return;
+			}
+			const result = triggerDirectCompress({ keepRecent: 4, topic });
+			if (result.error) {
+				ctx.setMessages((prev) => [
+					...prev,
+					createAssistantMessage(`DCP 压缩未执行: ${result.error}`),
+				]);
+				return;
+			}
+			ctx.setMessages((prev) => [
+				...prev,
+				createAssistantMessage(
+					`✓ DCP 已压缩 ${result.compressed} 条消息，节省 ~${result.tokens} tokens。下次对话起生效。`,
+				),
+			]);
 		},
 	});
 
@@ -447,4 +526,62 @@ export function buildHelpText(): string {
 		"    t              Toggle thinking collapse",
 		"    Tab            Cycle agent mode (standard/planner/orchestrator)",
 	].join("\n");
+}
+
+const COMPRESS_NOTIFIER_GUARD = "__vcAgentDcpNotifierRegistered";
+
+type SetMessages = (updater: Message[] | ((prev: Message[]) => Message[])) => void;
+
+export function attachDcpCompressNotifier(setMessages: SetMessages): void {
+	const g = globalThis as { [COMPRESS_NOTIFIER_GUARD]?: boolean };
+	if (g[COMPRESS_NOTIFIER_GUARD]) return;
+	g[COMPRESS_NOTIFIER_GUARD] = true;
+	setCompressNotifier((summary) => {
+		if (getDcpConfig().pruneNotificationType !== "chat") return;
+		setMessages((prev) => [
+			...prev,
+			createSeparator(),
+			createAssistantMessage(formatCompressNotification(summary)),
+		]);
+	});
+}
+
+function formatCompressNotification(s: CompressNotificationSummary): string {
+	const topic = s.topic && s.topic.trim().length > 0 ? s.topic.trim() : "(unknown topic)";
+	const itemsPart =
+		s.toolCount > 0
+			? `${s.messageCount} messages and ${s.toolCount} tools compressed`
+			: `${s.messageCount} message${s.messageCount === 1 ? "" : "s"} compressed`;
+	const lines = [
+		`📝 DCP: Compressed ${itemsPart} (saved ~${s.savedTokens.toLocaleString()} tokens)`,
+		`→ Topic: ${topic}`,
+	];
+	if (s.summary && s.summary.trim().length > 0) {
+		const preview = s.summary.length > 600 ? `${s.summary.slice(0, 597)}...` : s.summary;
+		lines.push(`→ Compression #${s.runId} (~${s.summaryTokens}): ${preview}`);
+	}
+	return lines.join("\n");
+}
+
+function formatDcpStatus(
+	config: ReturnType<typeof getDcpConfig>,
+	state: ReturnType<typeof getDcpState>,
+): string {
+	const enabled = isDcpEnabled(config);
+	const lines = [`DCP 上下文压缩: ${enabled ? "on ✅" : "off"}`, `模式: ${config.compress.mode}`];
+	if (state) {
+		const activeBlocks = state.prune.messages.activeBlockIds.size;
+		const cumulativeTokens = state.stats.totalPruneTokens + state.stats.pruneTokenCounter;
+		lines.push(
+			`Active 压缩块: ${activeBlocks}`,
+			`累计压缩 token: ${cumulativeTokens.toLocaleString()}`,
+		);
+	} else {
+		lines.push("（DCP extension 尚未激活，无统计数据）");
+	}
+	lines.push(
+		"",
+		"用法: /dcp on|off（立刻生效） · /dcp-compress [focus]（手动触发） · /setting 切换",
+	);
+	return lines.join("\n");
 }
