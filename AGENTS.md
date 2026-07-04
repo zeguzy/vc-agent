@@ -44,6 +44,17 @@ src/
 - **测试**：`bun test`，纯函数测试放 `tests/*.test.ts`
 - **提交钩子**：lefthook 自动 biome 修复 + typecheck（见 `lefthook.yml`），勿用 `--no-verify` 绕过
 - **规格变更**：走 OpenSpec 流程（`openspec/specs/`），用 `/openspec-*` 命令驱动
+- **React 状态引用**：`useKeyboard` / `useCallback` / `useEffect` 等闭包内读取组件状态时，**必须**通过 `xxxRef.current` 而非直接读 `state`。`useKeyboard` 的回调在组件挂载时注册一次，后续不随 re-render 更新——闭包里捕获的 `state` 永远是初始值。正确模式：
+  ```tsx
+  const stateRef = useRef(state);
+  stateRef.current = state;  // 每次渲染同步
+
+  useKeyboard((key) => {
+      // ❌ 读 state → 闭包陈旧值
+      // ✅ 读 stateRef.current → 实时值
+  });
+  ```
+  现有 `agentModeRef`、`isRunningRef`、`messagesRef`、`configRef` 均按此模式。新增键盘逻辑必须沿用。
 
 ## 开发流程
 
