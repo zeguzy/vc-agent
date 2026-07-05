@@ -23,7 +23,7 @@ export class HeadlessRunner {
 
 	private async setup(): Promise<AgentClient> {
 		const config = readConfig(this.opts.cwd);
-		const { runtime, skillManager } = await createRuntime({
+		const { runtime, skillManager, mcpManager } = await createRuntime({
 			cwd: this.opts.cwd,
 			model: this.opts.model ?? config.model,
 			config,
@@ -32,7 +32,7 @@ export class HeadlessRunner {
 			...(this.opts.sessionRef ? { sessionRef: this.opts.sessionRef } : {}),
 			...(this.opts.name ? { name: this.opts.name } : {}),
 		});
-		const server = createServer({ runtime, skillManager, cwd: this.opts.cwd });
+		const server = createServer({ runtime, skillManager, mcpManager, cwd: this.opts.cwd });
 		this.client = createClient(server);
 		return this.client;
 	}
