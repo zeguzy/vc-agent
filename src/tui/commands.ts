@@ -1,4 +1,3 @@
-import type { AgentMode } from "../client/types.js";
 import { buildAgentModeCycle, getBaseMode } from "../agent/session.js";
 import { type CommandContext, commandRegistry } from "../commands/registry.js";
 import { writeConfig } from "../config.js";
@@ -9,7 +8,6 @@ import {
 	isDcpEnabled,
 	setCompressNotifier,
 	setDcpRuntimeEnabled,
-	setPendingManualTrigger,
 	triggerDirectCompress,
 } from "../dcp/config.js";
 import {
@@ -461,8 +459,9 @@ export function registerBuiltinCommands(): void {
 
 	commandRegistry.register({
 		name: "team",
-		description: "Team member management: list / remove",
-		usage: "/team list | /team remove <name>",
+		description: "Team member management: list / remove / pause / resume / cancel",
+		usage:
+			"/team list | /team remove <name> | /team pause <name> | /team resume <name> | /team cancel <name>",
 		handler: (args: string, ctx: CommandContext) => {
 			const config = ctx.getConfig();
 			if (config.teams?.enabled === false) {
@@ -522,9 +521,77 @@ export function registerBuiltinCommands(): void {
 				return;
 			}
 
+			if (sub === "pause") {
+				const name = parts[1];
+				if (!name) {
+					ctx.setMessages((prev) => [
+						...prev,
+						createAssistantMessage("/team pause <name> — name required"),
+					]);
+					return;
+				}
+				try {
+					ctx.client.pauseMember(name);
+					ctx.setMessages((prev) => [...prev, createAssistantMessage(`Member "${name}" paused.`)]);
+				} catch (err) {
+					ctx.setMessages((prev) => [
+						...prev,
+						createAssistantMessage(`Pause failed: ${formatError(err)}`),
+					]);
+				}
+				return;
+			}
+
+			if (sub === "resume") {
+				const name = parts[1];
+				if (!name) {
+					ctx.setMessages((prev) => [
+						...prev,
+						createAssistantMessage("/team resume <name> — name required"),
+					]);
+					return;
+				}
+				try {
+					ctx.client.resumeMember(name);
+					ctx.setMessages((prev) => [...prev, createAssistantMessage(`Member "${name}" resumed.`)]);
+				} catch (err) {
+					ctx.setMessages((prev) => [
+						...prev,
+						createAssistantMessage(`Resume failed: ${formatError(err)}`),
+					]);
+				}
+				return;
+			}
+
+			if (sub === "cancel") {
+				const name = parts[1];
+				if (!name) {
+					ctx.setMessages((prev) => [
+						...prev,
+						createAssistantMessage("/team cancel <name> — name required"),
+					]);
+					return;
+				}
+				try {
+					ctx.client.cancelMember(name);
+					ctx.setMessages((prev) => [
+						...prev,
+						createAssistantMessage(`Member "${name}" cancelled.`),
+					]);
+				} catch (err) {
+					ctx.setMessages((prev) => [
+						...prev,
+						createAssistantMessage(`Cancel failed: ${formatError(err)}`),
+					]);
+				}
+				return;
+			}
+
 			ctx.setMessages((prev) => [
 				...prev,
-				createAssistantMessage("/team list | /team remove <name>"),
+				createAssistantMessage(
+					"/team list | /team remove <name> | /team pause <name> | /team resume <name> | /team cancel <name>",
+				),
 			]);
 		},
 	});

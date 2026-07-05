@@ -2,25 +2,27 @@ import type { AgentSession, AgentSessionEvent } from "@earendil-works/pi-coding-
 import { createAgentSession, DefaultResourceLoader } from "@earendil-works/pi-coding-agent";
 import type { SubagentServices } from "../agents/types.js";
 import { AGENT_DIR } from "../teams/worker.js";
+import { createMemberReadTool } from "../tools/member-read.js";
+import { createMemoryWriteTool } from "../tools/memory-write.js";
+import { createSelfEditTool } from "../tools/self-edit.js";
+import { handleCompactionEnd } from "./auto-memory.js";
+import { buildCompactionReinject, buildMemberSystemPrompt, buildTaskLayer } from "./context.js";
+import { TeamFiles } from "./files.js";
+import { logTeamEvent } from "./logger.js";
+import { validateName } from "./memory-types.js";
+import type { ResolvedTeamConfig } from "./types.js";
 import type {
 	MemberIndexStructure,
 	MemberName,
 	MemberState,
 	MemoryType,
+	TaskState,
 	TeamDirectoryPaths,
 	TeamEvent,
 	TeamManagerLike,
 	TeamMdStructure,
 	TopicFileFrontmatter,
-	TaskState,
 } from "./types-v2.js";
-import type { ResolvedTeamConfig } from "./types.js";
-import { buildCompactionReinject, buildMemberSystemPrompt, buildTaskLayer } from "./context.js";
-import { compressMemberIndex } from "./compress.js";
-import { TeamFiles } from "./files.js";
-import { handleCompactionEnd } from "./auto-memory.js";
-import { validateName } from "./memory-types.js";
-import { logTeamEvent } from "./logger.js";
 
 export class TeamManager implements TeamManagerLike {
 	private readonly config: ResolvedTeamConfig;
@@ -93,6 +95,7 @@ export class TeamManager implements TeamManagerLike {
 		});
 
 		const resolvedModel = opts.parentModel ?? undefined;
+		const memberToolNames = ["read", "bash", "grep", "find"];
 		const { session } = await createAgentSession({
 			cwd: this.cwd,
 			agentDir: AGENT_DIR,
@@ -100,7 +103,12 @@ export class TeamManager implements TeamManagerLike {
 			modelRegistry: this.services.modelRegistry,
 			model: resolvedModel,
 			settingsManager: this.services.settingsManager,
-			tools: [], // member tools registered separately
+			tools: memberToolNames,
+			customTools: [
+				createMemberReadTool({ manager: this }),
+				createSelfEditTool({ manager: this }),
+				createMemoryWriteTool({ manager: this }),
+			],
 			resourceLoader,
 		});
 
@@ -113,6 +121,7 @@ export class TeamManager implements TeamManagerLike {
 			status: "active",
 			session,
 			currentTaskId: null,
+			lastTaskPrompt: null,
 		};
 		this.members.set(opts.name, state);
 
@@ -215,6 +224,7 @@ export class TeamManager implements TeamManagerLike {
 
 		state.currentTaskId = taskId;
 		state.status = "active";
+		state.lastTaskPrompt = taskPrompt;
 
 		this.emit({ type: "task_assigned", taskId, memberName: opts.memberName });
 		logTeamEvent("task_assigned", { taskId, memberName: opts.memberName, title: opts.title });
@@ -251,6 +261,102 @@ export class TeamManager implements TeamManagerLike {
 		return this.files.readTeamMd().activeTasks;
 	}
 
+	// ─── Member Lifecycle Control ──────────────────────────
+
+	pauseMember(name: MemberName): void {
+		const state = this.members.get(name);
+		if (!state) throw new Error(`member "${name}" not found`);
+		if (state.status !== "active") return;
+
+		state.session.abort();
+		state.status = "paused";
+
+		const teamMd = this.files.readTeamMd();
+		const memberRow = teamMd.members.find((m) => m.name === name);
+		if (memberRow) memberRow.status = "paused";
+		this.files.writeTeamMd(teamMd);
+
+		this.emit({ type: "member_paused", memberName: name });
+		logTeamEvent("member_paused", { memberName: name });
+	}
+
+	resumeMember(name: MemberName): void {
+		const state = this.members.get(name);
+		if (state?.status !== "paused") return;
+
+		const memberIndex = this.files.readMemberIndex(name);
+		if (!memberIndex) return;
+		const teamMd = this.files.readTeamMd();
+		const reinject = buildCompactionReinject({
+			memberIndex,
+			teamMd,
+			selfName: name,
+		});
+
+		const taskPrompt = state.lastTaskPrompt
+			? `[Resuming after pause]\nPrevious task: ${state.lastTaskPrompt}\n\n${reinject}`
+			: reinject;
+
+		state.status = "active";
+		void state.session.prompt(taskPrompt);
+
+		const memberRow = teamMd.members.find((m) => m.name === name);
+		if (memberRow) memberRow.status = "active";
+		this.files.writeTeamMd(teamMd);
+
+		this.emit({ type: "member_resumed", memberName: name });
+		logTeamEvent("member_resumed", { memberName: name });
+	}
+
+	cancelMember(name: MemberName): void {
+		const state = this.members.get(name);
+		if (!state) throw new Error(`member "${name}" not found`);
+		if (state.status !== "active" && state.status !== "paused") return;
+
+		state.session.abort();
+		state.session.dispose();
+		state.status = "cancelled";
+
+		const unsub = this.sessionUnsubs.get(name);
+		unsub?.();
+		this.sessionUnsubs.delete(name);
+		this.members.delete(name);
+
+		const teamMd = this.files.readTeamMd();
+		teamMd.members = teamMd.members.filter((m) => m.name !== name);
+		this.files.writeTeamMd(teamMd);
+
+		this.emit({ type: "member_cancelled", memberName: name });
+		logTeamEvent("member_cancelled", { memberName: name });
+	}
+
+	directMember(
+		name: MemberName,
+		kind: "directive" | "context" | "redirect",
+		payload: string,
+	): void {
+		const state = this.members.get(name);
+		if (!state) throw new Error(`member "${name}" not found`);
+		if (state.status !== "active")
+			throw new Error(`member "${name}" is ${state.status}, cannot receive directives`);
+
+		const prefix =
+			kind === "directive"
+				? "[Leader Directive]"
+				: kind === "context"
+					? "[Leader Context]"
+					: "[Leader Redirect]";
+		const message = `${prefix} ${payload}`;
+
+		if (state.session.isStreaming) {
+			state.session.steer(message);
+		} else {
+			void state.session.prompt(message);
+		}
+
+		logTeamEvent("member_direct", { memberName: name, kind, payload: payload.slice(0, 80) });
+	}
+
 	// ─── Memory Operations ─────────────────────────────────
 
 	writeMemory(opts: {
@@ -266,18 +372,17 @@ export class TeamManager implements TeamManagerLike {
 		if (opts.shared && (opts.type === "project" || opts.type === "reference")) {
 			// Write to shared/ directory
 			const existing = this.files.readSharedTopic(opts.topic);
-			this.files.writeSharedTopic(
-				opts.topic,
-				opts.type,
-				opts.content,
-				existing ?? undefined,
-			).catch((err) => {
-				console.error(`[team] failed to write shared topic: ${err}`);
-			});
+			this.files
+				.writeSharedTopic(opts.topic, opts.type, opts.content, existing ?? undefined)
+				.catch((err) => {
+					console.error(`[team] failed to write shared topic: ${err}`);
+				});
 
 			// Update TEAM.md shared memory index
 			const teamMd = this.files.readTeamMd();
-			const alreadyListed = teamMd.sharedMemoryIndex.some((s) => s.path === `shared/${opts.topic}.md`);
+			const alreadyListed = teamMd.sharedMemoryIndex.some(
+				(s) => s.path === `shared/${opts.topic}.md`,
+			);
 			if (!alreadyListed) {
 				teamMd.sharedMemoryIndex.push({
 					path: `shared/${opts.topic}.md`,
@@ -311,14 +416,22 @@ export class TeamManager implements TeamManagerLike {
 			}
 		}
 
-		this.emit({ type: "memory_written", memberName: opts.memberName, topic: opts.topic, memoryType: opts.type });
+		this.emit({
+			type: "memory_written",
+			memberName: opts.memberName,
+			topic: opts.topic,
+			memoryType: opts.type,
+		});
 	}
 
 	readMemberIndex(name: MemberName): MemberIndexStructure | null {
 		return this.files.readMemberIndex(name);
 	}
 
-	readTopicFile(name: MemberName, topic: string): (TopicFileFrontmatter & { content: string }) | null {
+	readTopicFile(
+		name: MemberName,
+		topic: string,
+	): (TopicFileFrontmatter & { content: string }) | null {
 		return this.files.readTopicFile(name, topic);
 	}
 

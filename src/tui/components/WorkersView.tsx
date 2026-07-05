@@ -19,6 +19,10 @@ function statusIcon(status: MemberState["status"]): string {
 			return "✓";
 		case "error":
 			return "✗";
+		case "paused":
+			return "⏸";
+		case "cancelled":
+			return "⊘";
 	}
 }
 
@@ -32,6 +36,10 @@ function statusColor(status: MemberState["status"]): string {
 			return colors.success;
 		case "error":
 			return colors.error;
+		case "paused":
+			return colors.info;
+		case "cancelled":
+			return colors.textMuted;
 	}
 }
 
@@ -115,9 +123,7 @@ export function WorkersView({ client, onClose }: WorkersViewProps) {
 					<text fg={sc}>{focusedMember.status}</text>
 				</box>
 				<box flexDirection="row" flexShrink={0} marginTop={1}>
-					<text fg={colors.textSubtle}>
-						goal: {focusedMember.goal}
-					</text>
+					<text fg={colors.textSubtle}>goal: {focusedMember.goal}</text>
 				</box>
 			</box>
 		);
@@ -126,9 +132,7 @@ export function WorkersView({ client, onClose }: WorkersViewProps) {
 	if (members.length === 0) {
 		return (
 			<box flexShrink={0} paddingLeft={2} paddingTop={1} paddingBottom={1} flexDirection="row">
-				<text fg={colors.textMuted}>
-					No team members. Create one with team-edit (add-member).
-				</text>
+				<text fg={colors.textMuted}>No team members. Create one with team-edit (add-member).</text>
 			</box>
 		);
 	}
@@ -170,7 +174,8 @@ export function WorkersView({ client, onClose }: WorkersViewProps) {
 								<text fg={isSelected ? colors.primary : colors.textMuted}>{m.name}</text>
 								<text fg={isSelected ? colors.text : colors.textSubtle}>
 									{" "}
-									· {m.role} · {m.status}{taskLabel}
+									· {m.role} · {m.status}
+									{taskLabel}
 								</text>
 							</box>
 						);

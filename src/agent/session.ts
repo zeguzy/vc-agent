@@ -23,16 +23,17 @@ import { SkillManager } from "../skills/manager.js";
 import type { TeamManagerRef } from "../teams/types-v2.js";
 import { createEditTool } from "../tools/edit.js";
 import { clearEditConfirmBridge, type EditConfirmBridge } from "../tools/edit-confirm-bridge.js";
+import { createMemberDirectTool } from "../tools/member-direct.js";
+import { createMemberEditTool } from "../tools/member-edit.js";
+import { createMemberReadTool } from "../tools/member-read.js";
+import { createMemoryWriteTool } from "../tools/memory-write.js";
 import { createNotifyTool } from "../tools/notify.js";
 import { createQuestionTool } from "../tools/question.js";
 import { clearBridge, type QuestionBridge } from "../tools/question-bridge.js";
-import { createSubagentTool } from "../tools/subagent.js";
-import { createTeamReadTool } from "../tools/team-read.js";
-import { createTeamEditTool } from "../tools/team-edit.js";
-import { createMemberReadTool } from "../tools/member-read.js";
-import { createMemberEditTool } from "../tools/member-edit.js";
 import { createSelfEditTool } from "../tools/self-edit.js";
-import { createMemoryWriteTool } from "../tools/memory-write.js";
+import { createSubagentTool } from "../tools/subagent.js";
+import { createTeamEditTool } from "../tools/team-edit.js";
+import { createTeamReadTool } from "../tools/team-read.js";
 import { createTodoTool } from "../tools/todo.js";
 import { createWebfetchTool } from "../tools/webfetch/index.js";
 
@@ -63,6 +64,7 @@ export const TEAM_ACTIVE_TOOLS = [
 	"team-edit",
 	"member-read",
 	"member-edit",
+	"member-direct",
 	"memory-write",
 ];
 
@@ -432,12 +434,15 @@ export { extractAssistantContent, extractAssistantText, summarizeArgs } from "..
 
 export type { AgentSession, AgentSessionEvent, AgentSessionRuntime };
 
-function buildTeamTools(manager: import("../teams/types-v2.js").TeamManagerLike): import("@earendil-works/pi-coding-agent").ToolDefinition[] {
+function buildTeamTools(
+	manager: import("../teams/types-v2.js").TeamManagerLike,
+): import("@earendil-works/pi-coding-agent").ToolDefinition[] {
 	return [
 		createTeamReadTool({ manager }),
 		createTeamEditTool({ manager }),
 		createMemberReadTool({ manager }),
 		createMemberEditTool({ manager }),
+		createMemberDirectTool({ manager }),
 		createSelfEditTool({ manager }),
 		createMemoryWriteTool({ manager }),
 	];

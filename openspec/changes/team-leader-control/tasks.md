@@ -1,0 +1,22 @@
+## Tasks
+
+- [ ] T1: 扩展 MemberState.status 类型（types-v2.ts）—— 新增 "paused" | "cancelled"
+- [ ] T2: 扩展 TeamManagerLike 接口（types-v2.ts）—— 新增 pauseMember, resumeMember, cancelMember, directMember 方法签名
+- [ ] T3: 实现 Member 工具注入（manager-v2.ts createMember）—— 复用 worker.ts 的 resolveTools/deniedToolsFor，注入 [read, bash, grep, find] + [member-read, self-edit, memory-write] 的 customTools
+- [ ] T4: 实现 Member 工具的 customTools 定义构建—— 在 createMember 中为 member 创建 member-read/self-edit/memory-write 的 ToolDefinition 实例（传入正确的 TeamManagerLike 引用）
+- [ ] T5: 实现 pauseMember（manager-v2.ts）—— session.abort() + 状态 paused + TEAM.md 更新 + emit event
+- [ ] T6: 实现 resumeMember（manager-v2.ts）—— session.prompt(lastTaskPrompt) + 状态 active + TEAM.md 更新 + emit event
+- [ ] T7: 实现 cancelMember（manager-v2.ts）—— session.abort() + dispose() + 状态 cancelled + TEAM.md 更新 + emit event + 从 members Map 移除
+- [ ] T8: 实现 directMember（manager-v2.ts）—— 构造结构化消息，判断 session.isStreaming 决定 steer/prompt
+- [ ] T9: 创建 member-direct 工具（src/tools/member-direct.ts）—— ToolDefinition，参数：name, kind("directive"|"context"|"redirect"), payload
+- [ ] T10: 注册 member-direct 到 TEAM_ACTIVE_TOOLS 和 buildTeamTools（session.ts）
+- [ ] T11: 扩展 AgentClient 接口（client/types.ts）—— 新增 pauseMember, resumeMember, cancelMember, directMember
+- [ ] T12: 实现 InProcessClient 新方法（client/in-process.ts）
+- [ ] T13: 实现 HttpClient 新方法（client/http.ts）—— PUT /team/members/:name/pause, /resume, /cancel; POST /team/members/:name/direct
+- [ ] T14: 实现 HTTP 路由（server/http.ts）—— 新增 pause/resume/cancel/direct 路由
+- [ ] T15: 实现 AgentServer handler（server/index.ts）—— handlePauseMember, handleResumeMember, handleCancelMember, handleDirectMember
+- [ ] T16: 更新 TUI WorkersView（tui/components/WorkersView.tsx）—— 显示 paused/cancelled 状态图标
+- [ ] T17: 更新 TUI commands（tui/commands.ts）—— 新增 /team pause|resume|cancel 命令
+- [ ] T18: 更新 TEAM_ORCHESTRATOR_PROMPT（context-files.ts）—— 新增 member-direct 工具说明，更新生命周期说明
+- [ ] T19: 更新 headless/runner.ts—— 处理 member_paused/member_cancelled 事件
+- [ ] T20: 运行 bun run check 验证全绿

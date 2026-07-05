@@ -26,9 +26,10 @@ export interface MemberState {
 	role: string;
 	goal: string;
 	model?: string;
-	status: "active" | "idle" | "done" | "error";
+	status: "active" | "idle" | "done" | "error" | "paused" | "cancelled";
 	session: AgentSession;
 	currentTaskId: string | null;
+	lastTaskPrompt: string | null;
 }
 
 /** Task state derived from TEAM.md Active Tasks. */
@@ -113,8 +114,17 @@ export interface TeamManagerLike {
 		shared?: boolean;
 	}): void;
 	readMemberIndex(name: MemberName): MemberIndexStructure | null;
-	readTopicFile(name: MemberName, topic: string): TopicFileFrontmatter & { content: string } | null;
+	readTopicFile(
+		name: MemberName,
+		topic: string,
+	): (TopicFileFrontmatter & { content: string }) | null;
 	readTeamMd(): TeamMdStructure;
+
+	// Member lifecycle control
+	pauseMember(name: MemberName): void;
+	resumeMember(name: MemberName): void;
+	cancelMember(name: MemberName): void;
+	directMember(name: MemberName, kind: "directive" | "context" | "redirect", payload: string): void;
 
 	// Member identity (for tool permission checks)
 	isSelfMember(name: MemberName): boolean;
@@ -134,6 +144,9 @@ export type TeamEvent =
 	| { type: "task_completed"; taskId: string; memberName: MemberName }
 	| { type: "member_done"; memberName: MemberName; summary: string; cost: number }
 	| { type: "member_error"; memberName: MemberName; error: string }
+	| { type: "member_paused"; memberName: MemberName }
+	| { type: "member_resumed"; memberName: MemberName }
+	| { type: "member_cancelled"; memberName: MemberName }
 	| { type: "team_md_updated"; section: string }
 	| { type: "memory_written"; memberName: MemberName; topic: string; memoryType: MemoryType };
 

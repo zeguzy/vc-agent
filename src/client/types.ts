@@ -89,4 +89,9 @@ export interface AgentClient {
 	}): Promise<TaskState>;
 	listTasks(): TaskState[];
 	taskStatus(taskId: string): TaskState | undefined;
+
+	pauseMember(name: MemberName): void;
+	resumeMember(name: MemberName): void;
+	cancelMember(name: MemberName): void;
+	directMember(name: MemberName, kind: "directive" | "context" | "redirect", payload: string): void;
 }

@@ -170,6 +170,52 @@ async function handleRequest(server: AgentServer, req: IncomingMessage, res: Ser
 		return sendJson(res, { task });
 	}
 
+	if (method === "PUT" && path.startsWith("/team/members/") && path.endsWith("/pause")) {
+		const name = path.slice("/team/members/".length, -"/pause".length);
+		try {
+			server.handlePauseMember(name);
+			return sendJson(res, { ok: true });
+		} catch (err) {
+			return sendJson(res, { error: String(err) }, 400);
+		}
+	}
+
+	if (method === "PUT" && path.startsWith("/team/members/") && path.endsWith("/resume")) {
+		const name = path.slice("/team/members/".length, -"/resume".length);
+		try {
+			server.handleResumeMember(name);
+			return sendJson(res, { ok: true });
+		} catch (err) {
+			return sendJson(res, { error: String(err) }, 400);
+		}
+	}
+
+	if (method === "PUT" && path.startsWith("/team/members/") && path.endsWith("/cancel")) {
+		const name = path.slice("/team/members/".length, -"/cancel".length);
+		try {
+			server.handleCancelMember(name);
+			return sendJson(res, { ok: true });
+		} catch (err) {
+			return sendJson(res, { error: String(err) }, 400);
+		}
+	}
+
+	if (method === "POST" && path.startsWith("/team/members/") && path.endsWith("/direct")) {
+		const name = path.slice("/team/members/".length, -"/direct".length);
+		const body = await readBody<{ kind: "directive" | "context" | "redirect"; payload: string }>(
+			req,
+		);
+		if (!body.kind || !body.payload) {
+			return sendJson(res, { error: "kind and payload required" }, 400);
+		}
+		try {
+			server.handleDirectMember(name, body.kind, body.payload);
+			return sendJson(res, { ok: true });
+		} catch (err) {
+			return sendJson(res, { error: String(err) }, 400);
+		}
+	}
+
 	if (method === "GET" && path === "/events") {
 		const streaming = url.searchParams.get("streaming") === "true";
 		return createSSEResponse(server, req, res, streaming);
@@ -199,7 +245,7 @@ function createSSEResponse(
 	server: AgentServer,
 	req: IncomingMessage,
 	res: ServerResponse,
-	streaming = false,
+	_streaming = false,
 ): void {
 	res.writeHead(200, {
 		"Content-Type": "text/event-stream",

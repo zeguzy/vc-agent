@@ -162,6 +162,26 @@ export class InProcessClient implements AgentClient {
 	taskStatus(taskId: string): TaskState | undefined {
 		return this.server.handleTaskStatus(taskId);
 	}
+
+	pauseMember(name: MemberName): void {
+		this.server.handlePauseMember(name);
+	}
+
+	resumeMember(name: MemberName): void {
+		this.server.handleResumeMember(name);
+	}
+
+	cancelMember(name: MemberName): void {
+		this.server.handleCancelMember(name);
+	}
+
+	directMember(
+		name: MemberName,
+		kind: "directive" | "context" | "redirect",
+		payload: string,
+	): void {
+		this.server.handleDirectMember(name, kind, payload);
+	}
 }
 
 export function createClient(server: AgentServer): AgentClient {

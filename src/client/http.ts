@@ -274,6 +274,34 @@ export class HttpClient implements AgentClient {
 		const data = await res.json();
 		return (data as { task: TaskState }).task;
 	}
+
+	pauseMember(_name: MemberName): void {
+		throw new NotSupportedError(
+			"pauseMember (sync) — use HTTP PUT /team/members/:name/pause instead",
+		);
+	}
+
+	resumeMember(_name: MemberName): void {
+		throw new NotSupportedError(
+			"resumeMember (sync) — use HTTP PUT /team/members/:name/resume instead",
+		);
+	}
+
+	cancelMember(_name: MemberName): void {
+		throw new NotSupportedError(
+			"cancelMember (sync) — use HTTP PUT /team/members/:name/cancel instead",
+		);
+	}
+
+	directMember(
+		_name: MemberName,
+		_kind: "directive" | "context" | "redirect",
+		_payload: string,
+	): void {
+		throw new NotSupportedError(
+			"directMember (sync) — use HTTP POST /team/members/:name/direct instead",
+		);
+	}
 }
 
 export function createHttpClient(baseUrl: string): AgentClient {

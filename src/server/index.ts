@@ -21,10 +21,9 @@ import { TeamManager } from "../teams/manager-v2.js";
 import type {
 	MemberName,
 	MemberState,
-	TeamEvent,
-	TeamManagerLike,
-	TeamManagerRef,
 	TaskState,
+	TeamEvent,
+	TeamManagerRef,
 } from "../teams/types-v2.js";
 
 export interface AgentServerOptions {
@@ -60,11 +59,7 @@ export class AgentServer {
 
 		const config = readConfig(opts.cwd);
 		this.teamConfig = resolveConfigTeams(config);
-		this.teamManager = new TeamManager(
-			this.teamConfig,
-			this.runtime.services,
-			this.cwd,
-		);
+		this.teamManager = new TeamManager(this.teamConfig, this.runtime.services, this.cwd);
 		if (opts.teamRef) {
 			opts.teamRef.current = this.teamManager;
 		}
@@ -327,6 +322,26 @@ export class AgentServer {
 	handleTaskStatus(taskId: string): TaskState | undefined {
 		const tasks = this.teamManager.listTasks();
 		return tasks.find((t) => t.id === taskId);
+	}
+
+	handlePauseMember(name: MemberName): void {
+		this.teamManager.pauseMember(name);
+	}
+
+	handleResumeMember(name: MemberName): void {
+		this.teamManager.resumeMember(name);
+	}
+
+	handleCancelMember(name: MemberName): void {
+		this.teamManager.cancelMember(name);
+	}
+
+	handleDirectMember(
+		name: MemberName,
+		kind: "directive" | "context" | "redirect",
+		payload: string,
+	): void {
+		this.teamManager.directMember(name, kind, payload);
 	}
 }
 

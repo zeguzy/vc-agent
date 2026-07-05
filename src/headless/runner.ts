@@ -114,6 +114,15 @@ export class HeadlessRunner {
 				if (event.type === "member_error") {
 					process.stderr.write(`[member ${event.memberName}] error: ${event.error}\n`);
 				}
+				if (event.type === "member_paused") {
+					process.stderr.write(`[member ${event.memberName}] paused\n`);
+				}
+				if (event.type === "member_resumed") {
+					process.stderr.write(`[member ${event.memberName}] resumed\n`);
+				}
+				if (event.type === "member_cancelled") {
+					process.stderr.write(`[member ${event.memberName}] cancelled\n`);
+				}
 			});
 
 			client.prompt(promptText).catch((err) => {
