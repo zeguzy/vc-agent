@@ -2,9 +2,7 @@ import type { AgentSession, AgentSessionEvent } from "@earendil-works/pi-coding-
 import { createAgentSession, DefaultResourceLoader } from "@earendil-works/pi-coding-agent";
 import type { SubagentServices } from "../agents/types.js";
 import { AGENT_DIR } from "../teams/worker.js";
-import { createMemberReadTool } from "../tools/member-read.js";
-import { createMemoryWriteTool } from "../tools/memory-write.js";
-import { createSelfEditTool } from "../tools/self-edit.js";
+import { createMemoryTool } from "../tools/memory.js";
 import { handleCompactionEnd } from "./auto-memory.js";
 import { buildCompactionReinject, buildMemberSystemPrompt, buildTaskLayer } from "./context.js";
 import { TeamFiles } from "./files.js";
@@ -104,21 +102,17 @@ export class TeamManager implements TeamManagerLike {
 			model: resolvedModel,
 			settingsManager: this.services.settingsManager,
 			tools: memberToolNames,
-			customTools: [
-				createMemberReadTool({ manager: this }),
-				createSelfEditTool({ manager: this }),
-				createMemoryWriteTool({ manager: this }),
-			],
+			customTools: [createMemoryTool({ teamRef: { current: this } })],
 			resourceLoader,
 		});
 
-		// Build member state
+		// Build member state — starts idle until assignTask is called
 		const state: MemberState = {
 			name: opts.name,
 			role: opts.role,
 			goal: opts.goal,
 			model: opts.model,
-			status: "active",
+			status: "idle",
 			session,
 			currentTaskId: null,
 			lastTaskPrompt: null,
@@ -133,7 +127,7 @@ export class TeamManager implements TeamManagerLike {
 		teamMd.members.push({
 			name: opts.name,
 			role: opts.role,
-			status: "active",
+			status: "idle",
 			currentTask: "—",
 		});
 		this.files.writeTeamMd(teamMd);

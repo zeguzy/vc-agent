@@ -59,7 +59,9 @@ export function parseFrontmatter(raw: string): {
 			type,
 			created,
 			updated,
-			tokens: tokensStr ? Number.parseInt(tokensStr, 10) || estimateTokens(body) : estimateTokens(body),
+			tokens: tokensStr
+				? Number.parseInt(tokensStr, 10) || estimateTokens(body)
+				: estimateTokens(body),
 		},
 		body,
 	};
@@ -82,7 +84,10 @@ export function createFrontmatter(type: MemoryType, body: string): TopicFileFron
 }
 
 /** Update frontmatter for an existing topic file (preserves created, updates updated/tokens). */
-export function updateFrontmatter(existing: TopicFileFrontmatter, newBody: string): TopicFileFrontmatter {
+export function updateFrontmatter(
+	existing: TopicFileFrontmatter,
+	newBody: string,
+): TopicFileFrontmatter {
 	return {
 		...existing,
 		updated: new Date().toISOString(),
@@ -98,7 +103,10 @@ function extractYamlField(yaml: string, key: string): string | null {
 	if (!line) return null;
 	const value = line.slice(key.length + 1).trim();
 	// Strip quotes if present
-	if ((value.startsWith('"') && value.endsWith('"')) || (value.startsWith("'") && value.endsWith("'"))) {
+	if (
+		(value.startsWith('"') && value.endsWith('"')) ||
+		(value.startsWith("'") && value.endsWith("'"))
+	) {
 		return value.slice(1, -1);
 	}
 	return value || null;

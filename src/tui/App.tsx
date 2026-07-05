@@ -1,8 +1,8 @@
 import type { ScrollBoxRenderable } from "@opentui/core";
 import { useKeyboard, useRenderer } from "@opentui/react";
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { AgentClient, AgentMode } from "../client/index.js";
 import { buildAgentModeCycle, getBaseMode } from "../agent/session.js";
+import type { AgentClient, AgentMode } from "../client/index.js";
 import { commandRegistry } from "../commands/registry.js";
 import type { Config } from "../config.js";
 import { readConfig } from "../config.js";
@@ -472,9 +472,9 @@ export function App({
 					config={configState}
 					ctx={settingCtx}
 					onClose={() => {
-					setShowSettings(false);
-					setConfigState(readConfig(cwd));
-				}}
+						setShowSettings(false);
+						setConfigState(readConfig(cwd));
+					}}
 				/>
 			)}
 			{picker.showSessionPicker && (

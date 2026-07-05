@@ -7,9 +7,9 @@ import {
 } from "@earendil-works/pi-coding-agent";
 import { BUILTIN_TOOLS, resolveModel } from "../agent/session.js";
 import type { AgentConfig, SubagentServices } from "../agents/types.js";
-import type { ResolvedModel } from "./types.js";
 import { extractAssistantText } from "../utils/content.js";
 import { logTeamEvent } from "./logger.js";
+import type { ResolvedModel } from "./types.js";
 
 export type WorkerId = string;
 export type WorkerStatus = "running" | "idle" | "done" | "error" | "cancelled";

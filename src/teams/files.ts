@@ -4,7 +4,6 @@ import {
 	readdirSync,
 	readFileSync,
 	renameSync,
-	statSync,
 	unlinkSync,
 	writeFileSync,
 } from "node:fs";
@@ -32,7 +31,7 @@ import type {
 export class TeamFiles {
 	readonly paths: TeamDirectoryPaths;
 
-	constructor(private readonly cwd: string) {
+	constructor(readonly cwd: string) {
 		const teamDir = join(cwd, ".openagent", "team");
 		this.paths = {
 			teamDir,

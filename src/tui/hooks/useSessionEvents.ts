@@ -206,7 +206,9 @@ export function useSessionEvents(
 				const existingId = workerMsgMap.current.get(memberName);
 				if (existingId) {
 					setMessages((prev) =>
-						prev.map((m) => (m.id === existingId ? { ...m, workerStatus: "error", workerError: error } : m)),
+						prev.map((m) =>
+							m.id === existingId ? { ...m, workerStatus: "error", workerError: error } : m,
+						),
 					);
 				} else {
 					const msg = createWorkerMessage(memberName, memberName, error);

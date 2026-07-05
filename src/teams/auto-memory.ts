@@ -1,6 +1,6 @@
-import type { MemberIndexStructure, MemberName, MemoryType } from "./types-v2.js";
-import type { TeamFiles } from "./files.js";
 import { compressMemberIndex } from "./compress.js";
+import type { TeamFiles } from "./files.js";
+import type { MemberIndexStructure, MemberName, MemoryType } from "./types-v2.js";
 
 // ─── Compaction Summary Parsing ──────────────────────────────
 
@@ -50,11 +50,23 @@ function classifyLearnings(raw: string): LearningsByType {
 			const lower = line.toLowerCase();
 			if (lower.includes("i prefer") || lower.includes("i like") || lower.includes("my style")) {
 				currentType = "user";
-			} else if (lower.includes("feedback") || lower.includes("review noted") || lower.includes("was told")) {
+			} else if (
+				lower.includes("feedback") ||
+				lower.includes("review noted") ||
+				lower.includes("was told")
+			) {
 				currentType = "feedback";
-			} else if (lower.includes("project uses") || lower.includes("convention") || lower.includes("standard")) {
+			} else if (
+				lower.includes("project uses") ||
+				lower.includes("convention") ||
+				lower.includes("standard")
+			) {
 				currentType = "project";
-			} else if (lower.includes("api") || lower.includes("reference") || lower.includes("documentation")) {
+			} else if (
+				lower.includes("api") ||
+				lower.includes("reference") ||
+				lower.includes("documentation")
+			) {
 				currentType = "reference";
 			} else {
 				currentType = "user"; // default

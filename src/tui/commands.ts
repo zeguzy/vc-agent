@@ -480,7 +480,7 @@ export function registerBuiltinCommands(): void {
 				if (members.length === 0) {
 					ctx.setMessages((prev) => [
 						...prev,
-						createAssistantMessage("No team members yet. Use the team-edit tool to create one."),
+						createAssistantMessage("No team members yet. Use the team tool to create one."),
 					]);
 					return;
 				}
@@ -613,7 +613,7 @@ export function registerBuiltinCommands(): void {
 			if (members.length === 0) {
 				ctx.setMessages((prev) => [
 					...prev,
-					createAssistantMessage("No team members yet. Use the team-edit tool to create one."),
+					createAssistantMessage("No team members yet. Use the team tool to create one."),
 				]);
 				return;
 			}

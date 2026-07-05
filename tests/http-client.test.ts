@@ -46,8 +46,9 @@ function createMockServer(): AgentServer & { _emit: (e: AgentSessionEvent) => vo
 			teamHandlers.add(handler);
 			return () => teamHandlers.delete(handler);
 		}),
-		handleCreateMember: mock((_opts: { name: string; role: string; goal: string; model?: string }) =>
-			Promise.resolve({} as MemberState),
+		handleCreateMember: mock(
+			(_opts: { name: string; role: string; goal: string; model?: string }) =>
+				Promise.resolve({} as MemberState),
 		),
 		handleRemoveMember: mock((_name: string) => Promise.resolve()),
 		handleGetMember: mock((_name: string) => undefined as MemberState | undefined),

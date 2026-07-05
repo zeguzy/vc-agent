@@ -1,5 +1,4 @@
-import type { MemberIndexStructure, MemberName, TeamMdStructure, TaskState } from "./types-v2.js";
-import type { TeamFiles } from "./files.js";
+import type { MemberIndexStructure, MemberName, TaskState, TeamMdStructure } from "./types-v2.js";
 
 // ─── L1: Identity ────────────────────────────────────────────
 
@@ -9,7 +8,7 @@ export function buildIdentityLayer(role: string, goal: string, agentSystemPrompt
 	if (agentSystemPrompt) parts.push(agentSystemPrompt);
 	parts.push(`You are a team member with role "${role}" and goal "${goal}".`);
 	parts.push(
-		"Use `team-read` to understand team state, `member-read` to recall your memories, `self-edit` to update your index, and `memory-write` to save new learnings.",
+		'Use `memory` tool to read your memories and update your index, and `memory(action="write")` to save new learnings.',
 	);
 	return parts.join("\n\n");
 }
@@ -77,12 +76,8 @@ export function buildTaskLayer(task: TaskState): string {
 
 // ─── L5: Topic Files ────────────────────────────────────────
 
-/** Build L5 (Topic Files) — full content of a topic .md file (returned by member-read tool). */
-export function buildTopicLayer(
-	topic: string,
-	type: string,
-	content: string,
-): string {
+/** Build L5 (Topic Files) — full content of a topic .md file (returned by memory tool). */
+export function buildTopicLayer(topic: string, type: string, content: string): string {
 	return `[Memory: ${topic} (${type})]\n${content}`;
 }
 
