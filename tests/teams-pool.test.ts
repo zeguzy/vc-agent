@@ -142,7 +142,7 @@ afterEach(() => {
 describe("WorkerSessionPool", () => {
 	it("spawnWorker admits within maxWorkers", async () => {
 		installFakeFactory();
-		const pool = new WorkerSessionPool(makeConfig({ maxWorkers: 2 }), makeServices());
+		const pool = new WorkerSessionPool(makeConfig({ maxWorkers: 2 }), makeServices(), "/tmp");
 		const r1 = await pool.spawnWorker(makeSpawnOptions());
 		expect(r1.status).toBe("running");
 		expect(pool.runningCount()).toBe(1);
@@ -153,7 +153,7 @@ describe("WorkerSessionPool", () => {
 
 	it("spawnWorker queues when pool is full", async () => {
 		installFakeFactory();
-		const pool = new WorkerSessionPool(makeConfig({ maxWorkers: 1 }), makeServices());
+		const pool = new WorkerSessionPool(makeConfig({ maxWorkers: 1 }), makeServices(), "/tmp");
 		await pool.spawnWorker(makeSpawnOptions());
 		expect(pool.runningCount()).toBe(1);
 
@@ -174,14 +174,14 @@ describe("WorkerSessionPool", () => {
 
 	it("spawnWorker rejects after dispose", async () => {
 		installFakeFactory();
-		const pool = new WorkerSessionPool(makeConfig(), makeServices());
+		const pool = new WorkerSessionPool(makeConfig(), makeServices(), "/tmp");
 		await pool.dispose();
 		await expect(pool.spawnWorker(makeSpawnOptions())).rejects.toThrow("disposed");
 	});
 
 	it("get returns snapshot; list returns all snapshots", async () => {
 		installFakeFactory();
-		const pool = new WorkerSessionPool(makeConfig({ maxWorkers: 3 }), makeServices());
+		const pool = new WorkerSessionPool(makeConfig({ maxWorkers: 3 }), makeServices(), "/tmp");
 		const a = await pool.spawnWorker(makeSpawnOptions(makeAgent("a")));
 		const _b = await pool.spawnWorker(makeSpawnOptions(makeAgent("b")));
 		expect(pool.get(a.workerId)?.agent).toBe("a");
@@ -195,7 +195,7 @@ describe("WorkerSessionPool", () => {
 
 	it("cancel invokes worker.cancel and updates runningCount", async () => {
 		installFakeFactory();
-		const pool = new WorkerSessionPool(makeConfig({ maxWorkers: 2 }), makeServices());
+		const pool = new WorkerSessionPool(makeConfig({ maxWorkers: 2 }), makeServices(), "/tmp");
 		const r = await pool.spawnWorker(makeSpawnOptions());
 		expect(pool.runningCount()).toBe(1);
 		await pool.cancel(r.workerId);
@@ -205,7 +205,7 @@ describe("WorkerSessionPool", () => {
 
 	it("cancelAll cancels every worker", async () => {
 		installFakeFactory();
-		const pool = new WorkerSessionPool(makeConfig({ maxWorkers: 2 }), makeServices());
+		const pool = new WorkerSessionPool(makeConfig({ maxWorkers: 2 }), makeServices(), "/tmp");
 		await pool.spawnWorker(makeSpawnOptions());
 		await pool.spawnWorker(makeSpawnOptions());
 		await pool.cancelAll();
@@ -215,7 +215,7 @@ describe("WorkerSessionPool", () => {
 
 	it("subscribe receives WorkerEventEnvelope emitted by a worker", async () => {
 		installFakeFactory();
-		const pool = new WorkerSessionPool(makeConfig(), makeServices());
+		const pool = new WorkerSessionPool(makeConfig(), makeServices(), "/tmp");
 		const r = await pool.spawnWorker(makeSpawnOptions());
 		const received: WorkerEventEnvelope[] = [];
 		const unsub = pool.subscribe((event) => received.push(event));
@@ -236,7 +236,7 @@ describe("WorkerSessionPool", () => {
 
 	it("dispose cancels all workers, clears map, blocks further spawnWorker", async () => {
 		installFakeFactory();
-		const pool = new WorkerSessionPool(makeConfig({ maxWorkers: 2 }), makeServices());
+		const pool = new WorkerSessionPool(makeConfig({ maxWorkers: 2 }), makeServices(), "/tmp");
 		await pool.spawnWorker(makeSpawnOptions());
 		await pool.spawnWorker(makeSpawnOptions());
 		await pool.dispose();
@@ -246,13 +246,13 @@ describe("WorkerSessionPool", () => {
 
 	it("cancel on unknown id is a no-op", async () => {
 		installFakeFactory();
-		const pool = new WorkerSessionPool(makeConfig(), makeServices());
+		const pool = new WorkerSessionPool(makeConfig(), makeServices(), "/tmp");
 		await expect(pool.cancel("wkr_unknown")).resolves.toBeUndefined();
 	});
 
 	it("cancel on already-finished worker is idempotent", async () => {
 		installFakeFactory();
-		const pool = new WorkerSessionPool(makeConfig(), makeServices());
+		const pool = new WorkerSessionPool(makeConfig(), makeServices(), "/tmp");
 		const r = await pool.spawnWorker(makeSpawnOptions());
 		await pool.cancel(r.workerId);
 		await pool.cancel(r.workerId);
@@ -261,7 +261,7 @@ describe("WorkerSessionPool", () => {
 
 	it("runningCount excludes done/error/cancelled workers", async () => {
 		installFakeFactory();
-		const pool = new WorkerSessionPool(makeConfig({ maxWorkers: 2 }), makeServices());
+		const pool = new WorkerSessionPool(makeConfig({ maxWorkers: 2 }), makeServices(), "/tmp");
 		const r = await pool.spawnWorker(makeSpawnOptions());
 		await pool.cancel(r.workerId);
 		expect(pool.runningCount()).toBe(0);

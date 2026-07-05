@@ -210,6 +210,8 @@ export interface WorkerSessionPoolLike {
 	taskStatus(taskId: string): TeamTask | undefined;
 	sendMessage(from: MemberId, to: MemberId | "team", content: string): void;
 	readInbox(memberId?: MemberId): TeamMessage[];
+	getWorkerForMember(memberId: MemberId): WorkerSnapshot | undefined;
+	cancelMember(memberId: MemberId): Promise<void>;
 }
 
 /**

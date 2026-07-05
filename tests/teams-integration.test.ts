@@ -132,7 +132,7 @@ describe("teams integration", () => {
 		}) as typeof originalFactory;
 
 		try {
-			const pool = new WorkerSessionPool(makeConfig(), makeServices());
+			const pool = new WorkerSessionPool(makeConfig(), makeServices(), "/tmp");
 			const events: WorkerEventEnvelope[] = [];
 			pool.subscribe((e) => events.push(e));
 
@@ -175,7 +175,7 @@ describe("teams integration", () => {
 	});
 
 	it("spawnWorker queues when pool is full", async () => {
-		const pool = new WorkerSessionPool(makeConfig({ maxWorkers: 1 }), makeServices());
+		const pool = new WorkerSessionPool(makeConfig({ maxWorkers: 1 }), makeServices(), "/tmp");
 		const originalFactory = WorkerSessionPool.workerFactory;
 
 		let nextId = 0;
@@ -188,14 +188,24 @@ describe("teams integration", () => {
 
 		try {
 			const r1 = await pool.spawnWorker({
-				agent: makeAgent("w1"), task: "task 1", cwd: "/tmp", services: makeServices(),
+				agent: makeAgent("w1"),
+				task: "task 1",
+				cwd: "/tmp",
+				services: makeServices(),
 			});
 			expect(pool.runningCount()).toBe(1);
 
 			let resolved = false;
-			const queued = pool.spawnWorker({
-				agent: makeAgent("w2"), task: "task 2", cwd: "/tmp", services: makeServices(),
-			}).then(() => { resolved = true; });
+			const queued = pool
+				.spawnWorker({
+					agent: makeAgent("w2"),
+					task: "task 2",
+					cwd: "/tmp",
+					services: makeServices(),
+				})
+				.then(() => {
+					resolved = true;
+				});
 			await new Promise((r) => setTimeout(r, 50));
 			expect(resolved).toBe(false);
 
@@ -208,7 +218,7 @@ describe("teams integration", () => {
 	});
 
 	it("cancelAll cleans up and runningCount returns 0", async () => {
-		const pool = new WorkerSessionPool(makeConfig({ maxWorkers: 3 }), makeServices());
+		const pool = new WorkerSessionPool(makeConfig({ maxWorkers: 3 }), makeServices(), "/tmp");
 		const originalFactory = WorkerSessionPool.workerFactory;
 
 		let nextId = 0;
@@ -242,7 +252,7 @@ describe("teams integration", () => {
 	});
 
 	it("dispose blocks further spawn and clears map", async () => {
-		const pool = new WorkerSessionPool(makeConfig({ maxWorkers: 2 }), makeServices());
+		const pool = new WorkerSessionPool(makeConfig({ maxWorkers: 2 }), makeServices(), "/tmp");
 		const originalFactory = WorkerSessionPool.workerFactory;
 
 		let nextId = 0;

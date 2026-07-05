@@ -32,10 +32,14 @@ export class WorkerSessionPool implements WorkerSessionPoolLike {
 	private readonly tasks = new Map<string, TeamTask>();
 	private readonly messages: TeamMessage[] = [];
 	private readonly memberRateLimits = new Map<MemberId, number[]>();
+	private readonly cwd: string;
+	/** Maps workerId → { memberId, taskId } so worker lifecycle events can update task/member status. */
+	private readonly workerAssignments = new Map<WorkerId, { memberId: MemberId; taskId: string }>();
 
-	constructor(config: ResolvedTeamConfig, services: SubagentServices) {
+	constructor(config: ResolvedTeamConfig, services: SubagentServices, cwd: string) {
 		this.config = config;
 		this.services = services;
+		this.cwd = cwd;
 	}
 
 	runningCount(): number {
@@ -77,6 +81,28 @@ export class WorkerSessionPool implements WorkerSessionPoolLike {
 				}
 			}
 			if (event.kind === "agent_end" || event.kind === "error" || event.kind === "cancelled") {
+				const assignment = this.workerAssignments.get(event.workerId);
+				if (assignment) {
+					const task = this.tasks.get(assignment.taskId);
+					const member = this.members.get(assignment.memberId);
+					if (event.kind === "agent_end") {
+						if (task) task.status = "done";
+						if (member) member.status = "idle";
+					} else if (event.kind === "error") {
+						if (task) {
+							task.status = "blocked";
+							task.blockReason = "worker error";
+						}
+						if (member) member.status = "error";
+					} else {
+						if (task) {
+							task.status = "blocked";
+							task.blockReason = "cancelled";
+						}
+						if (member) member.status = "idle";
+					}
+					this.workerAssignments.delete(event.workerId);
+				}
 				const next = this.slotResolvers.shift();
 				if (next) next();
 			}
@@ -97,7 +123,18 @@ export class WorkerSessionPool implements WorkerSessionPoolLike {
 	async cancel(id: WorkerId): Promise<void> {
 		const w = this.workers.get(id);
 		if (!w) return;
+		const assignment = this.workerAssignments.get(id);
 		await w.cancel();
+		if (assignment) {
+			const task = this.tasks.get(assignment.taskId);
+			const member = this.members.get(assignment.memberId);
+			if (task) {
+				task.status = "blocked";
+				task.blockReason = "cancelled";
+			}
+			if (member) member.status = "idle";
+			this.workerAssignments.delete(id);
+		}
 		const next = this.slotResolvers.shift();
 		if (next) next();
 	}
@@ -110,6 +147,17 @@ export class WorkerSessionPool implements WorkerSessionPoolLike {
 					await w.cancel();
 				} catch (err) {
 					console.error(`[teams] cancel worker ${w.id} error: ${err}`);
+				}
+				const assignment = this.workerAssignments.get(w.id);
+				if (assignment) {
+					const task = this.tasks.get(assignment.taskId);
+					const member = this.members.get(assignment.memberId);
+					if (task) {
+						task.status = "blocked";
+						task.blockReason = "cancelled";
+					}
+					if (member) member.status = "idle";
+					this.workerAssignments.delete(w.id);
 				}
 			}),
 		);
@@ -245,13 +293,14 @@ export class WorkerSessionPool implements WorkerSessionPoolLike {
 				model: member.model,
 			},
 			task: task.description,
-			cwd: this.services.authStorage as unknown as string,
+			cwd: this.cwd,
 			services: this.services,
 			defaultMaxTurns: this.config.defaultMaxTurns,
 		};
 		// Delegate to existing spawnWorker which handles session creation + event forwarding
 		this.spawnWorker(workerOpts)
 			.then((result) => {
+				this.workerAssignments.set(result.workerId, { memberId, taskId: task.id });
 				task.status = result.status === "error" ? "blocked" : "in_progress";
 			})
 			.catch(() => {
@@ -304,6 +353,24 @@ export class WorkerSessionPool implements WorkerSessionPoolLike {
 		return [...this.messages];
 	}
 
+	getWorkerForMember(memberId: MemberId): WorkerSnapshot | undefined {
+		for (const [workerId, assignment] of this.workerAssignments) {
+			if (assignment.memberId === memberId) {
+				return this.workers.get(workerId)?.snapshot();
+			}
+		}
+		return undefined;
+	}
+
+	async cancelMember(memberId: MemberId): Promise<void> {
+		for (const [workerId, assignment] of this.workerAssignments) {
+			if (assignment.memberId === memberId) {
+				await this.cancel(workerId);
+				return;
+			}
+		}
+	}
+
 	// ── Lifecycle ──
 
 	async dispose(): Promise<void> {
@@ -314,6 +381,7 @@ export class WorkerSessionPool implements WorkerSessionPoolLike {
 		await this.cancelAll();
 		for (const w of this.workers.values()) w.dispose();
 		this.workers.clear();
+		this.workerAssignments.clear();
 		this.listeners.clear();
 		this.members.clear();
 		this.tasks.clear();

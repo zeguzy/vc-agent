@@ -233,7 +233,7 @@ export function createTeamTool(options: TeamToolOptions): ToolDefinition {
 			if (p.action === "poll") {
 				const memberId = p.memberId;
 				let snapshots = memberId
-					? ([pool.get(memberId)].filter(Boolean) as WorkerSnapshot[])
+					? ([pool.getWorkerForMember(memberId)].filter(Boolean) as WorkerSnapshot[])
 					: pool.list();
 
 				if (snapshots.length === 0) {
@@ -244,7 +244,7 @@ export function createTeamTool(options: TeamToolOptions): ToolDefinition {
 					const deadline = Date.now() + MAX_POLL_TIMEOUT_MS;
 					while (Date.now() < deadline) {
 						snapshots = memberId
-							? ([pool.get(memberId)].filter(Boolean) as WorkerSnapshot[])
+							? ([pool.getWorkerForMember(memberId)].filter(Boolean) as WorkerSnapshot[])
 							: pool.list();
 						const pending = snapshots.filter((s) => s.status === "running" || s.status === "idle");
 						if (pending.length === 0) break;
@@ -265,13 +265,16 @@ export function createTeamTool(options: TeamToolOptions): ToolDefinition {
 				return textResult(`${header}\n\n${parts.join("\n\n")}`);
 			}
 
-			if (p.memberId) {
-				await pool.cancel(p.memberId);
-				return textResult(`Member ${p.memberId.slice(0, 10)} cancelled.`);
+			if (p.action === "cancel") {
+				if (p.memberId) {
+					await pool.cancelMember(p.memberId);
+					return textResult(`Member ${p.memberId.slice(0, 10)} cancelled.`);
+				}
+				await pool.cancelAll();
+				return textResult("All members cancelled.");
 			}
 
-			await pool.cancelAll();
-			return textResult("All members cancelled.");
+			return errorResult(`unknown action: ${p.action}`);
 		},
 	};
 }

@@ -67,7 +67,7 @@ export class AgentServer {
 
 		const config = readConfig(opts.cwd);
 		this.teamConfig = resolveConfigTeams(config);
-		this.workerPool = new WorkerSessionPool(this.teamConfig, this.runtime.services);
+		this.workerPool = new WorkerSessionPool(this.teamConfig, this.runtime.services, this.cwd);
 		if (opts.poolRef) {
 			opts.poolRef.current = this.workerPool;
 		}

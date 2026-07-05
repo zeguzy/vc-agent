@@ -3,7 +3,14 @@ import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { SubagentServices } from "../src/agents/types.js";
-import type { WorkerPoolRef, WorkerSnapshot, WorkerSpawnOptions } from "../src/teams/types.js";
+import type {
+	MemberId,
+	TeamMember,
+	TeamMessage,
+	TeamTask,
+	WorkerPoolRef,
+	WorkerSnapshot,
+} from "../src/teams/types.js";
 import { createTeamTool } from "../src/tools/team.js";
 
 function makeServices(): SubagentServices {
@@ -28,6 +35,60 @@ function fakeSnapshot(overrides: Partial<WorkerSnapshot> = {}): WorkerSnapshot {
 		lastSummary: "Hello from worker",
 		lastError: null,
 		createdAt: Date.now(),
+		...overrides,
+	};
+}
+
+function fakeMember(overrides: Partial<TeamMember> = {}): TeamMember {
+	return {
+		id: "mem_test1",
+		name: "tester",
+		role: "dev",
+		goal: "test things",
+		status: "idle",
+		model: "default",
+		context: [],
+		turnCount: 0,
+		inputTokens: 0,
+		outputTokens: 0,
+		cost: 0,
+		lastSummary: null,
+		lastError: null,
+		createdAt: Date.now(),
+		...overrides,
+	};
+}
+
+function makeMinimalPool(
+	overrides: Partial<WorkerPoolRef["current"]> = {},
+): WorkerPoolRef["current"] {
+	return {
+		spawnWorker: async () => ({ workerId: "wkr_x", status: "running" as const }),
+		get: () => undefined,
+		list: () => [],
+		runningCount: () => 0,
+		cancel: async () => {},
+		cancelAll: async () => {},
+		dispose: async () => {},
+		subscribe: () => () => {},
+		createMember: () => fakeMember(),
+		removeMember: () => {},
+		getMember: () => undefined,
+		listMembers: () => [],
+		assignTask: () =>
+			({
+				id: "task_1",
+				title: "test",
+				description: "test",
+				status: "in_progress",
+				priority: "medium",
+			}) as TeamTask,
+		listTasks: () => [],
+		taskStatus: () => undefined,
+		sendMessage: () => {},
+		readInbox: () => [],
+		getWorkerForMember: () => undefined,
+		cancelMember: async () => {},
 		...overrides,
 	};
 }
@@ -64,191 +125,176 @@ describe("team tool", () => {
 		expect(result.content[0].text).toContain("teams not initialized yet");
 	});
 
-	it("spawn requires agent and task", async () => {
-		const tool = makeTool(tempDir, { current: null });
-		const result = await tool.execute("call-1", { action: "spawn" }, undefined as never);
-		expect(result.content[0].text).toContain("teams not initialized yet");
+	it("create-member requires name, role, and goal", async () => {
+		const pool = makeMinimalPool();
+		const tool = makeTool(tempDir, { current: pool });
+		const result = await tool.execute("call-1", { action: "create-member" }, undefined as never);
+		expect(result.content[0].text).toContain("name, role, and goal required");
 	});
 
-	it("spawn errors on unknown agent", async () => {
-		writeFileSync(
-			join(agentsDir, "test-worker.md"),
-			makeAgentMd("test-worker", "background: true\n"),
-		);
-		const spawns: WorkerSpawnOptions[] = [];
-		const poolRef: WorkerPoolRef = {
-			current: {
-				spawnWorker: async (opts) => {
-					spawns.push(opts);
-					return { workerId: "wkr_new", status: "running" as const };
-				},
-				get: () => undefined,
-				list: () => [],
-				runningCount: () => 0,
-				cancel: async () => {},
-				cancelAll: async () => {},
-				dispose: async () => {},
-				subscribe: () => () => {},
+	it("create-member succeeds with valid params", async () => {
+		let createdName: string | undefined;
+		const pool = makeMinimalPool({
+			createMember: (opts) => {
+				createdName = opts.name;
+				return fakeMember({ name: opts.name, role: opts.role, goal: opts.goal });
 			},
-		};
-
-		const tool = makeTool(tempDir, poolRef);
+		});
+		const tool = makeTool(tempDir, { current: pool });
 		const result = await tool.execute(
 			"call-1",
-			{ action: "spawn", agent: "nonexistent", task: "do thing" },
+			{ action: "create-member", name: "bob", role: "dev", goal: "code" },
 			undefined as never,
 		);
-		expect(result.content[0].text).toContain("not found");
+		expect(result.content[0].text).toContain("bob");
+		expect(result.content[0].text).toContain("idle");
+		expect(createdName).toBe("bob");
 	});
 
-	it("spawn accepts agent without background field", async () => {
-		writeFileSync(join(agentsDir, "plain-agent.md"), makeAgentMd("plain-agent", "\n"));
-		const spawns: WorkerSpawnOptions[] = [];
-		const poolRef: WorkerPoolRef = {
-			current: {
-				spawnWorker: async (opts) => {
-					spawns.push(opts);
-					return { workerId: "wkr_new", status: "running" as const };
-				},
-				get: () => undefined,
-				list: () => [],
-				runningCount: () => 0,
-				cancel: async () => {},
-				cancelAll: async () => {},
-				dispose: async () => {},
-				subscribe: () => () => {},
-			},
-		};
+	it("assign-task requires title, description, and memberId", async () => {
+		const pool = makeMinimalPool();
+		const tool = makeTool(tempDir, { current: pool });
+		const result = await tool.execute("call-1", { action: "assign-task" }, undefined as never);
+		expect(result.content[0].text).toContain("title, description, and memberId required");
+	});
 
-		const tool = makeTool(tempDir, poolRef);
+	it("assign-task succeeds with valid params", async () => {
+		let assignedMemberId: string | undefined;
+		const pool = makeMinimalPool({
+			assignTask: (opts) => {
+				assignedMemberId = opts.memberId;
+				return {
+					id: "task_1",
+					title: opts.title,
+					description: opts.description,
+					assignedTo: opts.memberId,
+					status: "in_progress",
+					priority: "medium",
+				} as TeamTask;
+			},
+		});
+		const tool = makeTool(tempDir, { current: pool });
 		const result = await tool.execute(
 			"call-1",
-			{ action: "spawn", agent: "plain-agent", task: "do thing" },
+			{
+				action: "assign-task",
+				title: "do work",
+				description: "implement X",
+				memberId: "mem_test1",
+			},
 			undefined as never,
 		);
-		expect(result.content[0].text).toContain("wkr_new");
-		expect(spawns).toHaveLength(1);
+		expect(result.content[0].text).toContain("do work");
+		expect(result.content[0].text).toContain("in_progress");
+		expect(assignedMemberId).toBe("mem_test1");
 	});
 
-	it("spawn succeeds with valid agent", async () => {
-		writeFileSync(join(agentsDir, "bg-agent.md"), makeAgentMd("bg-agent", "background: true\n"));
-		const spawns: WorkerSpawnOptions[] = [];
-		const poolRef: WorkerPoolRef = {
-			current: {
-				spawnWorker: async (opts) => {
-					spawns.push(opts);
-					return { workerId: "wkr_new", status: "running" as const };
-				},
-				get: () => undefined,
-				list: () => [],
-				runningCount: () => 0,
-				cancel: async () => {},
-				cancelAll: async () => {},
-				dispose: async () => {},
-				subscribe: () => () => {},
-			},
-		};
-
-		const tool = makeTool(tempDir, poolRef);
-		const result = await tool.execute(
-			"call-1",
-			{ action: "spawn", agent: "bg-agent", task: "do thing" },
-			undefined as never,
-		);
-		expect(result.content[0].text).toContain("wkr_new");
-		expect(result.content[0].text).toContain("running");
-		expect(spawns).toHaveLength(1);
-		expect(spawns[0].task).toBe("do thing");
-		expect(spawns[0].agent.name).toBe("bg-agent");
-	});
-
-	it("poll with no workers returns helpful message", async () => {
-		const poolRef: WorkerPoolRef = {
-			current: {
-				spawnWorker: async () => ({ workerId: "wkr_x", status: "running" as const }),
-				get: () => undefined,
-				list: () => [],
-				runningCount: () => 0,
-				cancel: async () => {},
-				cancelAll: async () => {},
-				dispose: async () => {},
-				subscribe: () => () => {},
-			},
-		};
-
-		const tool = makeTool(tempDir, poolRef);
+	it("poll with no members returns helpful message", async () => {
+		const pool = makeMinimalPool();
+		const tool = makeTool(tempDir, { current: pool });
 		const result = await tool.execute("call-1", { action: "poll" }, undefined as never);
-		expect(result.content[0].text).toContain("No workers found");
+		expect(result.content[0].text).toContain("No members found");
 	});
 
 	it("poll returns worker snapshot", async () => {
 		const snap = fakeSnapshot();
-		const poolRef: WorkerPoolRef = {
-			current: {
-				spawnWorker: async () => ({ workerId: "wkr_x", status: "running" as const }),
-				get: () => snap,
-				list: () => [snap],
-				runningCount: () => 1,
-				cancel: async () => {},
-				cancelAll: async () => {},
-				dispose: async () => {},
-				subscribe: () => () => {},
-			},
-		};
-
-		const tool = makeTool(tempDir, poolRef);
+		const pool = makeMinimalPool({
+			list: () => [snap],
+			runningCount: () => 1,
+		});
+		const tool = makeTool(tempDir, { current: pool });
 		const result = await tool.execute("call-1", { action: "poll" }, undefined as never);
 		expect(result.content[0].text).toContain("[running]");
 		expect(result.content[0].text).toContain("wkr_test1");
 	});
 
-	it("cancel single worker calls pool.cancel", async () => {
-		let cancelled: string | undefined;
-		const poolRef: WorkerPoolRef = {
-			current: {
-				spawnWorker: async () => ({ workerId: "wkr_x", status: "running" as const }),
-				get: () => undefined,
-				list: () => [],
-				runningCount: () => 0,
-				cancel: async (id) => {
-					cancelled = id;
-				},
-				cancelAll: async () => {},
-				dispose: async () => {},
-				subscribe: () => () => {},
+	it("cancel single member calls cancelMember", async () => {
+		let cancelledMemberId: string | undefined;
+		const pool = makeMinimalPool({
+			cancelMember: async (id) => {
+				cancelledMemberId = id;
 			},
-		};
-
-		const tool = makeTool(tempDir, poolRef);
+		});
+		const tool = makeTool(tempDir, { current: pool });
 		const result = await tool.execute(
 			"call-1",
-			{ action: "cancel", workerId: "wkr_to_cancel" },
+			{ action: "cancel", memberId: "mem_to_cancel" },
 			undefined as never,
 		);
-		expect(cancelled).toBe("wkr_to_cancel");
+		expect(cancelledMemberId).toBe("mem_to_cancel");
 		expect(result.content[0].text).toContain("cancelled");
 	});
 
-	it("cancel without workerId calls cancelAll", async () => {
+	it("cancel without memberId calls cancelAll", async () => {
 		let allCancelled = false;
-		const poolRef: WorkerPoolRef = {
-			current: {
-				spawnWorker: async () => ({ workerId: "wkr_x", status: "running" as const }),
-				get: () => undefined,
-				list: () => [],
-				runningCount: () => 0,
-				cancel: async () => {},
-				cancelAll: async () => {
-					allCancelled = true;
-				},
-				dispose: async () => {},
-				subscribe: () => () => {},
+		const pool = makeMinimalPool({
+			cancelAll: async () => {
+				allCancelled = true;
 			},
-		};
-
-		const tool = makeTool(tempDir, poolRef);
+		});
+		const tool = makeTool(tempDir, { current: pool });
 		const result = await tool.execute("call-1", { action: "cancel" }, undefined as never);
 		expect(allCancelled).toBe(true);
-		expect(result.content[0].text).toContain("All workers cancelled");
+		expect(result.content[0].text).toContain("All members cancelled");
+	});
+
+	it("unknown action returns error", async () => {
+		const pool = makeMinimalPool();
+		const tool = makeTool(tempDir, { current: pool });
+		const result = await tool.execute("call-1", { action: "foobar" }, undefined as never);
+		expect(result.content[0].text).toContain("unknown action");
+	});
+
+	it("list-members returns member overview", async () => {
+		const pool = makeMinimalPool({
+			listMembers: () => [fakeMember({ name: "alice", role: "dev", status: "idle" })],
+		});
+		const tool = makeTool(tempDir, { current: pool });
+		const result = await tool.execute("call-1", { action: "list-members" }, undefined as never);
+		expect(result.content[0].text).toContain("alice");
+		expect(result.content[0].text).toContain("[idle]");
+	});
+
+	it("list-tasks returns task overview", async () => {
+		const pool = makeMinimalPool({
+			listTasks: () => [
+				{
+					id: "task_1",
+					title: "fix bug",
+					description: "fix it",
+					status: "done",
+					priority: "high",
+					assignedTo: "mem_test1",
+				} as TeamTask,
+			],
+		});
+		const tool = makeTool(tempDir, { current: pool });
+		const result = await tool.execute("call-1", { action: "list-tasks" }, undefined as never);
+		expect(result.content[0].text).toContain("fix bug");
+		expect(result.content[0].text).toContain("[done]");
+	});
+
+	it("send-message requires memberId and content", async () => {
+		const pool = makeMinimalPool();
+		const tool = makeTool(tempDir, { current: pool });
+		const result = await tool.execute("call-1", { action: "send-message" }, undefined as never);
+		expect(result.content[0].text).toContain("memberId (from) and content required");
+	});
+
+	it("read-inbox returns messages", async () => {
+		const pool = makeMinimalPool({
+			readInbox: () => [
+				{
+					id: "msg_1",
+					from: "mem_a",
+					to: "mem_b" as MemberId,
+					content: "hello",
+					timestamp: Date.now(),
+				} as TeamMessage,
+			],
+		});
+		const tool = makeTool(tempDir, { current: pool });
+		const result = await tool.execute("call-1", { action: "read-inbox" }, undefined as never);
+		expect(result.content[0].text).toContain("hello");
 	});
 });
