@@ -64,21 +64,20 @@ const UserMessageView = memo(function UserMessageView({
 	index: number;
 }) {
 	return (
-		<box
-			borderStyle="rounded"
-			border={["top", "right", "bottom", "left"]}
-			borderColor={colors.borderSoft}
-			marginTop={index === 0 ? 0 : 1}
-			flexShrink={0}
-		>
+		<box marginTop={index === 0 ? 0 : 1} flexShrink={0} flexDirection="column">
+			<box borderStyle="single" border={["top"]} borderColor={colors.borderDim} />
 			<box
-				backgroundColor={colors.backgroundPanel}
+				backgroundColor={colors.backgroundInset}
 				paddingTop={1}
 				paddingBottom={1}
 				paddingLeft={2}
 				paddingRight={2}
 				flexShrink={0}
+				flexDirection="row"
 			>
+				<text width={2} fg={colors.primary}>
+					{icons.user}
+				</text>
 				<text fg={colors.text}>{message.content}</text>
 			</box>
 		</box>
@@ -284,7 +283,7 @@ const ToolMessageView = memo(function ToolMessageView({ message }: { message: Me
 			? colors.borderActive
 			: message.toolStatus === "error"
 				? colors.error
-				: colors.borderSoft;
+				: colors.borderDim;
 
 	const { label, lines } = formatToolDetail(message.toolName, message.toolArgs);
 	const editPatch = message.toolName === "edit" ? getEditPatch(message) : undefined;
@@ -301,21 +300,21 @@ const ToolMessageView = memo(function ToolMessageView({ message }: { message: Me
 
 	return (
 		<box
-			borderStyle="rounded"
-			border={["top", "right", "bottom", "left"]}
+			borderStyle="single"
+			border={["top"]}
 			borderColor={borderColor}
 			backgroundColor={colors.backgroundInset}
 			marginTop={1}
 			flexShrink={0}
 			flexDirection="column"
 		>
-			<box flexDirection="row" paddingLeft={1} paddingRight={1} paddingTop={0} paddingBottom={0}>
+			<box flexDirection="row" paddingLeft={2} paddingRight={2} paddingTop={1} paddingBottom={0}>
 				<text fg={statusFg}>{icon} </text>
 				<text fg={colors.secondary}>{label}</text>
 				{editFilePath && <text fg={colors.textMuted}> {editFilePath}</text>}
 			</box>
 			{lines.length > 0 && (
-				<box flexDirection="column" paddingLeft={3} paddingRight={1} paddingBottom={0}>
+				<box flexDirection="column" paddingLeft={4} paddingRight={2} paddingBottom={0}>
 					{
 						// biome-ignore lint/suspicious/noArrayIndexKey: diff lines have no stable IDs
 						lines.map((line, i) => (
@@ -336,16 +335,16 @@ const ToolMessageView = memo(function ToolMessageView({ message }: { message: Me
 				</box>
 			)}
 			{editPatch && (
-				<box paddingLeft={1} paddingRight={1} paddingTop={1} paddingBottom={1}>
+				<box paddingLeft={2} paddingRight={2} paddingTop={1} paddingBottom={1}>
 					<EditDiffView patch={editPatch} filePath={editFilePath} />
 				</box>
 			)}
 			{resultLines.length > 0 && (
 				<box
 					flexDirection="column"
-					paddingLeft={3}
-					paddingRight={1}
-					paddingBottom={0}
+					paddingLeft={4}
+					paddingRight={2}
+					paddingBottom={1}
 					marginTop={0}
 				>
 					{
@@ -369,26 +368,22 @@ const ReadGroupView = memo(function ReadGroupView({ reads }: { reads: Message[] 
 	const allRunning = reads.every((r) => r.toolStatus === "running");
 	const hasError = reads.some((r) => r.toolStatus === "error");
 
-	const borderColor = allRunning
-		? colors.borderActive
-		: hasError
-			? colors.error
-			: colors.borderSoft;
+	const borderColor = allRunning ? colors.borderActive : hasError ? colors.error : colors.borderDim;
 
 	const headerIcon = allRunning ? icons.toolRunning : hasError ? icons.toolError : icons.toolDone;
 	const headerFg = allRunning ? colors.textMuted : hasError ? colors.error : colors.success;
 
 	return (
 		<box
-			borderStyle="rounded"
-			border={["top", "right", "bottom", "left"]}
+			borderStyle="single"
+			border={["top"]}
 			borderColor={borderColor}
 			backgroundColor={colors.backgroundInset}
 			marginTop={1}
 			flexShrink={0}
 			flexDirection="column"
 		>
-			<box flexDirection="row" paddingLeft={1} paddingRight={1}>
+			<box flexDirection="row" paddingLeft={2} paddingRight={2} paddingTop={1}>
 				<text fg={headerFg}>{headerIcon} </text>
 				<text fg={colors.secondary}>read</text>
 				<text fg={colors.textSubtle}> · {reads.length} files · </text>
@@ -405,7 +400,7 @@ const ReadGroupView = memo(function ReadGroupView({ reads }: { reads: Message[] 
 							? colors.error
 							: colors.success;
 				return (
-					<box key={msg.id} flexDirection="row" paddingLeft={2} paddingRight={1}>
+					<box key={msg.id} flexDirection="row" paddingLeft={3} paddingRight={2}>
 						<text fg={colors.textSubtle}>[{i + 1}] </text>
 						<text fg={statusFg}>{statusIcon} </text>
 						<text fg={colors.textSubtle}>
@@ -464,7 +459,7 @@ const TodoMessageView = memo(function TodoMessageView({ message }: { message: Me
 const SeparatorView = memo(function SeparatorView() {
 	return (
 		<box marginTop={1} flexShrink={0}>
-			<box border={["top"]} borderColor={colors.borderActive} />
+			<box border={["top"]} borderColor={colors.borderDim} />
 		</box>
 	);
 });
