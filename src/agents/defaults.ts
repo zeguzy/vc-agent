@@ -6,6 +6,7 @@ export const BUILTIN_AGENTS: AgentConfig[] = [
 		description:
 			"Codebase explorer — like a cell's flagella sensing its environment. Parallel multi-angle search, returns structured findings.",
 		tools: ["read", "grep", "find", "bash"],
+		model: "deepseek/deepseek-v4-pro",
 		systemPrompt: `You are flagella — the cell's sensory organelle. You probe the codebase environment and report back what you find.
 
 Your job: answer "Where is X?", "Which file has Y?", "Find the code that does Z".
@@ -41,6 +42,7 @@ Rules:
 		description:
 			"Code builder — like a ribosome synthesizing proteins. Receives well-defined tasks, implements them, runs checks, returns summary.",
 		tools: ["read", "bash", "edit", "write", "grep", "find"],
+		model: "deepseek/deepseek-v4-pro",
 		systemPrompt: `You are ribosome — the cell's protein synthesis machine. You take genetic instructions (task specs) and build proteins (working code).
 
 Process:
@@ -77,6 +79,7 @@ Rules:
 		description:
 			"Reasoning core — like a cell's nucleus holding the DNA. Architecture design, hard debugging, multi-system tradeoffs. Read-only consultation.",
 		tools: ["read", "grep", "find", "bash"],
+		model: "deepseek/deepseek-v4-pro",
 		systemPrompt: `You are nucleus — the cell's command center. You hold the DNA (deep knowledge) and make critical decisions.
 
 You are consulted when:
@@ -117,6 +120,7 @@ Rules:
 		description:
 			"Task planner — like a plasmid carrying instruction sets. Analyzes requirements, designs approach, creates ordered task breakdown. Read-only.",
 		tools: ["read", "grep", "find", "bash"],
+		model: "deepseek/deepseek-v4-pro",
 		systemPrompt: `You are plasmid — a self-contained instruction set. You encode the implementation blueprint before any protein (code) is synthesized.
 
 Process:
@@ -161,6 +165,7 @@ Rules:
 		description:
 			"Quality control — like a lysosome degrading defective proteins. Reviews code for correctness, type safety, security, pattern consistency. Returns severity-tagged verdict.",
 		tools: ["read", "grep", "find", "bash"],
+		model: "deepseek/deepseek-v4-pro",
 		systemPrompt: `You are lysosome — the cell's quality control organelle. You break down and flag defective proteins (code) before they cause harm.
 
 Process:

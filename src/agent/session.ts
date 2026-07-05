@@ -67,6 +67,30 @@ export function getBaseMode(config?: Config): AgentMode {
 	return config?.teams?.enabled !== false ? "team" : "standard";
 }
 
+/**
+ * Build the cycle map for Tab key / /plan agent mode switching.
+ *
+ * The cycle maps each mode to the next in a circular list. When
+ * `config.teams.agentModes` is set, it uses the user-defined order;
+ * otherwise the default depends on `teams.enabled`:
+ *   enabled=false → standard → planner → orchestrator → standard
+ *   enabled=true  → standard → team → planner → orchestrator → standard
+ */
+export function buildAgentModeCycle(config?: Config): Record<string, AgentMode> {
+	const userModes = config?.teams?.agentModes;
+	const modes: AgentMode[] =
+		userModes && userModes.length > 0
+			? userModes
+			: config?.teams?.enabled !== false
+				? ["standard", "team", "planner", "orchestrator"]
+				: ["standard", "planner", "orchestrator"];
+	const cycle: Record<string, AgentMode> = {};
+	for (let i = 0; i < modes.length; i++) {
+		cycle[modes[i]] = modes[(i + 1) % modes.length];
+	}
+	return cycle;
+}
+
 export function appendSystemPromptFor(agentMode: AgentMode, config?: Config): string[] | undefined {
 	if (agentMode === "team") return [TEAM_ORCHESTRATOR_PROMPT];
 	if (agentMode === "orchestrator") {
@@ -212,7 +236,7 @@ export async function createSession(options: SessionOptions): Promise<SessionRes
 						poolRef: options.poolRef,
 						cwd: options.cwd,
 						services: svc,
-						parentModel: svc.model,
+						parentModel: () => result.session?.model,
 					}),
 				]
 			: [];
@@ -256,7 +280,8 @@ export async function createRuntime(options: RuntimeOptions): Promise<RuntimeRes
 	const sessionDir = resolveSessionDir();
 	const sessionManager = await buildSessionManager(options, sessionDir);
 	const agentDir = join(homedir(), ".config", "openagent");
-	const agentMode = options.agentMode ?? (options.config?.teams?.enabled !== false ? "team" : "standard");
+	const agentMode =
+		options.agentMode ?? (options.config?.teams?.enabled !== false ? "team" : "standard");
 
 	const svc = await initServices({
 		cwd,
@@ -279,7 +304,7 @@ export async function createRuntime(options: RuntimeOptions): Promise<RuntimeRes
 							poolRef: options.poolRef,
 							cwd: fCwd,
 							services: svc,
-							parentModel: svc.model,
+							parentModel: () => result.session?.model,
 						}),
 					]
 				: [];

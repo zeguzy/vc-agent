@@ -248,11 +248,12 @@ describe("team tool", () => {
 	it("list-members returns member overview", async () => {
 		const pool = makeMinimalPool({
 			listMembers: () => [fakeMember({ name: "alice", role: "dev", status: "idle" })],
+			listTasks: () => [],
 		});
 		const tool = makeTool(tempDir, { current: pool });
 		const result = await tool.execute("call-1", { action: "list-members" }, undefined as never);
 		expect(result.content[0].text).toContain("alice");
-		expect(result.content[0].text).toContain("[idle]");
+		expect(result.content[0].text).toContain("idle");
 	});
 
 	it("list-tasks returns task overview", async () => {

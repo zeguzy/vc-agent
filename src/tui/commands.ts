@@ -1,5 +1,5 @@
-import { getBaseMode } from "../agent/session.js";
 import type { AgentMode } from "../client/types.js";
+import { buildAgentModeCycle, getBaseMode } from "../agent/session.js";
 import { type CommandContext, commandRegistry } from "../commands/registry.js";
 import { writeConfig } from "../config.js";
 import {
@@ -208,13 +208,9 @@ export function registerBuiltinCommands(): void {
 		usage: "/plan",
 		handler: (_args: string, ctx: CommandContext) => {
 			ctx.setAgentMode((prev) => {
-				const cycle: Record<string, AgentMode> = {
-					standard: "planner",
-					planner: "orchestrator",
-					orchestrator: "standard",
-				};
-				const next = cycle[prev] ?? "standard";
-				ctx.client.setAgentMode(next === "standard" ? getBaseMode(ctx.getConfig()) : next);
+				const cycle = buildAgentModeCycle(ctx.getConfig());
+				const next = cycle[prev] ?? getBaseMode(ctx.getConfig());
+				ctx.client.setAgentMode(next);
 				return next;
 			});
 		},
@@ -465,9 +461,8 @@ export function registerBuiltinCommands(): void {
 
 	commandRegistry.register({
 		name: "team",
-		description: "Team management: create-member / assign-task / poll / cancel / send-message",
-		usage:
-			"/team create-member <name> <role> <goal> | /team assign-task | /team poll [memberId] | /team cancel [memberId]",
+		description: "Team worker management: spawn / poll / cancel",
+		usage: "/team spawn <agent> <task> | /team poll [workerId] | /team cancel [workerId]",
 		handler: (args: string, ctx: CommandContext) => {
 			const config = ctx.getConfig();
 			if (config.teams?.enabled === false) {
@@ -696,7 +691,7 @@ export function buildHelpText(): string {
 		"    j · k          Scroll down / up",
 		"    g · G          Scroll to top / bottom",
 		"    t              Toggle thinking collapse",
-		"    Tab            Cycle agent mode (standard/planner/orchestrator)",
+		"    Tab            Cycle agent mode (standard/team/planner/orchestrator)",
 	].join("\n");
 }
 

@@ -6,7 +6,6 @@ import {
 	createSeparator,
 	createToolMessage,
 	createWorkerMessage,
-	createWorkerSummaryMessage,
 	type Message,
 } from "../../message.js";
 import type { AgentClientEvent } from "../../teams/types.js";
@@ -159,96 +158,137 @@ export function useSessionEvents(
 	}, [client, streaming, setMessages, setIsRunning, setContextUsage, onQuestionAsked]);
 
 	const workerMsgMap = useRef<Map<string, string>>(new Map());
+	const workerThrottles = useRef<
+		Map<string, { text: string; agent: string; timer: ReturnType<typeof setTimeout> | null }>
+	>(new Map());
+	const applyWorkerTextRef = useRef<(id: string, agent: string, text: string) => void>(() => {});
+
+	const flushWorkerText = (workerId: string) => {
+		const entry = workerThrottles.current.get(workerId);
+		if (!entry) return;
+		workerThrottles.current.delete(workerId);
+		applyWorkerTextRef.current(workerId, entry.agent, entry.text);
+	};
 
 	useEffect(() => {
+		function applyWorkerText(workerId: string, workerAgent: string, text: string) {
+			const existingId = workerMsgMap.current.get(workerId);
+			if (existingId) {
+				setMessages((prev) => prev.map((m) => (m.id === existingId ? { ...m, content: text } : m)));
+			} else if (text) {
+				const msg = createWorkerMessage(workerId, workerAgent, text);
+				workerMsgMap.current.set(workerId, msg.id);
+				setMessages((prev) => [...prev, msg]);
+			}
+		}
+		applyWorkerTextRef.current = applyWorkerText;
+
 		const onWorkerEvent = (event: AgentClientEvent) => {
-			const type = (event as { type: string }).type;
-			if (type !== "team_worker_event" && type !== "team_member_event") return;
+			// Team status dashboard — render as visible code block
+			if ((event as { type: string }).type === "team_status_update") {
+				const text = (event as { text: string }).text;
+				console.error("[tui] team_status_update received:", text.slice(0, 50));
+				setMessages((prev) => {
+					const filtered = prev.filter((m) => !m.id.startsWith("team-status-"));
+					return [
+						...filtered,
+						{
+							id: `team-status-${Date.now()}`,
+							role: "assistant" as const,
+							content: `\`\`\`\n${text}\n\`\`\``,
+						},
+					];
+				});
+				return;
+			}
 
-			const te = event as {
-				kind: string;
-				payload: { message?: { content?: unknown; usage?: { cost?: { total?: number } } } };
-				workerId?: string;
-				memberId?: string;
-				workerAgent?: string;
-				memberName?: string;
-			};
-			const wid = te.workerId ?? te.memberId ?? "";
-			const wAgent = te.workerAgent ?? te.memberName ?? "";
-			const existingId = workerMsgMap.current.get(wid);
+			if (event.type !== "team_worker_event") return;
 
-			if (te.kind === "message_delta") {
-				const deltaContent = extractAssistantContent(te.payload.message?.content).text;
+			const { workerId, workerAgent, kind } = event;
 
-				if (existingId) {
+			if (kind === "message_delta") {
+				const msgContent = (event.payload as { message?: { content?: unknown } }).message?.content;
+				const { text } = extractAssistantContent(msgContent);
+
+				let entry = workerThrottles.current.get(workerId);
+				if (!entry) {
+					entry = { text, agent: workerAgent, timer: null };
+					workerThrottles.current.set(workerId, entry);
+				} else {
+					entry.text = text;
+				}
+
+				if (!entry.timer) {
+					entry.timer = setTimeout(() => {
+						flushWorkerText(workerId);
+					}, 80);
+				}
+			}
+
+			if (kind === "message_end") {
+				const entry = workerThrottles.current.get(workerId);
+				if (entry?.timer) {
+					clearTimeout(entry.timer);
+					workerThrottles.current.delete(workerId);
+				}
+				const msgContent = (event.payload as { message?: { content?: unknown } }).message?.content;
+				const { text } = extractAssistantContent(msgContent);
+				applyWorkerText(workerId, workerAgent, text);
+
+				const usage = (event.payload as { message?: { usage?: { cost?: { total?: number } } } })
+					.message?.usage;
+				const cost = usage?.cost?.total;
+
+				const existingId = workerMsgMap.current.get(workerId);
+				if (existingId && cost) {
 					setMessages((prev) =>
 						prev.map((m) =>
-							m.id === existingId ? { ...m, content: `${m.content}${deltaContent}` } : m,
+							m.id === existingId ? { ...m, workerCost: (m.workerCost ?? 0) + cost } : m,
 						),
 					);
+				}
+			}
+
+			if (kind === "agent_end") {
+				const existingId = workerMsgMap.current.get(workerId);
+				if (existingId) {
+					setMessages((prev) =>
+						prev.map((m) => (m.id === existingId ? { ...m, workerStatus: "done" } : m)),
+					);
 				} else {
-					const msg = createWorkerMessage(wid, wAgent, deltaContent);
-					workerMsgMap.current.set(wid, msg.id);
+					const msg = createWorkerMessage(workerId, workerAgent, "");
+					msg.workerStatus = "done";
+					workerMsgMap.current.set(workerId, msg.id);
 					setMessages((prev) => [...prev, msg]);
 				}
 			}
 
-			if (te.kind === "message_end") {
-				const cost = te.payload.message?.usage?.cost?.total;
-
+			if (kind === "error" || kind === "cancelled") {
+				const workerError = event.lastError;
+				const existingId = workerMsgMap.current.get(workerId);
 				if (existingId) {
 					setMessages((prev) =>
-						prev.map((m) =>
-							m.id === existingId ? { ...m, workerCost: (m.workerCost ?? 0) + (cost ?? 0) } : m,
-						),
-					);
-				}
-			}
-
-			if (te.kind === "agent_end") {
-				if (existingId) {
-					setMessages((prev) =>
-						prev.map((m) =>
-							m.id === existingId
-								? {
-										...m,
-										role: "worker-summary",
-										workerStatus: "done",
-									}
-								: m,
-						),
+						prev.map((m) => (m.id === existingId ? { ...m, workerStatus: kind, workerError } : m)),
 					);
 				} else {
-					const msg = createWorkerSummaryMessage(wid, wAgent, "done");
-					workerMsgMap.current.set(wid, msg.id);
-					setMessages((prev) => [...prev, msg]);
-				}
-			}
-
-			if (te.kind === "error") {
-				if (existingId) {
-					setMessages((prev) =>
-						prev.map((m) =>
-							m.id === existingId
-								? {
-										...m,
-										role: "worker-summary",
-										workerStatus: "error",
-									}
-								: m,
-						),
-					);
-				} else {
-					const msg = createWorkerSummaryMessage(wid, wAgent, "error");
-					workerMsgMap.current.set(wid, msg.id);
+					const msg = createWorkerMessage(workerId, workerAgent, workerError ?? "");
+					msg.workerStatus = kind;
+					if (workerError) msg.workerError = workerError;
+					workerMsgMap.current.set(workerId, msg.id);
 					setMessages((prev) => [...prev, msg]);
 				}
 			}
 		};
 
 		const unsub = client.subscribeTeam(onWorkerEvent);
-		return () => unsub();
-	}, [client, setMessages]);
+		return () => {
+			unsub();
+			for (const entry of workerThrottles.current.values()) {
+				if (entry.timer) clearTimeout(entry.timer);
+			}
+			workerThrottles.current.clear();
+		};
+	}, [client, setMessages, flushWorkerText]);
 
 	return { toolCallIdToMsgId };
 }

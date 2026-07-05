@@ -38,7 +38,7 @@ export const keymap: readonly KeyBinding[] = [
 		mode: "normal",
 		key: { name: "tab" },
 		action: "toggleAgentMode",
-		desc: "Cycle agent mode (standard/planner/orchestrator)",
+		desc: "Cycle agent mode (standard/team/planner/orchestrator)",
 	},
 ] as const;
 

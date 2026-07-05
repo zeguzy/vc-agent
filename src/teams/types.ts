@@ -28,25 +28,22 @@ export type WorkerStatus =
 
 /** WorkerEvent 经 WorkerSessionPool 转发时的分类 kind——与 Pi SDK event.type 对齐但便于订阅者路由。 */
 export type WorkerEventKind =
-	| "message_delta" // 含 text_delta 的 message_update（流式 token）
-	| "message_end" // assistant 消息终结
-	| "tool_call" // tool_execution_start
-	| "tool_result" // tool_execution_end
-	| "agent_end" // session agent_end（worker 完整回合终态）
-	| "error"; // worker 内部抛错或被 cancel
+	| "message_delta"
+	| "message_end"
+	| "tool_call"
+	| "tool_result"
+	| "agent_end"
+	| "error"
+	| "cancelled";
 
 /** 经 `WorkerSessionPool` 聚合后转发到 AgentServer.eventHandlers 的包装事件。 */
 export interface WorkerEventEnvelope {
-	/** 固定为 `"team_worker_event"`，订阅者据此收窄判断，不污染现有 AgentSessionEvent.type 取值集。 */
 	readonly type: "team_worker_event";
-	/** 所属 worker id。 */
 	readonly workerId: WorkerId;
-	/** worker 使用的 agent 定义的 `name` 字段（如 `"lysosome"`）。 */
 	readonly workerAgent: string;
-	/** 事件类别（worker 生命周期视角）。 */
 	readonly kind: WorkerEventKind;
-	/** 原始 Pi SDK 事件，保留以供订阅者透传。 */
 	readonly payload: AgentSessionEvent;
+	readonly lastError?: string;
 }
 
 /** 主 agent 结束或 session 切换自动取消孤儿 worker 时下发的通知事件。 */
@@ -57,8 +54,18 @@ export interface TeamOrphansCancelledEvent {
 	readonly cause: "agent_end" | "session_change";
 }
 
+/** Team status dashboard event — injected periodically and on state change. */
+export interface TeamStatusUpdateEvent {
+	readonly type: "team_status_update";
+	readonly text: string;
+}
+
 /** AgentServer 事件总线统一类型；现有 `AgentSessionEvent` 子集向后兼容现有 handler。 */
-export type AgentClientEvent = AgentSessionEvent | WorkerEventEnvelope | TeamOrphansCancelledEvent;
+export type AgentClientEvent =
+	| AgentSessionEvent
+	| WorkerEventEnvelope
+	| TeamOrphansCancelledEvent
+	| TeamStatusUpdateEvent;
 
 /** 对外暴露的 worker 状态快照（list / get 返回；不含 session 实例引用等运行期 opaque 句柄）。 */
 export interface WorkerSnapshot {
@@ -106,12 +113,19 @@ export interface TeamConfig {
 	cancelOrphansOnSessionChange?: boolean;
 	/** worker 工具收口配置。 */
 	workerPermissions?: TeamWorkerPermissions;
-	/** V2: idle 成员数上限，默认 maxWorkers * 2 */
+	/** V2: idle 成员数上限，默认 8 */
 	maxIdleMembers?: number;
 	/** V2: 消息历史保留条数，默认 100 */
 	messageHistoryLimit?: number;
 	/** V2: 每成员每分钟消息发送上限，默认 5 */
 	messageRateLimitPerMinute?: number;
+	/**
+	 * Tab 键 / /plan 命令的 agent mode 循环列表。
+	 * 默认值取决于 teams.enabled：
+	 *   enabled=false → ["standard", "planner", "orchestrator"]
+	 *   enabled=true  → ["standard", "team", "planner", "orchestrator"]
+	 */
+	agentModes?: Array<"standard" | "team" | "planner" | "orchestrator">;
 }
 
 /** 把缺省字段补齐后的 Team 配置（内部直接消费）。 */
@@ -124,11 +138,11 @@ export interface ResolvedTeamConfig {
 	cancelOrphansOnSessionChange: boolean;
 	defaultWorkerModel?: string;
 	workerPermissions?: TeamWorkerPermissions;
-	/** idle 成员数上限 */
+	/** V2: idle 成员数上限 */
 	maxIdleMembers: number;
-	/** 消息历史保留条数 */
+	/** V2: 消息历史保留条数 */
 	messageHistoryLimit: number;
-	/** 每成员每分钟消息发送上限 */
+	/** V2: 每成员每分钟消息发送上限 */
 	messageRateLimitPerMinute: number;
 }
 
@@ -184,19 +198,13 @@ export interface WorkerSessionPoolLike {
 	get(id: WorkerId): WorkerSnapshot | undefined;
 	list(): WorkerSnapshot[];
 	runningCount(): number;
+	isTeamMember(workerId: WorkerId): boolean;
 	cancel(id: WorkerId): Promise<void>;
 	cancelAll(): Promise<void>;
 	dispose(): Promise<void>;
 	subscribe(listener: (event: WorkerEventEnvelope) => void): () => void;
 	// V2 team methods
-	createMember(opts: {
-		name: string;
-		role: string;
-		goal: string;
-		model?: string;
-		tools?: string[];
-		systemPrompt?: string;
-	}): TeamMember;
+	createMember(opts: { name: string; role: string; goal: string; model?: string }): TeamMember;
 	removeMember(id: MemberId): void;
 	getMember(id: MemberId): TeamMember | undefined;
 	listMembers(): TeamMember[];
@@ -205,6 +213,8 @@ export interface WorkerSessionPoolLike {
 		description: string;
 		memberId: MemberId;
 		priority?: "high" | "medium" | "low";
+		cwd?: string;
+		parentModel?: ResolvedModel;
 	}): TeamTask;
 	listTasks(): TeamTask[];
 	taskStatus(taskId: string): TeamTask | undefined;
@@ -212,6 +222,8 @@ export interface WorkerSessionPoolLike {
 	readInbox(memberId?: MemberId): TeamMessage[];
 	getWorkerForMember(memberId: MemberId): WorkerSnapshot | undefined;
 	cancelMember(memberId: MemberId): Promise<void>;
+	findMemberByWorkerId(workerId: WorkerId): TeamMember | undefined;
+	findTaskByWorkerId(workerId: WorkerId): TeamTask | undefined;
 }
 
 /**
@@ -228,136 +240,13 @@ export interface WorkerPoolRef {
 
 /** Worker 实例的事件总线接口——pool `subscribe` 派发来自 worker.subscribe 的 envelope。 */
 export interface WorkerEventEmitter {
-	/** 内部用于把原始 Pi SDK event 包装为 envelope 后 emit。 */
-	emit(kind: WorkerEventKind, payload: AgentSessionEvent): void;
-	/** 订阅所有 WorkerEventEnvelope；返回 unsubscribe。 */
+	emit(kind: WorkerEventKind, payload: AgentSessionEvent, lastError?: string): void;
 	subscribe(listener: (event: WorkerEventEnvelope) => void): () => void;
-	/** dispose：清空所有 listener。 */
 	dispose(): void;
 }
 
-// ============================================================================
-// Team Member Model — V2 团队成员系统（替换 Worker 模型）
-// ============================================================================
-
-/** 成员 id，稳定生命周期唯一。格式：`mem_<8 字符 base32>`。 */
-export type MemberId = string;
-
-/** 成员生命周期状态。 */
-export type MemberStatus =
-	| "idle" // 已创建但未启动
-	| "working" // session.prompt 进行中
-	| "done" // agent_end 正常完成
-	| "error" // prompt reject / maxTurns 命中 / 网络 drop
-	| "cancelled"; // 被 cancel 主动中止
-
-/** 团队成员身份模型。Leader 动态创建，不限预设角色。 */
-export interface TeamMember {
-	id: MemberId;
-	/** Leader 指定的拟人化名字 */
-	name: string;
-	/** Leader 指定的职责描述 */
-	role: string;
-	/** Leader 指定的目标 */
-	goal: string;
-	status: MemberStatus;
-	model: string;
-	tools?: string[];
-	systemPrompt?: string;
-	permissionMode?: "default" | "plan" | "acceptEdits";
-	/** 对话历史摘要 */
-	context: string[];
-	turnCount: number;
-	inputTokens: number;
-	outputTokens: number;
-	cost: number;
-	lastSummary: string | null;
-	lastError: string | null;
-	createdAt: number;
-}
-
-/** 任务优先级。 */
-export type TaskPriority = "high" | "medium" | "low";
-
-/** 任务状态。 */
-export type TaskStatus = "open" | "assigned" | "in_progress" | "done" | "blocked";
-
-/** 任务池中的任务。 */
-export interface TeamTask {
-	id: string;
-	title: string;
-	description: string;
-	assignedTo?: MemberId;
-	status: TaskStatus;
-	priority: TaskPriority;
-	result?: string;
-	blockReason?: string;
-}
-
-/** 团队成员间消息。 */
-export interface TeamMessage {
-	id: string;
-	from: MemberId;
-	to: MemberId | "team";
-	content: string;
-	timestamp: number;
-}
-
-/** 成员事件分类 kind — 与 WorkerEventKind 对齐。 */
-export type MemberEventKind = WorkerEventKind;
-
-/** TeamSession 转发给订阅者的成员事件。 */
-export interface TeamMemberEvent {
-	readonly type: "team_member_event";
-	readonly memberId: MemberId;
-	readonly memberName: string;
-	readonly kind: MemberEventKind;
-	readonly payload: AgentSessionEvent;
-}
-
-/** AgentServer 事件总线统一类型（V2 成员事件加入）。 */
-export type AgentClientEventV2 =
-	| AgentSessionEvent
-	| WorkerEventEnvelope
-	| TeamMemberEvent
-	| TeamOrphansCancelledEvent;
-
-/** 团队配置扩展。 */
-export interface TeamConfigV2 extends TeamConfig {
-	/** idle 成员数上限，默认 maxWorkers * 2 */
-	maxIdleMembers?: number;
-	/** 消息历史保留条数，默认 100 */
-	messageHistoryLimit?: number;
-	/** 每成员每分钟消息发送上限，默认 5 */
-	messageRateLimitPerMinute?: number;
-}
-
-// ============================================================================
-// Deprecated — V1 Worker 模型，保留兼容层
-// ============================================================================
-
-/** @deprecated V2 成员模型替代。保留 `generateMemberId` 和 `TeamMember` 系统。 */
+/** `Worker.spawn` 工厂入参。复用 `src/agents/types.SubagentServices` 保证 authStorage/modelRegistry/settingsManager 句柄一致。 */
 export type ResolvedModel = ReturnType<ModelRegistry["getAll"]>[number];
-
-/**
- * @deprecated 使用 `generateMemberId()` 替代。
- * 生成形如 `mem_<8 字符 base32>` 的新 memberId。
- */
-export function generateMemberId(): MemberId {
-	const alphabet = "abcdefghijklmnopqrstuvwxyz234567";
-	const rand = new Uint8Array(8);
-	(globalThis.crypto as Crypto).getRandomValues(rand);
-	let suffix = "";
-	for (const b of rand) suffix += alphabet[b % 32];
-	return `mem_${suffix}`;
-}
-
-/**
- * @deprecated 使用 `generateMemberId()` 替代。
- */
-export function generateWorkerId(): WorkerId {
-	return generateMemberId().replace(/^mem_/, "wkr_");
-}
 
 export interface WorkerSpawnOptions {
 	agent: AgentConfig;
@@ -369,4 +258,67 @@ export interface WorkerSpawnOptions {
 	defaultWorkerModel?: string;
 	signal?: AbortSignal;
 	onDelta?: (text: string) => void;
+}
+
+/** 生成形如 `wkr_<8 字符 base32>` 的新 workerId；带时间前缀避免短间隔依赖伪随机碰撞。 */
+export function generateWorkerId(): WorkerId {
+	const alphabet = "abcdefghijklmnopqrstuvwxyz234567";
+	const rand = new Uint8Array(8);
+	(globalThis.crypto as Crypto).getRandomValues(rand);
+	let suffix = "";
+	for (const b of rand) suffix += alphabet[b % 32];
+	return `wkr_${suffix}`;
+}
+
+// ── V2 Team Member Types ──
+
+/** 成员 id。格式：`mem_<8 char base32>`。 */
+export type MemberId = string;
+
+export type MemberStatus = "idle" | "working" | "done" | "error" | "cancelled";
+
+export interface TeamMember {
+	id: MemberId;
+	name: string;
+	role: string;
+	goal: string;
+	status: MemberStatus;
+	model: string;
+	tools?: string[];
+	systemPrompt?: string;
+	context: string[];
+	turnCount: number;
+	inputTokens: number;
+	outputTokens: number;
+	cost: number;
+	lastSummary: string | null;
+	lastError: string | null;
+	createdAt: number;
+}
+
+export type TaskPriority = "high" | "medium" | "low";
+export type TaskStatus = "open" | "assigned" | "in_progress" | "done" | "blocked";
+
+export interface TeamTask {
+	id: string;
+	title: string;
+	description: string;
+	assignedTo?: MemberId;
+	status: TaskStatus;
+	priority: TaskPriority;
+	result?: string;
+	blockReason?: string;
+}
+
+export interface TeamMessage {
+	id: string;
+	from: MemberId;
+	to: MemberId | "team";
+	content: string;
+	timestamp: number;
+}
+
+/** 生成形如 `mem_<8 字符 base32>` 的新 memberId。 */
+export function generateMemberId(): MemberId {
+	return `mem_${generateWorkerId().slice(4)}`;
 }

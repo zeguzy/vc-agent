@@ -258,14 +258,18 @@ export function InputBox({
 							? colors.warning
 							: agentMode === "orchestrator"
 								? colors.accent
-								: colors.success
+								: agentMode === "team"
+									? colors.success
+									: colors.success
 					}
 				>
 					{agentMode === "planner"
 						? "⏸ planner"
 						: agentMode === "orchestrator"
 							? "🎯 orchestrator"
-							: "▶ standard"}{" "}
+							: agentMode === "team"
+								? "🤝 team"
+								: "▶ standard"}{" "}
 				</text>
 				<text fg={colors.secondary}>{model} </text>
 				<text fg={colors.textMuted}>{icons.folder} </text>

@@ -1,7 +1,9 @@
 import type { SubagentServices } from "../agents/types.js";
+import { logTeamEvent } from "./logger.js";
 import type {
 	MemberId,
 	MemberStatus,
+	ResolvedModel,
 	ResolvedTeamConfig,
 	TeamMember,
 	TeamMessage,
@@ -32,14 +34,11 @@ export class WorkerSessionPool implements WorkerSessionPoolLike {
 	private readonly tasks = new Map<string, TeamTask>();
 	private readonly messages: TeamMessage[] = [];
 	private readonly memberRateLimits = new Map<MemberId, number[]>();
-	private readonly cwd: string;
-	/** Maps workerId → { memberId, taskId } so worker lifecycle events can update task/member status. */
-	private readonly workerAssignments = new Map<WorkerId, { memberId: MemberId; taskId: string }>();
+	private readonly workerToMember = new Map<WorkerId, MemberId>();
 
-	constructor(config: ResolvedTeamConfig, services: SubagentServices, cwd: string) {
+	constructor(config: ResolvedTeamConfig, services: SubagentServices) {
 		this.config = config;
 		this.services = services;
-		this.cwd = cwd;
 	}
 
 	runningCount(): number {
@@ -68,11 +67,13 @@ export class WorkerSessionPool implements WorkerSessionPoolLike {
 			services: this.services,
 			parentModel: opts.parentModel,
 			defaultMaxTurns: this.config.defaultMaxTurns,
+			defaultWorkerModel: this.config.defaultWorkerModel,
 			signal: opts.signal,
 			onDelta: opts.onDelta,
 		});
 		this.workers.set(worker.id, worker);
 		worker.subscribe((event) => {
+			logTeamEvent("worker_event", { workerId: worker.id.slice(0, 10), kind: event.kind });
 			for (const listener of this.listeners) {
 				try {
 					listener(event);
@@ -81,30 +82,37 @@ export class WorkerSessionPool implements WorkerSessionPoolLike {
 				}
 			}
 			if (event.kind === "agent_end" || event.kind === "error" || event.kind === "cancelled") {
-				const assignment = this.workerAssignments.get(event.workerId);
-				if (assignment) {
-					const task = this.tasks.get(assignment.taskId);
-					const member = this.members.get(assignment.memberId);
-					if (event.kind === "agent_end") {
-						if (task) task.status = "done";
-						if (member) member.status = "idle";
-					} else if (event.kind === "error") {
-						if (task) {
-							task.status = "blocked";
-							task.blockReason = "worker error";
-						}
-						if (member) member.status = "error";
-					} else {
-						if (task) {
-							task.status = "blocked";
-							task.blockReason = "cancelled";
-						}
-						if (member) member.status = "idle";
-					}
-					this.workerAssignments.delete(event.workerId);
-				}
 				const next = this.slotResolvers.shift();
 				if (next) next();
+				const memberId = this.workerToMember.get(worker.id);
+				if (memberId) {
+					const member = this.members.get(memberId);
+					if (member && member.status === "working") {
+						member.status = event.kind === "agent_end" ? "done" : event.kind;
+						const snap = worker.snapshot();
+						member.lastSummary = snap.lastSummary;
+						member.lastError = snap.lastError;
+						member.turnCount = snap.turnCount;
+						member.inputTokens = snap.inputTokens;
+						member.outputTokens = snap.outputTokens;
+						member.cost = snap.cost;
+						for (const task of this.tasks.values()) {
+							if (task.assignedTo === memberId && task.status === "in_progress") {
+								task.status = event.kind === "agent_end" ? "done" : "blocked";
+								task.result = snap.lastSummary ?? undefined;
+							}
+						}
+						logTeamEvent("member_status_changed", {
+							memberId: memberId.slice(0, 10),
+							name: member.name,
+							from: "working",
+							to: member.status,
+							turns: member.turnCount,
+							cost: member.cost,
+							err: member.lastError || "(none)",
+						});
+					}
+				}
 			}
 		});
 		return { workerId: worker.id, status: worker.getStatus() };
@@ -120,21 +128,14 @@ export class WorkerSessionPool implements WorkerSessionPoolLike {
 		return out;
 	}
 
+	isTeamMember(workerId: WorkerId): boolean {
+		return this.workerToMember.has(workerId);
+	}
+
 	async cancel(id: WorkerId): Promise<void> {
 		const w = this.workers.get(id);
 		if (!w) return;
-		const assignment = this.workerAssignments.get(id);
 		await w.cancel();
-		if (assignment) {
-			const task = this.tasks.get(assignment.taskId);
-			const member = this.members.get(assignment.memberId);
-			if (task) {
-				task.status = "blocked";
-				task.blockReason = "cancelled";
-			}
-			if (member) member.status = "idle";
-			this.workerAssignments.delete(id);
-		}
 		const next = this.slotResolvers.shift();
 		if (next) next();
 	}
@@ -147,17 +148,6 @@ export class WorkerSessionPool implements WorkerSessionPoolLike {
 					await w.cancel();
 				} catch (err) {
 					console.error(`[teams] cancel worker ${w.id} error: ${err}`);
-				}
-				const assignment = this.workerAssignments.get(w.id);
-				if (assignment) {
-					const task = this.tasks.get(assignment.taskId);
-					const member = this.members.get(assignment.memberId);
-					if (task) {
-						task.status = "blocked";
-						task.blockReason = "cancelled";
-					}
-					if (member) member.status = "idle";
-					this.workerAssignments.delete(w.id);
 				}
 			}),
 		);
@@ -259,6 +249,8 @@ export class WorkerSessionPool implements WorkerSessionPoolLike {
 		description: string;
 		memberId: MemberId;
 		priority?: "high" | "medium" | "low";
+		cwd?: string;
+		parentModel?: ResolvedModel;
 	}): TeamTask {
 		const member = this.members.get(opts.memberId);
 		if (!member) throw new Error(`member ${opts.memberId} not found`);
@@ -272,11 +264,16 @@ export class WorkerSessionPool implements WorkerSessionPoolLike {
 		});
 		task.assignedTo = opts.memberId;
 		task.status = "in_progress";
-		this.startMember(opts.memberId, task);
+		this.startMember(opts.memberId, task, opts.cwd, opts.parentModel);
 		return task;
 	}
 
-	private startMember(memberId: MemberId, task: TeamTask): void {
+	private startMember(
+		memberId: MemberId,
+		task: TeamTask,
+		cwd?: string,
+		parentModel?: ResolvedModel,
+	): void {
 		const member = this.members.get(memberId);
 		if (!member) return;
 		member.status = "working";
@@ -293,14 +290,15 @@ export class WorkerSessionPool implements WorkerSessionPoolLike {
 				model: member.model,
 			},
 			task: task.description,
-			cwd: this.cwd,
+			cwd: cwd ?? (this.services.authStorage as unknown as string),
 			services: this.services,
 			defaultMaxTurns: this.config.defaultMaxTurns,
+			parentModel,
 		};
 		// Delegate to existing spawnWorker which handles session creation + event forwarding
 		this.spawnWorker(workerOpts)
 			.then((result) => {
-				this.workerAssignments.set(result.workerId, { memberId, taskId: task.id });
+				this.workerToMember.set(result.workerId, memberId);
 				task.status = result.status === "error" ? "blocked" : "in_progress";
 			})
 			.catch(() => {
@@ -353,24 +351,6 @@ export class WorkerSessionPool implements WorkerSessionPoolLike {
 		return [...this.messages];
 	}
 
-	getWorkerForMember(memberId: MemberId): WorkerSnapshot | undefined {
-		for (const [workerId, assignment] of this.workerAssignments) {
-			if (assignment.memberId === memberId) {
-				return this.workers.get(workerId)?.snapshot();
-			}
-		}
-		return undefined;
-	}
-
-	async cancelMember(memberId: MemberId): Promise<void> {
-		for (const [workerId, assignment] of this.workerAssignments) {
-			if (assignment.memberId === memberId) {
-				await this.cancel(workerId);
-				return;
-			}
-		}
-	}
-
 	// ── Lifecycle ──
 
 	async dispose(): Promise<void> {
@@ -381,7 +361,7 @@ export class WorkerSessionPool implements WorkerSessionPoolLike {
 		await this.cancelAll();
 		for (const w of this.workers.values()) w.dispose();
 		this.workers.clear();
-		this.workerAssignments.clear();
+		this.workerToMember.clear();
 		this.listeners.clear();
 		this.members.clear();
 		this.tasks.clear();

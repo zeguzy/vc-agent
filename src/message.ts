@@ -14,6 +14,7 @@ export interface Message {
 	workerId?: string;
 	workerAgent?: string;
 	workerStatus?: "running" | "done" | "error" | "cancelled";
+	workerError?: string;
 	workerCost?: number;
 }
 

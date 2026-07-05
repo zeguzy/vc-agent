@@ -6,6 +6,10 @@
     "contextMode": "full"
   },
   "teams": {
-    "enabled": true
+    "enabled": true,
+    "defaultWorkerModel": "deepseek/deepseek-v4-pro"
+  },
+  "contextPruning": {
+    "enabled": false
   }
 }

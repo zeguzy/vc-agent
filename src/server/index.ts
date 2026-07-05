@@ -23,6 +23,7 @@ import { WorkerSessionPool } from "../teams/manager.js";
 import type {
 	AgentClientEvent,
 	MemberId,
+	ResolvedModel,
 	TeamMember,
 	TeamMessage,
 	TeamOrphansCancelledEvent,
@@ -67,7 +68,12 @@ export class AgentServer {
 
 		const config = readConfig(opts.cwd);
 		this.teamConfig = resolveConfigTeams(config);
-		this.workerPool = new WorkerSessionPool(this.teamConfig, this.runtime.services, this.cwd);
+		this.workerPool = new WorkerSessionPool(
+			this.teamConfig,
+			this.runtime.services,
+			this.cwd,
+			this.runtime.session.sessionId,
+		);
 		if (opts.poolRef) {
 			opts.poolRef.current = this.workerPool;
 		}
@@ -120,16 +126,21 @@ export class AgentServer {
 
 	private async cancelOrphans(cause: "agent_end" | "session_change") {
 		if (this.workerPool.runningCount() === 0) return;
-		const ids = this.workerPool
-			.list()
-			.filter((w) => w.status === "running" || w.status === "idle")
-			.map((w) => w.id);
-		if (ids.length === 0) return;
 		const enabled =
 			cause === "agent_end"
 				? this.teamConfig.cancelOrphansOnAgentEnd
 				: this.teamConfig.cancelOrphansOnSessionChange;
 		if (!enabled) return;
+		// Team members (V2) are intentional long-lived workers — not orphans.
+		// Only cancel V1 workers that were spawned via spawnWorker (no member mapping).
+		const ids = this.workerPool
+			.list()
+			.filter(
+				(w) =>
+					(w.status === "running" || w.status === "idle") && !this.workerPool.isTeamMember(w.id),
+			)
+			.map((w) => w.id);
+		if (ids.length === 0) return;
 		await this.workerPool.cancelAll();
 		const event: TeamOrphansCancelledEvent = {
 			type: "team_orphans_cancelled",
@@ -153,15 +164,33 @@ export class AgentServer {
 		if (!this.workerPoolUnsub) {
 			this.workerPoolUnsub = this.workerPool.subscribe((event: WorkerEventEnvelope) => {
 				this.broadcastTeamEvent(event);
-				if (event.kind === "agent_end" || event.kind === "error") {
+				if (event.kind === "agent_end" || event.kind === "error" || event.kind === "cancelled") {
 					const snap = this.workerPool.get(event.workerId);
 					if (snap) {
-						const status = snap.status;
-						const summary = snap.lastSummary?.slice(0, 2000) ?? "(no output)";
-						const error = snap.lastError ? `\nError: ${snap.lastError}` : "";
-						const costStr = snap.cost > 0 ? ` | cost $${snap.cost.toFixed(4)}` : "";
-						const note = `[Worker ${event.workerId.slice(0, 10)}/${event.workerAgent} ${status}${costStr}]\n${summary}${error}`;
-						this.session.steer(note);
+						const isMember = this.workerPool.isTeamMember(event.workerId);
+						if (isMember) {
+							const member = this.workerPool.findMemberByWorkerId(event.workerId);
+							const task = this.workerPool.findTaskByWorkerId(event.workerId);
+							const name = member?.name ?? event.workerAgent;
+							const status = member?.status ?? snap.status;
+							const summary = snap.lastSummary?.slice(0, 2000) ?? "(no output)";
+							const error = snap.lastError ? `\nError: ${snap.lastError}` : "";
+							const costStr = snap.cost > 0 ? ` | cost $${snap.cost.toFixed(4)}` : "";
+							const taskTitle = task?.title ? ` — ${task.title}` : "";
+							const note = `[Team Member ${name}${taskTitle} ${status}${costStr}]\n${summary}${error}`;
+							if (this.session.isStreaming) {
+								this.session.steer(note);
+							} else {
+								void this.session.prompt(note);
+							}
+						} else {
+							const status = snap.status;
+							const summary = snap.lastSummary?.slice(0, 2000) ?? "(no output)";
+							const error = snap.lastError ? `\nError: ${snap.lastError}` : "";
+							const costStr = snap.cost > 0 ? ` | cost $${snap.cost.toFixed(4)}` : "";
+							const note = `[Worker ${event.workerId.slice(0, 10)}/${event.workerAgent} ${status}${costStr}]\n${summary}${error}`;
+							this.session.steer(note);
+						}
 					}
 				}
 			});
@@ -362,6 +391,8 @@ export class AgentServer {
 		description: string;
 		memberId: MemberId;
 		priority?: "high" | "medium" | "low";
+		cwd?: string;
+		parentModel?: ResolvedModel;
 	}): Promise<TeamTask> {
 		return this.workerPool.assignTask(opts);
 	}

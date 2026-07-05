@@ -12,7 +12,7 @@ interface TeamToolOptions {
 	poolRef: WorkerPoolRef;
 	cwd: string;
 	services: SubagentServices;
-	parentModel?: ReturnType<SubagentServices["modelRegistry"]["getAll"]>[number];
+	parentModel?: () => ReturnType<SubagentServices["modelRegistry"]["getAll"]>[number] | undefined;
 }
 
 const ActionSchema = Type.Union(
@@ -177,6 +177,8 @@ export function createTeamTool(options: TeamToolOptions): ToolDefinition {
 					description: p.description,
 					memberId: p.memberId,
 					priority: p.priority,
+					cwd: options.cwd,
+					parentModel: options.parentModel?.(),
 				});
 				return textResult(
 					`Task assigned: ${task.title} (${task.id}) → member ${p.memberId}\nStatus: ${task.status}, priority: ${task.priority}`,
@@ -186,11 +188,31 @@ export function createTeamTool(options: TeamToolOptions): ToolDefinition {
 			if (p.action === "list-members") {
 				const members = pool.listMembers();
 				if (members.length === 0) return textResult("No members yet. Use create-member first.");
-				const lines = members.map(
-					(m) =>
-						`  [${m.status}] ${m.name} (${m.id.slice(0, 10)}) — ${m.role}: ${m.goal.slice(0, 60)}`,
-				);
-				return textResult(lines.join("\n"));
+				const tasks = pool.listTasks();
+				const STATUS_ICONS: Record<string, string> = {
+					idle: "◦",
+					working: "◌",
+					done: "✓",
+					error: "✗",
+					cancelled: "⊘",
+				};
+				const counts: Record<string, number> = {
+					working: 0,
+					done: 0,
+					error: 0,
+					idle: 0,
+					cancelled: 0,
+				};
+				const lines = members.map((m) => {
+					counts[m.status]++;
+					const icon = STATUS_ICONS[m.status] ?? "?";
+					const task = tasks.find((t) => t.assignedTo === m.id);
+					const taskLabel = task ? ` · ${task.title}` : "";
+					const costStr = m.cost > 0 ? ` $${m.cost.toFixed(4)}` : "";
+					return `  ${icon} ${m.name.padEnd(8)} | ${m.status.padEnd(8)} | ${m.role}${taskLabel}${costStr}`;
+				});
+				const summary = `${counts.working} working · ${counts.done} done · ${counts.error} error · ${counts.idle} idle`;
+				return textResult(`[TEAM STATUS]\n${lines.join("\n")}\n  ── ${summary}`);
 			}
 
 			if (p.action === "list-tasks") {
@@ -205,8 +227,12 @@ export function createTeamTool(options: TeamToolOptions): ToolDefinition {
 
 			if (p.action === "task-status") {
 				if (!p.taskId) return errorResult("taskId required for task-status");
-				const task = pool.taskStatus(p.taskId);
-				if (!task) return errorResult(`task ${p.taskId} not found`);
+				const tasks = pool.listTasks();
+				const task = tasks.find((t) => t.id === p.taskId || t.id.startsWith(p.taskId!));
+				if (!task)
+					return errorResult(
+						`task not found for id "${p.taskId}". Use list-tasks to see available tasks.`,
+					);
 				return textResult(
 					`Task: ${task.title}\nStatus: ${task.status} | Assigned: ${task.assignedTo ?? "none"} | Priority: ${task.priority}\nDescription: ${task.description}${task.result ? `\nResult: ${task.result.slice(0, 2000)}` : ""}${task.blockReason ? `\nBlocked: ${task.blockReason}` : ""}`,
 				);
@@ -232,9 +258,34 @@ export function createTeamTool(options: TeamToolOptions): ToolDefinition {
 
 			if (p.action === "poll") {
 				const memberId = p.memberId;
-				let snapshots = memberId
-					? ([pool.getWorkerForMember(memberId)].filter(Boolean) as WorkerSnapshot[])
-					: pool.list();
+
+				const resolveSnapshots = (): WorkerSnapshot[] => {
+					if (!memberId) return pool.list();
+					const member = pool.getMember(memberId);
+					if (!member) return [];
+					if (member.status === "working") {
+						const ws = pool.getWorkerForMember(memberId);
+						return ws ? [ws] : [];
+					}
+					return [
+						{
+							id: memberId,
+							agent: member.name,
+							status: member.status === "done" ? "done" : member.status === "error" ? "error" : "idle",
+							turnCount: member.turnCount,
+							inputTokens: member.inputTokens,
+							outputTokens: member.outputTokens,
+							cacheReadTokens: 0,
+							cacheWriteTokens: 0,
+							cost: member.cost,
+							lastSummary: member.lastSummary,
+							lastError: member.lastError,
+							createdAt: member.createdAt,
+						},
+					];
+				};
+
+				let snapshots = resolveSnapshots();
 
 				if (snapshots.length === 0) {
 					return textResult("No members found. Use create-member first.");
@@ -243,9 +294,7 @@ export function createTeamTool(options: TeamToolOptions): ToolDefinition {
 				if (p.wait) {
 					const deadline = Date.now() + MAX_POLL_TIMEOUT_MS;
 					while (Date.now() < deadline) {
-						snapshots = memberId
-							? ([pool.getWorkerForMember(memberId)].filter(Boolean) as WorkerSnapshot[])
-							: pool.list();
+						snapshots = resolveSnapshots();
 						const pending = snapshots.filter((s) => s.status === "running" || s.status === "idle");
 						if (pending.length === 0) break;
 						await new Promise((resolve) => setTimeout(resolve, POLL_INTERVAL_MS));

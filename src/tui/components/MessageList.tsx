@@ -552,17 +552,24 @@ const WorkerSummaryView = memo(function WorkerSummaryView({ message }: { message
 	const summary = message.content.slice(0, 100) + (message.content.length > 100 ? "…" : "");
 	const costStr = message.workerCost ? ` $${message.workerCost.toFixed(4)}` : "";
 	return (
-		<box paddingLeft={3} marginTop={1} flexShrink={0} flexDirection="row">
-			<text fg={statusColor}>{statusIcon} </text>
-			<text fg={colors.textMuted}>{message.workerId?.slice(0, 10)}</text>
-			<text fg={colors.textSubtle}>/{message.workerAgent} </text>
-			<text fg={statusColor}>{message.workerStatus}</text>
-			<text fg={colors.textMuted}>{costStr}</text>
-			{summary && (
-				<>
-					<text fg={colors.textSubtle}> — </text>
-					<text fg={colors.textSubtle}>{summary}</text>
-				</>
+		<box paddingLeft={3} marginTop={1} flexShrink={0} flexDirection="column">
+			<box flexDirection="row">
+				<text fg={statusColor}>{statusIcon} </text>
+				<text fg={colors.textMuted}>{message.workerId?.slice(0, 10)}</text>
+				<text fg={colors.textSubtle}>/{message.workerAgent} </text>
+				<text fg={statusColor}>{message.workerStatus}</text>
+				<text fg={colors.textMuted}>{costStr}</text>
+				{summary && (
+					<>
+						<text fg={colors.textSubtle}> — </text>
+						<text fg={colors.textSubtle}>{summary}</text>
+					</>
+				)}
+			</box>
+			{message.workerError && (
+				<box paddingLeft={3} flexDirection="row">
+					<text fg={colors.error}>↳ {message.workerError}</text>
+				</box>
 			)}
 		</box>
 	);

@@ -8,6 +8,7 @@ import {
 import { BUILTIN_TOOLS, resolveModel } from "../agent/session.js";
 import type { AgentConfig } from "../agents/types.js";
 import { extractAssistantText } from "../utils/content.js";
+import { logTeamEvent } from "./logger.js";
 import {
 	generateWorkerId,
 	type WorkerEventEmitter,
@@ -79,13 +80,14 @@ class WorkerEventBus implements WorkerEventEmitter {
 		this.workerAgent = workerAgent;
 	}
 
-	emit(kind: WorkerEventKind, payload: AgentSessionEvent): void {
+	emit(kind: WorkerEventKind, payload: AgentSessionEvent, lastError?: string): void {
 		const envelope: WorkerEventEnvelope = {
 			type: "team_worker_event",
 			workerId: this.workerId,
 			workerAgent: this.workerAgent,
 			kind,
 			payload,
+			lastError,
 		};
 		for (const listener of this.listeners) {
 			try {
@@ -160,13 +162,41 @@ export class Worker {
 		const { agent, task, cwd, services, parentModel, signal, onDelta } = opts;
 		const id = generateWorkerId();
 		const eventBus = new WorkerEventBus(id, agent.name);
+		console.error(
+			`[teams] Worker.create: parentModel=${parentModel ? `yes(id=${(parentModel as { id?: string }).id},provider=${(parentModel as { provider?: string }).provider})` : "none"} agent.model=${agent.model ?? "none"} opts.defaultWorkerModel=${opts.defaultWorkerModel ?? "none"}`,
+		);
 
-		const model = agent.model ? resolveModel(services.modelRegistry, agent.model) : parentModel;
+		// parentModel takes precedence over agent.model: when a parent session
+		// supplies its own resolved model, the worker should inherit the
+		// parent's provider/auth rather than re-resolving from a string that
+		// may land on a different provider (e.g. "deepseek/deepseek-v4-pro"
+		// matches the openrouter provider's model id, not deepseek's).
+		const model = parentModel
+			? parentModel
+			: agent.model
+				? resolveModel(services.modelRegistry, agent.model)
+				: opts.defaultWorkerModel
+					? resolveModel(services.modelRegistry, opts.defaultWorkerModel)
+					: undefined;
+		logTeamEvent("worker_create", {
+			workerId: id,
+			parentModel: parentModel
+				? `yes(id=${(parentModel as { id?: string }).id},provider=${(parentModel as { provider?: string }).provider})`
+				: "no",
+			agentModel: agent.model ?? "none",
+			resolvedModel: model
+				? `${(model as { id?: string }).id} provider=${(model as { provider?: string }).provider}`
+				: "none",
+		});
 		if (!model) {
 			throw new Error(
-				`worker "${agent.name}": no model resolved (agent.model=${agent.model ?? "none"})`,
+				`worker "${agent.name}": no model resolved (agent.model=${agent.model ?? "none"}, defaultWorkerModel=${opts.defaultWorkerModel ?? "none"})`,
 			);
 		}
+
+		console.error(
+			`[teams] Worker.create: model=${(model as { id?: string }).id} provider=${(model as { provider?: string }).provider} parentModel=${parentModel ? "yes" : "no"} agent.model=${agent.model ?? "none"}`,
+		);
 
 		const resourceLoader = new DefaultResourceLoader({
 			cwd,
@@ -203,10 +233,41 @@ export class Worker {
 		const unsub = session.subscribe((event) => {
 			const kind = classifyEvent(event);
 			if (!kind) return;
+
+			// When the worker is already in a terminal state (error/cancelled),
+			// Pi SDK's agent_end should not be re-emitted as "agent_end" —
+			// the finally block will emit the correct terminal kind.
+			if (
+				event.type === "agent_end" &&
+				(worker.status === "error" || worker.status === "cancelled")
+			) {
+				return;
+			}
+
 			eventBus.emit(kind, event);
+
+			if (event.type === "agent_end") {
+				logTeamEvent("worker_got_agent_end", {
+					workerId: id,
+					agent: agent.name,
+					status: worker.status,
+					turnCount: worker.turnCount,
+				});
+			}
+			if (event.type === "turn_end") {
+				logTeamEvent("worker_got_turn_end", {
+					workerId: id,
+					agent: agent.name,
+					turnCount: worker.turnCount,
+					stopReason: (event as { message?: { stopReason?: string } }).message?.stopReason,
+				});
+			}
 
 			if (event.type === "message_end" && event.message.role === "assistant") {
 				worker.turnCount++;
+				console.error(
+					`[teams] worker "${agent.name}" message_end: turnCount=${worker.turnCount} maxTurns=${worker.maxTurns} status=${worker.status}`,
+				);
 				const u = event.message.usage;
 				worker.inputTokens += u.input;
 				worker.outputTokens += u.output;
@@ -233,17 +294,57 @@ export class Worker {
 
 		worker.status = "running";
 		worker.runPromise = (async () => {
+			// Defer prompt start by one tick so callers (pool) can subscribe
+			// to worker events before any error/success fires.
+			await new Promise((resolve) => setTimeout(resolve, 0));
+			logTeamEvent("worker_prompt_start", {
+				workerId: id,
+				agent: agent.name,
+				task: task.slice(0, 80),
+			});
 			try {
 				await session.prompt(task);
+				logTeamEvent("worker_prompt_resolved", {
+					workerId: id,
+					agent: agent.name,
+					statusBefore: worker.status,
+				});
 				if (worker.status === "running" || worker.status === "idle") {
 					worker.status = "done";
 				}
 			} catch (err) {
+				const errMsg = err instanceof Error ? err.message : String(err);
+				const errName = err instanceof Error ? err.name : "unknown";
+				logTeamEvent("worker_prompt_rejected", {
+					workerId: id,
+					agent: agent.name,
+					statusBeforeCatch: worker.status,
+					errName,
+					errMsg: errMsg.slice(0, 200),
+				});
+				console.error(
+					`[teams] worker "${agent.name}" catch: status=${worker.status} err=${errMsg}`,
+				);
 				if (worker.status !== "cancelled" && worker.status !== "error") {
 					worker.status = "error";
-					worker.lastError = err instanceof Error ? err.message : String(err);
+					worker.lastError = errMsg;
 				}
 			} finally {
+				logTeamEvent("worker_finally", {
+					workerId: id,
+					agent: agent.name,
+					status: worker.status,
+					lastError: worker.lastError,
+				});
+				const finalKind =
+					worker.status === "done" || worker.status === "running" || worker.status === "idle"
+						? "agent_end"
+						: (worker.status as WorkerEventKind);
+				eventBus.emit(
+					finalKind,
+					{ type: "agent_end" } as AgentSessionEvent,
+					worker.lastError ?? undefined,
+				);
 				unsub();
 				session.dispose();
 			}
