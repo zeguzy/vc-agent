@@ -38,6 +38,24 @@ src/
 见 `biome.json`。核心约定：tab 缩进、双引号、分号、行宽 100。
 新代码不要再引入 `any`（含 noExplicitAny 等已降级为 warn 的技术债）。
 
+## Pi SDK 工具注册双名单
+
+`createAgentSession` 有两个工具相关参数，缺一不可：
+
+| 参数 | 作用 | 缺失后果 |
+|---|---|---|
+| `tools`（→ SDK 内部 `allowedToolNames`） | **注册门槛** — 不在白名单里的工具直接从注册表删除，对 agent 完全不可见 | 工具定义再完整也进不去 |
+| `customTools` | **工具定义** — schema、handler、prompt snippet | 没定义就没法注册 |
+
+SDK 内部过滤逻辑：`isAllowedTool = !allowedToolNames || allowedToolNames.has(name)`。只有通过过滤的工具才会进入 `_toolRegistry`，其余连 inactive 都不是——直接不存在。
+
+**新增工具时必须同时两处添加**：`customTools` 数组里放定义，`tools` 数组里放工具名。`handleSetAgentMode` 切换模式时会重建 `tools` 白名单，也必须包含 MCP 工具名。
+
+当前受影响的三个位置（`src/agent/session.ts` 和 `src/server/index.ts`）：
+1. `createSession`（legacy 路径）
+2. `createRuntime` factory（主路径）
+3. `handleSetAgentMode`（模式切换）
+
 ## 约定
 
 - **包管理器**：Bun，`bun.lock` 是唯一 lockfile；`package-lock.json` 已 gitignore，勿提交
