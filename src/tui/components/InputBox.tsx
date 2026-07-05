@@ -4,11 +4,11 @@ import type { AgentMode } from "../../agent/session.js";
 import type { PollManager } from "../../poll/manager.js";
 import { usePollState } from "../../poll/usePollState.js";
 import type { SkillManager } from "../../skills/manager.js";
-import type { MemberState } from "../../teams/types-v2.js";
+import type { MemberState, TaskState } from "../../teams/types-v2.js";
 import { matchSuggestions, type SuggestionItem } from "../commands.js";
 import type { Mode } from "../keymap.js";
 import { colors, icons } from "../utils/theme.js";
-import { MemberTags } from "./MemberTags.js";
+import { MemberCard } from "./MemberCard.js";
 
 interface InputBoxProps {
 	disabled: boolean;
@@ -22,6 +22,7 @@ interface InputBoxProps {
 	sentMessages: string[];
 	pendingInput?: { text: string; nonce: number } | null;
 	members?: MemberState[];
+	tasks?: TaskState[];
 	activeMemberName?: string | null;
 }
 
@@ -37,6 +38,7 @@ export function InputBox({
 	sentMessages,
 	pendingInput,
 	members = [],
+	tasks = [],
 	activeMemberName = null,
 }: InputBoxProps) {
 	const [inputHeight, setInputHeight] = useState(2);
@@ -228,6 +230,23 @@ export function InputBox({
 		return () => clearInterval(interval);
 	}, [disabled]);
 
+	const modeLabel =
+		agentMode === "planner"
+			? "planner"
+			: agentMode === "orchestrator"
+				? "orchestrator"
+				: agentMode === "team"
+					? "team"
+					: "code";
+	const modeColor =
+		agentMode === "planner"
+			? colors.warning
+			: agentMode === "orchestrator"
+				? colors.accent
+				: agentMode === "team"
+					? colors.success
+					: colors.secondary;
+
 	return (
 		<box flexDirection="column" flexShrink={0}>
 			{showSuggestions && (
@@ -243,54 +262,40 @@ export function InputBox({
 					))}
 				</box>
 			)}
-			{disabled && (
-				<box height={1} flexDirection="row" paddingLeft={1} paddingRight={1}>
-					<text fg={colors.warning}>{spinnerFrames[animationFrame % spinnerFrames.length]} </text>
-					<text fg={colors.text}>
-						{`Working${workingSuffix[animationFrame % workingSuffix.length]}`}
-					</text>
-				</box>
-			)}
-			<box
-				height={1}
-				flexDirection="row"
-				paddingLeft={1}
-				paddingRight={1}
-				marginTop={disabled ? 1 : 0}
-			>
-				<text
-					fg={
-						agentMode === "planner"
-							? colors.warning
-							: agentMode === "orchestrator"
-								? colors.accent
-								: agentMode === "team"
-									? colors.success
-									: colors.success
-					}
-				>
-					{agentMode === "planner"
-						? "⏸ planner"
-						: agentMode === "orchestrator"
-							? "🎯 orchestrator"
-							: agentMode === "team"
-								? "🤝 team"
-								: "▶ standard"}{" "}
-				</text>
-				<text fg={colors.secondary}>{model} </text>
-				<text fg={colors.textMuted}>{icons.folder} </text>
-				<text fg={colors.textMuted}>
-					{pathDisplay}
-					{branch ? ":" : ""}
-				</text>
-				{branch ? <text fg={gitColor}>{branch}</text> : null}
+			<box height={1} flexDirection="row" paddingLeft={2} paddingRight={2}>
+				{disabled && (
+					<>
+						<text fg={colors.textMuted}>
+							{spinnerFrames[animationFrame % spinnerFrames.length]}{" "}
+						</text>
+						<text fg={colors.textMuted}>
+							{`Working${workingSuffix[animationFrame % workingSuffix.length]}`}
+						</text>
+					</>
+				)}
+			</box>
+			{activeMemberName &&
+				members.length > 0 &&
+				(() => {
+					const member = members.find((m) => m.name === activeMemberName);
+					if (!member) return null;
+					return <MemberCard member={member} tasks={tasks} />;
+				})()}
+			<box height={1} flexDirection="row" paddingLeft={2} paddingRight={2}>
+				<text fg={modeColor}>{modeLabel}</text>
+				<text fg={colors.textSubtle}>{" · "}</text>
+				<text fg={colors.textSubtle}>{model}</text>
+				<text fg={colors.textSubtle}>{" · "}</text>
+				<text fg={colors.textSubtle}>{pathDisplay}</text>
+				{branch ? (
+					<>
+						<text fg={colors.textSubtle}>{" · "}</text>
+						<text fg={gitColor}>{branch}</text>
+					</>
+				) : null}
 				<box flexGrow={1} />
 			</box>
-			<box
-				borderStyle="rounded"
-				border={["top", "right", "bottom", "left"]}
-				borderColor={mode === "insert" ? colors.borderActive : colors.borderSoft}
-			>
+			<box borderStyle="single" border={["top"]} borderColor={colors.borderDim}>
 				<box
 					flexDirection="row"
 					paddingLeft={2}
@@ -322,7 +327,7 @@ export function InputBox({
 						textColor={colors.text}
 						focusedTextColor={colors.text}
 						cursorColor={colors.primary}
-						placeholderColor={colors.textMuted}
+						placeholderColor={colors.textSubtle}
 						placeholder={
 							disabled
 								? "Queue a message…"
@@ -336,13 +341,6 @@ export function InputBox({
 						onSubmit={handleTextareaSubmit}
 					/>
 				</box>
-				{agentMode === "team" && members.length > 0 && (
-					<MemberTags
-						members={members}
-						activeMemberName={activeMemberName ?? null}
-						onMemberChange={() => {}}
-					/>
-				)}
 			</box>
 		</box>
 	);
