@@ -234,8 +234,8 @@ export class AgentServer {
 	}
 
 	handleSetAgentMode(mode: AgentMode): void {
-		const mcpToolNames = this.mcpManager.getToolDefinitions().map((d) => d.name);
-		this.session.setActiveToolsByName([...activeToolsFor(mode), ...mcpToolNames]);
+		const hasMcp = this.mcpManager.getToolDefinitions().length > 0;
+		this.session.setActiveToolsByName([...activeToolsFor(mode), ...(hasMcp ? ["mcp"] : [])]);
 		if (mode === "orchestrator") {
 			this.session.steer(ORCHESTRATOR_SYSTEM_PROMPT);
 		}

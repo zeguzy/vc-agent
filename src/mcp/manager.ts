@@ -3,7 +3,7 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { SSEClientTransport } from "@modelcontextprotocol/sdk/client/sse.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
-import { convertMcpResultToAgentResult, convertMcpToolsToPiToolDefs } from "./bridge.js";
+import { convertMcpResultToAgentResult, createMcpToolDefinition } from "./bridge.js";
 import { readMcpConfig } from "./config.js";
 import type {
 	McpLocalServerConfig,
@@ -21,7 +21,7 @@ const CONNECT_TIMEOUT_MS = 5_000;
 
 export class McpManager {
 	private connections: McpServerConnection[] = [];
-	private toolDefinitions: ToolDefinition[] = [];
+	private _toolDefinition: ToolDefinition | null = null;
 	private _disposed = false;
 
 	async initialize(cwd: string): Promise<void> {
@@ -47,13 +47,9 @@ export class McpManager {
 			}
 		}
 
-		for (const conn of this.connections) {
-			const defs = convertMcpToolsToPiToolDefs(conn.name, conn.tools, this.executeTool.bind(this));
-			this.toolDefinitions.push(...defs);
-		}
-
 		if (this.connections.length > 0) {
-			const totalTools = this.toolDefinitions.length;
+			this._toolDefinition = createMcpToolDefinition(this.connections, this.executeTool.bind(this));
+			const totalTools = this.connections.reduce((sum, c) => sum + c.tools.length, 0);
 			const serverList = this.connections
 				.map((c) => `${c.name}(${c.tools.length} tools)`)
 				.join(", ");
@@ -66,7 +62,7 @@ export class McpManager {
 	}
 
 	getToolDefinitions(): ToolDefinition[] {
-		return this.toolDefinitions;
+		return this._toolDefinition ? [this._toolDefinition] : [];
 	}
 
 	async executeTool(
@@ -108,7 +104,7 @@ export class McpManager {
 			}
 		}
 		this.connections = [];
-		this.toolDefinitions = [];
+		this._toolDefinition = null;
 	}
 
 	private async connectServer(name: string, config: McpServerConfig): Promise<McpServerConnection> {

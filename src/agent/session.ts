@@ -259,7 +259,7 @@ export async function createSession(options: SessionOptions): Promise<SessionRes
 		...(svc.model ? { model: svc.model } : {}),
 		settingsManager: svc.settingsManager,
 		resourceLoader: svc.resourceLoader,
-		tools: [...STANDARD_ACTIVE_TOOLS, ...mcpToolDefs.map((d) => d.name)],
+		tools: [...STANDARD_ACTIVE_TOOLS, ...(mcpToolDefs.length ? ["mcp"] : [])],
 		customTools: [
 			...createLspToolDefinitions({ client: svc.lspClient }),
 			createTodoTool(),
@@ -335,7 +335,6 @@ export async function createRuntime(options: RuntimeOptions): Promise<RuntimeRes
 		}
 		customTools.push(...teamTools);
 		const mcpToolDefs = svc.mcpManager.getToolDefinitions();
-		const mcpToolNames = mcpToolDefs.map((d) => d.name);
 		const result = await createAgentSession({
 			cwd: fCwd,
 			authStorage: svc.authStorage,
@@ -343,7 +342,7 @@ export async function createRuntime(options: RuntimeOptions): Promise<RuntimeRes
 			...(svc.model ? { model: svc.model } : {}),
 			settingsManager: svc.settingsManager,
 			resourceLoader: svc.resourceLoader,
-			tools: [...activeToolsFor(agentMode), ...mcpToolNames],
+			tools: [...activeToolsFor(agentMode), ...(mcpToolDefs.length ? ["mcp"] : [])],
 			customTools: [...customTools, ...mcpToolDefs],
 			sessionManager: fSessionManager,
 		});

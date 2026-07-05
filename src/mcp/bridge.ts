@@ -1,40 +1,88 @@
 import type { ToolDefinition } from "@earendil-works/pi-coding-agent";
-import type { Tool } from "@modelcontextprotocol/sdk/types.js";
 import { Type } from "typebox";
+import type { McpServerConnection } from "./types.js";
 
-/**
- * Convert MCP tools from a single server to Pi SDK ToolDefinition[].
- * Tool names are prefixed with `<serverName>_` to avoid cross-server collisions.
- */
-export function convertMcpToolsToPiToolDefs(
-	serverName: string,
-	tools: Tool[],
+interface McpToolResult {
+	content: Array<{ type: "text"; text: string }>;
+	details: Record<string, unknown>;
+}
+
+export function createMcpToolDefinition(
+	connections: McpServerConnection[],
 	executeFn: (
 		serverName: string,
 		toolName: string,
 		args: Record<string, unknown>,
 	) => Promise<McpToolResult>,
-): ToolDefinition[] {
-	return tools.map((tool) => {
-		const prefixedName = `${serverName}_${tool.name}`;
-		// Wrap MCP JSON Schema with TypeBox Unsafe to avoid recursive conversion
-		const parameters = Type.Unsafe<Record<string, unknown>>(
-			tool.inputSchema ?? { type: "object", properties: {} },
-		);
+): ToolDefinition {
+	const catalog = buildToolCatalog(connections);
+	const description = formatToolDescription(catalog);
 
-		return {
-			name: prefixedName,
-			label: tool.name,
-			description: tool.description ?? `MCP tool: ${tool.name} (from ${serverName})`,
-			parameters,
-			async execute(_toolCallId, params, _signal, _onUpdate, _ctx) {
-				return executeFn(serverName, tool.name, params as Record<string, unknown>);
+	return {
+		name: "mcp",
+		label: "mcp",
+		description,
+		parameters: Type.Unsafe<Record<string, unknown>>({
+			type: "object",
+			properties: {
+				server_name: {
+					type: "string",
+					enum: catalog.map((s) => s.serverName),
+					description: "MCP server name",
+				},
+				tool_name: {
+					type: "string",
+					description: "Tool name to call on the server",
+				},
+				arguments: {
+					type: "object",
+					description: "Arguments to pass to the tool",
+					additionalProperties: true,
+				},
 			},
-		} as ToolDefinition;
-	});
+			required: ["server_name", "tool_name"],
+		}),
+		async execute(_toolCallId, params, _signal, _onUpdate, _ctx) {
+			const {
+				server_name,
+				tool_name,
+				arguments: args,
+			} = params as {
+				server_name: string;
+				tool_name: string;
+				arguments?: Record<string, unknown>;
+			};
+			return executeFn(server_name, tool_name, args ?? {});
+		},
+	} as ToolDefinition;
 }
 
-/** MCP callTool() result content item */
+interface ToolCatalogEntry {
+	serverName: string;
+	tools: Array<{ name: string; description?: string }>;
+}
+
+function buildToolCatalog(connections: McpServerConnection[]): ToolCatalogEntry[] {
+	return connections.map((conn) => ({
+		serverName: conn.name,
+		tools: conn.tools.map((t) => ({ name: t.name, description: t.description })),
+	}));
+}
+
+function formatToolDescription(catalog: ToolCatalogEntry[]): string {
+	const serverLines = catalog.map((s) => {
+		const toolLines = s.tools
+			.map((t) => `  - ${t.name}${t.description ? `: ${t.description}` : ""}`)
+			.join("\n");
+		return `${s.serverName}:\n${toolLines}`;
+	});
+	return [
+		"Call a tool on a connected MCP server.",
+		"Available servers and tools:",
+		...serverLines,
+	].join("\n\n");
+}
+
 type McpContentItem =
 	| { type: "text"; text: string }
 	| { type: "image"; data: string; mimeType?: string }
@@ -42,17 +90,6 @@ type McpContentItem =
 	| { type: "resource"; resource: { uri: string; text?: string; blob?: string; mimeType?: string } }
 	| { type: "resource_link"; uri: string; name: string; description?: string };
 
-/** Shape of the AgentToolResult we return (avoids importing the generic type) */
-interface McpToolResult {
-	content: Array<{ type: "text"; text: string }>;
-	details: Record<string, unknown>;
-}
-
-/**
- * Convert MCP callTool() result to Pi SDK AgentToolResult.
- * Handles all MCP content types: text, image, audio, resource, resource_link.
- * Non-text content is serialized to a descriptive text representation.
- */
 export function convertMcpResultToAgentResult(result: {
 	content?: McpContentItem[];
 	isError?: boolean;
