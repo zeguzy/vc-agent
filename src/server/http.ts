@@ -68,7 +68,7 @@ async function handleRequest(server: AgentServer, req: IncomingMessage, res: Ser
 	}
 
 	if (method === "POST" && path === "/mode") {
-		const body = await readBody<{ mode: "standard" | "planner" }>(req);
+		const body = await readBody<{ mode: "standard" | "planner" | "team" | "orchestrator" }>(req);
 		server.handleSetAgentMode(body.mode);
 		return sendJson(res, { ok: true });
 	}
@@ -140,6 +140,96 @@ async function handleRequest(server: AgentServer, req: IncomingMessage, res: Ser
 		const worker = server.handleGetWorker(id);
 		if (!worker) return sendJson(res, { error: "worker not found" }, 404);
 		return sendJson(res, { worker });
+	}
+
+	// ── V2 Team Member/Task/Message routes ──
+
+	if (method === "POST" && path === "/team/members") {
+		const body = await readBody<{
+			name: string;
+			role: string;
+			goal: string;
+			model?: string;
+			tools?: string[];
+			systemPrompt?: string;
+		}>(req);
+		if (!body.name || !body.role || !body.goal) {
+			return sendJson(res, { error: "name, role, and goal required" }, 400);
+		}
+		try {
+			const member = await server.handleCreateMember(body);
+			return sendJson(res, member);
+		} catch (err) {
+			return sendJson(res, { error: String(err) }, 400);
+		}
+	}
+
+	if (method === "GET" && path === "/team/members") {
+		return sendJson(res, { members: server.handleListMembers() });
+	}
+
+	if (method === "GET" && path.startsWith("/team/members/")) {
+		const id = path.slice("/team/members/".length);
+		const member = server.handleGetMember(id);
+		if (!member) return sendJson(res, { error: "member not found" }, 404);
+		return sendJson(res, { member });
+	}
+
+	if (method === "DELETE" && path.startsWith("/team/members/")) {
+		const id = path.slice("/team/members/".length);
+		try {
+			await server.handleRemoveMember(id);
+			return sendJson(res, { ok: true });
+		} catch (err) {
+			return sendJson(res, { error: String(err) }, 400);
+		}
+	}
+
+	if (method === "POST" && path === "/team/tasks") {
+		const body = await readBody<{
+			title: string;
+			description: string;
+			memberId: string;
+			priority?: "high" | "medium" | "low";
+		}>(req);
+		if (!body.title || !body.description || !body.memberId) {
+			return sendJson(res, { error: "title, description, and memberId required" }, 400);
+		}
+		try {
+			const task = await server.handleAssignTask(body);
+			return sendJson(res, task);
+		} catch (err) {
+			return sendJson(res, { error: String(err) }, 400);
+		}
+	}
+
+	if (method === "GET" && path === "/team/tasks") {
+		return sendJson(res, { tasks: server.handleListTasks() });
+	}
+
+	if (method === "GET" && path.startsWith("/team/tasks/")) {
+		const id = path.slice("/team/tasks/".length);
+		const task = server.handleTaskStatus(id);
+		if (!task) return sendJson(res, { error: "task not found" }, 404);
+		return sendJson(res, { task });
+	}
+
+	if (method === "POST" && path === "/team/messages") {
+		const body = await readBody<{ from: string; to: string; content: string }>(req);
+		if (!body.from || !body.to || !body.content) {
+			return sendJson(res, { error: "from, to, and content required" }, 400);
+		}
+		try {
+			await server.handleSendMessage(body.from, body.to, body.content);
+			return sendJson(res, { ok: true });
+		} catch (err) {
+			return sendJson(res, { error: String(err) }, 400);
+		}
+	}
+
+	if (method === "GET" && path === "/team/inbox") {
+		const memberId = url.searchParams.get("memberId") ?? undefined;
+		return sendJson(res, { messages: server.handleReadInbox(memberId) });
 	}
 
 	if (method === "GET" && path === "/events") {
