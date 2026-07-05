@@ -134,7 +134,7 @@ async function runServe(argv: string[]): Promise<void> {
 	const cwd = process.cwd();
 	const config = readConfig(cwd);
 	const teamRef: TeamManagerRef = { current: null };
-	const { runtime, skillManager } = await createRuntime({
+	const { runtime, skillManager, mcpManager } = await createRuntime({
 		cwd,
 		model: config.model,
 		config,
@@ -142,7 +142,7 @@ async function runServe(argv: string[]): Promise<void> {
 		agentMode: getBaseMode(config),
 		teamRef,
 	});
-	const server = createServer({ runtime, skillManager, cwd, teamRef });
+	const server = createServer({ runtime, skillManager, mcpManager, cwd, teamRef });
 	createHttpServer({ server, port });
 
 	console.log(`openagent server: http://localhost:${port}`);
@@ -197,8 +197,8 @@ async function runTui(argv: string[]): Promise<void> {
 		process.exit(1);
 	}
 
-	const { runtime, skillManager } = result;
-	const server = createServer({ runtime, skillManager, cwd, teamRef });
+	const { runtime, skillManager, mcpManager } = result;
+	const server = createServer({ runtime, skillManager, mcpManager, cwd, teamRef });
 	const client = createClient(server);
 
 	const renderer = await createCliRenderer({ exitOnCtrlC: false });

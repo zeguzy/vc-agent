@@ -17,6 +17,7 @@ import {
 import type { Config, ProviderConfig } from "../config.js";
 import { ORCHESTRATOR_SYSTEM_PROMPT, TEAM_ORCHESTRATOR_PROMPT } from "../context-files.js";
 import { createLspToolDefinitions, LspClient } from "../lsp/index.js";
+import { McpManager } from "../mcp/manager.js";
 import { listSessions, resolveSessionRef } from "../session/list.js";
 import { resolveSessionDir } from "../session/storage.js";
 import { SkillManager } from "../skills/manager.js";
@@ -159,6 +160,7 @@ export interface RuntimeOptions {
 export interface RuntimeResult {
 	runtime: AgentSessionRuntime;
 	skillManager: SkillManager;
+	mcpManager: McpManager;
 }
 
 /**
@@ -177,6 +179,7 @@ export interface InitializedServices {
 	lspClient: LspClient;
 	resourceLoader: Awaited<ReturnType<SkillManager["initialize"]>>;
 	model: ReturnType<typeof resolveModel>;
+	mcpManager: McpManager;
 }
 
 async function initServices(opts: {
@@ -220,6 +223,9 @@ async function initServices(opts: {
 		);
 	}
 
+	const mcpManager = new McpManager();
+	await mcpManager.initialize(opts.cwd);
+
 	return {
 		authStorage,
 		modelRegistry,
@@ -228,6 +234,7 @@ async function initServices(opts: {
 		lspClient,
 		resourceLoader,
 		model,
+		mcpManager,
 	};
 }
 
@@ -269,6 +276,7 @@ export async function createSession(options: SessionOptions): Promise<SessionRes
 				parentModel: svc.model,
 			}),
 			...teamTools,
+			...svc.mcpManager.getToolDefinitions(),
 		],
 		sessionManager: SessionManager.inMemory(),
 	});
@@ -329,6 +337,7 @@ export async function createRuntime(options: RuntimeOptions): Promise<RuntimeRes
 					parentModel: svc.model,
 				}),
 				...teamTools,
+				...svc.mcpManager.getToolDefinitions(),
 			],
 			sessionManager: fSessionManager,
 		});
@@ -350,7 +359,7 @@ export async function createRuntime(options: RuntimeOptions): Promise<RuntimeRes
 		runtime.session.setSessionName(options.name);
 	}
 
-	return { runtime, skillManager: svc.skillManager };
+	return { runtime, skillManager: svc.skillManager, mcpManager: svc.mcpManager };
 }
 
 async function buildSessionManager(

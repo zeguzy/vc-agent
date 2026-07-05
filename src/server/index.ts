@@ -13,6 +13,7 @@ import type { CommandContext } from "../commands/registry.js";
 import { commandRegistry } from "../commands/registry.js";
 import { readConfig, resolveConfigTeams } from "../config.js";
 import { ORCHESTRATOR_SYSTEM_PROMPT, TEAM_ORCHESTRATOR_PROMPT } from "../context-files.js";
+import type { McpManager } from "../mcp/manager.js";
 import { NotificationRouter, setGlobalRouter } from "../notifications/notifier.js";
 import { listSessions } from "../session/list.js";
 import { mapSdkMessagesToTui } from "../session/render.js";
@@ -29,6 +30,7 @@ import type {
 export interface AgentServerOptions {
 	runtime: AgentSessionRuntime;
 	skillManager: SkillManager;
+	mcpManager: McpManager;
 	cwd: string;
 	teamRef?: TeamManagerRef;
 }
@@ -36,6 +38,7 @@ export interface AgentServerOptions {
 export class AgentServer {
 	private readonly runtime: AgentSessionRuntime;
 	private readonly skillManager: SkillManager;
+	private readonly mcpManager: McpManager;
 	private readonly cwd: string;
 	private readonly eventHandlers = new Set<EventHandler>();
 	private readonly teamEventHandlers = new Set<(event: TeamEvent) => void>();
@@ -50,6 +53,7 @@ export class AgentServer {
 	constructor(opts: AgentServerOptions) {
 		this.runtime = opts.runtime;
 		this.skillManager = opts.skillManager;
+		this.mcpManager = opts.mcpManager;
 		this.cwd = opts.cwd;
 
 		this.notificationRouter = new NotificationRouter({
@@ -77,6 +81,7 @@ export class AgentServer {
 
 		const dispose = () => {
 			void this.disposeTeam();
+			void this.mcpManager.dispose();
 		};
 		process.once("exit", dispose);
 		process.once("SIGINT", () => {
