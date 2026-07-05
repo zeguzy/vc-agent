@@ -56,6 +56,8 @@ SDK 内部过滤逻辑：`isAllowedTool = !allowedToolNames || allowedToolNames.
 2. `createRuntime` factory（主路径）
 3. `handleSetAgentMode`（模式切换）
 
+MCP 工具已合并为单个 `mcp` 工具（参数含 `server_name` + `tool_name` + `arguments`），白名单只需加 `"mcp"` 一个名。
+
 ## 约定
 
 - **包管理器**：Bun，`bun.lock` 是唯一 lockfile；`package-lock.json` 已 gitignore，勿提交
