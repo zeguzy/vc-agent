@@ -6,6 +6,7 @@ export const colors = {
 	backgroundInput: "#1C1C1E",
 	backgroundInset: "#141416",
 	backgroundStatus: "#0A0C10",
+	backgroundBar: "#101214",
 
 	text: "#EDEDED",
 	textMuted: "#878787",
@@ -16,6 +17,8 @@ export const colors = {
 	borderActive: "#454545",
 	borderSubtle: "#1A1A1A",
 	borderSoft: "#2A2F39",
+	borderDim: "#1E222A",
+	separator: "#2A2F39",
 
 	primary: "#0A84FF",
 	secondary: "#64D2FF",
