@@ -4,11 +4,14 @@ import { HttpClient } from "../src/client/http.js";
 import type { Message } from "../src/message.js";
 import { createHttpServer } from "../src/server/http.js";
 import type { AgentServer } from "../src/server/index.js";
+import type { MemberState, TaskState } from "../src/teams/types-v2.js";
 
 type EventHandler = (event: AgentSessionEvent) => void;
+type TeamEventHandler = (event: unknown) => void;
 
 function createMockServer(): AgentServer & { _emit: (e: AgentSessionEvent) => void } {
 	const handlers = new Set<EventHandler>();
+	const teamHandlers = new Set<TeamEventHandler>();
 	return {
 		handlePrompt: mock((_text: string) => Promise.resolve()),
 		handleFollowUp: mock((_text: string) => Promise.resolve()),
@@ -25,7 +28,7 @@ function createMockServer(): AgentServer & { _emit: (e: AgentSessionEvent) => vo
 		handleGetMappedMessages: mock(() => [{ id: "1", role: "user", content: "hi" }] as Message[]),
 		handleCycleModel: mock(() => Promise.resolve(undefined)),
 		handleSetActiveToolsByName: mock((_tools: string[]) => {}),
-		handleSetAgentMode: mock((_mode: "standard" | "planner") => {}),
+		handleSetAgentMode: mock((_mode: "standard" | "planner" | "team" | "orchestrator") => {}),
 		handleListSessions: mock(() => Promise.resolve([{ path: "/a.jsonl", name: "a", modified: 0 }])),
 		handleSubscribe: mock((handler: EventHandler) => {
 			handlers.add(handler);
@@ -39,6 +42,22 @@ function createMockServer(): AgentServer & { _emit: (e: AgentSessionEvent) => vo
 		handleGetSession: mock(() => ({}) as never),
 		handleGetRuntime: mock(() => ({}) as never),
 		handleExecuteCommand: mock(async () => true),
+		handleSubscribeTeam: mock((handler: TeamEventHandler) => {
+			teamHandlers.add(handler);
+			return () => teamHandlers.delete(handler);
+		}),
+		handleCreateMember: mock((_opts: { name: string; role: string; goal: string; model?: string }) =>
+			Promise.resolve({} as MemberState),
+		),
+		handleRemoveMember: mock((_name: string) => Promise.resolve()),
+		handleGetMember: mock((_name: string) => undefined as MemberState | undefined),
+		handleListMembers: mock(() => [] as MemberState[]),
+		handleAssignTask: mock(
+			(_opts: { title: string; description: string; memberName: string; priority?: string }) =>
+				Promise.resolve({} as TaskState),
+		),
+		handleListTasks: mock(() => [] as TaskState[]),
+		handleTaskStatus: mock((_id: string) => undefined as TaskState | undefined),
 		_emit: (event: AgentSessionEvent) => {
 			for (const h of handlers) h(event);
 		},

@@ -20,14 +20,19 @@ import { createLspToolDefinitions, LspClient } from "../lsp/index.js";
 import { listSessions, resolveSessionRef } from "../session/list.js";
 import { resolveSessionDir } from "../session/storage.js";
 import { SkillManager } from "../skills/manager.js";
-import type { WorkerPoolRef } from "../teams/types.js";
+import type { TeamManagerRef } from "../teams/types-v2.js";
 import { createEditTool } from "../tools/edit.js";
 import { clearEditConfirmBridge, type EditConfirmBridge } from "../tools/edit-confirm-bridge.js";
 import { createNotifyTool } from "../tools/notify.js";
 import { createQuestionTool } from "../tools/question.js";
 import { clearBridge, type QuestionBridge } from "../tools/question-bridge.js";
 import { createSubagentTool } from "../tools/subagent.js";
-import { createTeamTool } from "../tools/team.js";
+import { createTeamReadTool } from "../tools/team-read.js";
+import { createTeamEditTool } from "../tools/team-edit.js";
+import { createMemberReadTool } from "../tools/member-read.js";
+import { createMemberEditTool } from "../tools/member-edit.js";
+import { createSelfEditTool } from "../tools/self-edit.js";
+import { createMemoryWriteTool } from "../tools/memory-write.js";
 import { createTodoTool } from "../tools/todo.js";
 import { createWebfetchTool } from "../tools/webfetch/index.js";
 
@@ -52,7 +57,14 @@ export const STANDARD_ACTIVE_TOOLS = [
 	"webfetch",
 ];
 export const PLANNER_ACTIVE_TOOLS = [...PLANNER_TOOLS, "todo", "question", "webfetch"];
-export const TEAM_ACTIVE_TOOLS = [...STANDARD_ACTIVE_TOOLS, "team"];
+export const TEAM_ACTIVE_TOOLS = [
+	...STANDARD_ACTIVE_TOOLS,
+	"team-read",
+	"team-edit",
+	"member-read",
+	"member-edit",
+	"memory-write",
+];
 
 export function activeToolsFor(agentMode: AgentMode): string[] {
 	if (agentMode === "planner") return PLANNER_ACTIVE_TOOLS;
@@ -115,7 +127,7 @@ export interface SessionOptions {
 	config?: Config;
 	bridge?: QuestionBridge;
 	editBridge?: EditConfirmBridge;
-	poolRef?: WorkerPoolRef;
+	teamRef?: TeamManagerRef;
 }
 
 export interface SessionResult {
@@ -139,7 +151,7 @@ export interface RuntimeOptions {
 	/** QuestionBridge for interactive question tool. Omit in non-interactive modes. */
 	bridge?: QuestionBridge;
 	editBridge?: EditConfirmBridge;
-	poolRef?: WorkerPoolRef;
+	teamRef?: TeamManagerRef;
 }
 
 export interface RuntimeResult {
@@ -229,16 +241,9 @@ export async function createSession(options: SessionOptions): Promise<SessionRes
 		config: options.config,
 		modelStr: options.model ?? options.config?.model,
 	});
-	const teamTool =
-		options.poolRef && options.config?.teams?.enabled !== false
-			? [
-					createTeamTool({
-						poolRef: options.poolRef,
-						cwd: options.cwd,
-						services: svc,
-						parentModel: () => result.session?.model,
-					}),
-				]
+	const teamTools =
+		options.teamRef && options.config?.teams?.enabled !== false && options.teamRef.current
+			? buildTeamTools(options.teamRef.current)
 			: [];
 
 	const result = await createAgentSession({
@@ -261,7 +266,7 @@ export async function createSession(options: SessionOptions): Promise<SessionRes
 				services: svc,
 				parentModel: svc.model,
 			}),
-			...teamTool,
+			...teamTools,
 		],
 		sessionManager: SessionManager.inMemory(),
 	});
@@ -297,16 +302,9 @@ export async function createRuntime(options: RuntimeOptions): Promise<RuntimeRes
 	}) => {
 		if (options.bridge) clearBridge(options.bridge);
 		if (options.editBridge) clearEditConfirmBridge(options.editBridge);
-		const teamTool =
-			options.poolRef && options.config?.teams?.enabled !== false
-				? [
-						createTeamTool({
-							poolRef: options.poolRef,
-							cwd: fCwd,
-							services: svc,
-							parentModel: () => result.session?.model,
-						}),
-					]
+		const teamTools =
+			options.teamRef && options.config?.teams?.enabled !== false && options.teamRef.current
+				? buildTeamTools(options.teamRef.current)
 				: [];
 		const result = await createAgentSession({
 			cwd: fCwd,
@@ -328,7 +326,7 @@ export async function createRuntime(options: RuntimeOptions): Promise<RuntimeRes
 					services: svc,
 					parentModel: svc.model,
 				}),
-				...teamTool,
+				...teamTools,
 			],
 			sessionManager: fSessionManager,
 		});
@@ -433,3 +431,14 @@ export function resolveModel(registry: ModelRegistry, modelStr?: string) {
 export { extractAssistantContent, extractAssistantText, summarizeArgs } from "../utils/content.js";
 
 export type { AgentSession, AgentSessionEvent, AgentSessionRuntime };
+
+function buildTeamTools(manager: import("../teams/types-v2.js").TeamManagerLike): import("@earendil-works/pi-coding-agent").ToolDefinition[] {
+	return [
+		createTeamReadTool({ manager }),
+		createTeamEditTool({ manager }),
+		createMemberReadTool({ manager }),
+		createMemberEditTool({ manager }),
+		createSelfEditTool({ manager }),
+		createMemoryWriteTool({ manager }),
+	];
+}

@@ -4,7 +4,7 @@ import { HttpClient } from "../src/client/http.js";
 import type { Message } from "../src/message.js";
 import { createHttpServer } from "../src/server/http.js";
 import type { AgentServer } from "../src/server/index.js";
-import type { MemberId, TeamMember, TeamMessage, TeamTask } from "../src/teams/types.js";
+import type { MemberState, TaskState } from "../src/teams/types-v2.js";
 
 type EventHandler = (event: AgentSessionEvent) => void;
 type TeamEventHandler = (event: unknown) => void;
@@ -12,19 +12,8 @@ type TeamEventHandler = (event: unknown) => void;
 function createMockServer() {
 	const handlers = new Set<EventHandler>();
 	const teamHandlers = new Set<TeamEventHandler>();
-	const members = new Map<MemberId, TeamMember>();
-	const tasks = new Map<string, TeamTask>();
-	const messages: TeamMessage[] = [];
-
-	function addMember(m: TeamMember) {
-		members.set(m.id, m);
-	}
-	function removeMember(id: MemberId) {
-		const m = members.get(id);
-		if (m && m.status === "working")
-			throw new Error(`member ${id} is currently working — cancel first`);
-		members.delete(id);
-	}
+	const members = new Map<string, MemberState>();
+	const tasks = new Map<string, TaskState>();
 
 	return {
 		handlePrompt: mock((_text: string) => Promise.resolve()),
@@ -56,96 +45,60 @@ function createMockServer() {
 		handleGetSession: mock(() => ({}) as never),
 		handleGetRuntime: mock(() => ({}) as never),
 		handleExecuteCommand: mock(async () => true),
-		handleListWorkers: mock(() => []),
-		handleGetWorker: mock(() => undefined),
-		handleSpawnWorker: mock(async () => ({ workerId: "wkr_test1", status: "running" as const })),
-		handleCancelWorker: mock(async () => {}),
-		handleCancelAllWorkers: mock(async () => {}),
-		handleSubscribeTeam: mock((handler: TeamEventHandler) => {
-			teamHandlers.add(handler);
-			return () => teamHandlers.delete(handler);
-		}),
 
-		// V2 handlers with in-memory state
+		// V2 member handlers
 		handleCreateMember: mock(
-			(opts: {
-				name: string;
-				role: string;
-				goal: string;
-				model?: string;
-				tools?: string[];
-				systemPrompt?: string;
-			}) => {
-				const id = `mem_test${members.size + 1}`;
-				const member: TeamMember = {
-					id,
+			(opts: { name: string; role: string; goal: string; model?: string }) => {
+				const member: MemberState = {
 					name: opts.name,
 					role: opts.role,
 					goal: opts.goal,
+					model: opts.model,
 					status: "idle",
-					model: opts.model ?? "default",
-					tools: opts.tools,
-					systemPrompt: opts.systemPrompt,
-					context: [],
-					turnCount: 0,
-					inputTokens: 0,
-					outputTokens: 0,
-					cost: 0,
-					lastSummary: null,
-					lastError: null,
-					createdAt: Date.now(),
+					session: {} as never,
+					currentTaskId: null,
 				};
-				addMember(member);
+				members.set(opts.name, member);
 				return Promise.resolve(member);
 			},
 		),
-		handleRemoveMember: mock((id: MemberId) => {
-			removeMember(id);
+		handleRemoveMember: mock((name: string) => {
+			const m = members.get(name);
+			if (m && m.status === "active")
+				throw new Error(`member ${name} is currently active — remove not allowed`);
+			members.delete(name);
 			return Promise.resolve();
 		}),
-		handleGetMember: mock((id: MemberId) => members.get(id)),
+		handleGetMember: mock((name: string) => members.get(name)),
 		handleListMembers: mock(() => [...members.values()]),
 		handleAssignTask: mock(
 			(opts: {
 				title: string;
 				description: string;
-				memberId: MemberId;
+				memberName: string;
 				priority?: "high" | "medium" | "low";
 			}) => {
-				const member = members.get(opts.memberId);
-				if (!member) throw new Error(`member ${opts.memberId} not found`);
-				member.status = "working";
-				const task: TeamTask = {
-					id: `task_test${tasks.size + 1}`,
+				const member = members.get(opts.memberName);
+				if (!member) throw new Error(`member ${opts.memberName} not found`);
+				member.status = "active";
+				const task: TaskState = {
+					id: `T${tasks.size + 1}`,
 					title: opts.title,
 					description: opts.description,
-					assignedTo: opts.memberId,
-					status: "in_progress",
+					memberName: opts.memberName,
 					priority: opts.priority ?? "medium",
+					done: false,
 				};
+				member.currentTaskId = task.id;
 				tasks.set(task.id, task);
 				return Promise.resolve(task);
 			},
 		),
 		handleListTasks: mock(() => [...tasks.values()]),
 		handleTaskStatus: mock((taskId: string) => tasks.get(taskId)),
-		handleSendMessage: mock((from: MemberId, to: MemberId | "team", content: string) => {
-			if (!members.has(from)) throw new Error(`sender ${from} not found`);
-			if (to !== "team" && !members.has(to)) throw new Error(`recipient ${to} not found`);
-			messages.push({
-				id: `msg_test${messages.length + 1}`,
-				from,
-				to,
-				content,
-				timestamp: Date.now(),
-			});
-			return Promise.resolve();
-		}),
-		handleReadInbox: mock((memberId?: MemberId) => {
-			if (memberId) {
-				return messages.filter((m) => m.to === memberId || m.to === "team" || m.from === memberId);
-			}
-			return [...messages];
+		handleSubscribeTeam: mock((handler: TeamEventHandler) => {
+			teamHandlers.add(handler);
+			return () => teamHandlers.delete(handler);
 		}),
 
 		_emit: (event: AgentSessionEvent) => {
@@ -178,14 +131,14 @@ describe("Team V2 HTTP API", () => {
 	});
 
 	describe("POST /team/members", () => {
-		it("creates a member and returns TeamMember JSON", async () => {
+		it("creates a member and returns MemberState JSON", async () => {
 			const res = await fetch(`${baseUrl}/team/members`, {
 				method: "POST",
 				headers: { "Content-Type": "application/json" },
 				body: JSON.stringify({ name: "explorer", role: "researcher", goal: "find bugs" }),
 			});
 			expect(res.status).toBe(200);
-			const member = (await res.json()) as TeamMember;
+			const member = (await res.json()) as MemberState;
 			expect(member.name).toBe("explorer");
 			expect(member.role).toBe("researcher");
 			expect(member.status).toBe("idle");
@@ -205,57 +158,61 @@ describe("Team V2 HTTP API", () => {
 		it("returns members list", async () => {
 			const res = await fetch(`${baseUrl}/team/members`);
 			expect(res.status).toBe(200);
-			const data = (await res.json()) as { members: TeamMember[] };
+			const data = (await res.json()) as { members: MemberState[] };
 			expect(data.members.length).toBeGreaterThanOrEqual(1);
 		});
 	});
 
-	describe("GET /team/members/:id", () => {
-		it("returns member by id", async () => {
+	describe("GET /team/members/:name", () => {
+		it("returns member by name", async () => {
 			const createRes = await fetch(`${baseUrl}/team/members`, {
 				method: "POST",
 				headers: { "Content-Type": "application/json" },
 				body: JSON.stringify({ name: "getter-test", role: "tester", goal: "test get" }),
 			});
-			const member = (await createRes.json()) as TeamMember;
-			const res = await fetch(`${baseUrl}/team/members/${member.id}`);
+			const member = (await createRes.json()) as MemberState;
+			const res = await fetch(`${baseUrl}/team/members/${member.name}`);
 			expect(res.status).toBe(200);
-			const data = (await res.json()) as { member: TeamMember };
-			expect(data.member.id).toBe(member.id);
+			const data = (await res.json()) as { member: MemberState };
+			expect(data.member.name).toBe(member.name);
 		});
 
-		it("returns 404 for unknown id", async () => {
-			const res = await fetch(`${baseUrl}/team/members/mem_unknown`);
+		it("returns 404 for unknown name", async () => {
+			const res = await fetch(`${baseUrl}/team/members/nonexistent`);
 			expect(res.status).toBe(404);
 		});
 	});
 
-	describe("DELETE /team/members/:id", () => {
+	describe("DELETE /team/members/:name", () => {
 		it("removes an idle member", async () => {
 			const createRes = await fetch(`${baseUrl}/team/members`, {
 				method: "POST",
 				headers: { "Content-Type": "application/json" },
 				body: JSON.stringify({ name: "deleteme", role: "temp", goal: "be deleted" }),
 			});
-			const member = (await createRes.json()) as TeamMember;
-			const res = await fetch(`${baseUrl}/team/members/${member.id}`, { method: "DELETE" });
+			const member = (await createRes.json()) as MemberState;
+			const res = await fetch(`${baseUrl}/team/members/${member.name}`, { method: "DELETE" });
 			expect(res.status).toBe(200);
 		});
 
-		it("returns 400 when trying to remove a working member", async () => {
+		it("returns 400 when trying to remove an active member", async () => {
 			const createRes = await fetch(`${baseUrl}/team/members`, {
 				method: "POST",
 				headers: { "Content-Type": "application/json" },
 				body: JSON.stringify({ name: "worker1", role: "dev", goal: "work" }),
 			});
-			const member = (await createRes.json()) as TeamMember;
-			// Assign a task to make member "working"
+			const member = (await createRes.json()) as MemberState;
+			// Assign a task to make member "active"
 			await fetch(`${baseUrl}/team/tasks`, {
 				method: "POST",
 				headers: { "Content-Type": "application/json" },
-				body: JSON.stringify({ title: "t1", description: "do work", memberId: member.id }),
+				body: JSON.stringify({
+					title: "t1",
+					description: "do work",
+					memberName: member.name,
+				}),
 			});
-			const res = await fetch(`${baseUrl}/team/members/${member.id}`, { method: "DELETE" });
+			const res = await fetch(`${baseUrl}/team/members/${member.name}`, { method: "DELETE" });
 			expect(res.status).toBe(400);
 		});
 	});
@@ -267,17 +224,21 @@ describe("Team V2 HTTP API", () => {
 				headers: { "Content-Type": "application/json" },
 				body: JSON.stringify({ name: "task-worker", role: "dev", goal: "code" }),
 			});
-			const member = (await createRes.json()) as TeamMember;
+			const member = (await createRes.json()) as MemberState;
 			const res = await fetch(`${baseUrl}/team/tasks`, {
 				method: "POST",
 				headers: { "Content-Type": "application/json" },
-				body: JSON.stringify({ title: "fix bug", description: "fix the bug", memberId: member.id }),
+				body: JSON.stringify({
+					title: "fix bug",
+					description: "fix the bug",
+					memberName: member.name,
+				}),
 			});
 			expect(res.status).toBe(200);
-			const task = (await res.json()) as TeamTask;
+			const task = (await res.json()) as TaskState;
 			expect(task.title).toBe("fix bug");
-			expect(task.status).toBe("in_progress");
-			expect(task.assignedTo).toBe(member.id);
+			expect(task.memberName).toBe(member.name);
+			expect(task.done).toBe(false);
 		});
 
 		it("returns 400 for missing fields", async () => {
@@ -294,64 +255,15 @@ describe("Team V2 HTTP API", () => {
 		it("returns tasks list", async () => {
 			const res = await fetch(`${baseUrl}/team/tasks`);
 			expect(res.status).toBe(200);
-			const data = (await res.json()) as { tasks: TeamTask[] };
+			const data = (await res.json()) as { tasks: TaskState[] };
 			expect(Array.isArray(data.tasks)).toBe(true);
 		});
 	});
 
 	describe("GET /team/tasks/:id", () => {
 		it("returns 404 for unknown task", async () => {
-			const res = await fetch(`${baseUrl}/team/tasks/task_unknown`);
+			const res = await fetch(`${baseUrl}/team/tasks/T_unknown`);
 			expect(res.status).toBe(404);
-		});
-	});
-
-	describe("POST /team/messages", () => {
-		it("sends a message between members", async () => {
-			const r1 = await fetch(`${baseUrl}/team/members`, {
-				method: "POST",
-				headers: { "Content-Type": "application/json" },
-				body: JSON.stringify({ name: "alice", role: "lead", goal: "lead" }),
-			});
-			const r2 = await fetch(`${baseUrl}/team/members`, {
-				method: "POST",
-				headers: { "Content-Type": "application/json" },
-				body: JSON.stringify({ name: "bob", role: "dev", goal: "code" }),
-			});
-			const alice = (await r1.json()) as TeamMember;
-			const bob = (await r2.json()) as TeamMember;
-
-			const res = await fetch(`${baseUrl}/team/messages`, {
-				method: "POST",
-				headers: { "Content-Type": "application/json" },
-				body: JSON.stringify({ from: alice.id, to: bob.id, content: "hello bob" }),
-			});
-			expect(res.status).toBe(200);
-		});
-
-		it("returns 400 for missing fields", async () => {
-			const res = await fetch(`${baseUrl}/team/messages`, {
-				method: "POST",
-				headers: { "Content-Type": "application/json" },
-				body: JSON.stringify({ from: "x" }),
-			});
-			expect(res.status).toBe(400);
-		});
-	});
-
-	describe("GET /team/inbox", () => {
-		it("returns all messages without memberId", async () => {
-			const res = await fetch(`${baseUrl}/team/inbox`);
-			expect(res.status).toBe(200);
-			const data = (await res.json()) as { messages: TeamMessage[] };
-			expect(Array.isArray(data.messages)).toBe(true);
-		});
-
-		it("returns filtered messages with memberId", async () => {
-			const res = await fetch(`${baseUrl}/team/inbox?memberId=mem_test1`);
-			expect(res.status).toBe(200);
-			const data = (await res.json()) as { messages: TeamMessage[] };
-			expect(Array.isArray(data.messages)).toBe(true);
 		});
 	});
 
@@ -407,9 +319,9 @@ describe("HttpClient V2 methods", () => {
 		expect(member.status).toBe("idle");
 	});
 
-	it("removeMember calls DELETE /team/members/:id", async () => {
+	it("removeMember calls DELETE /team/members/:name", async () => {
 		const member = await client.createMember({ name: "to-remove", role: "temp", goal: "removed" });
-		await client.removeMember(member.id);
+		await client.removeMember(member.name);
 		// Should not throw
 	});
 
@@ -418,17 +330,10 @@ describe("HttpClient V2 methods", () => {
 		const task = await client.assignTask({
 			title: "http task",
 			description: "test task",
-			memberId: member.id,
+			memberName: member.name,
 		});
 		expect(task.title).toBe("http task");
-		expect(task.status).toBe("in_progress");
-	});
-
-	it("sendMessage calls POST /team/messages", async () => {
-		const m1 = await client.createMember({ name: "sender", role: "dev", goal: "send" });
-		const m2 = await client.createMember({ name: "receiver", role: "dev", goal: "receive" });
-		await client.sendMessage(m1.id, m2.id, "hello from http");
-		// Should not throw
+		expect(task.memberName).toBe(member.name);
 	});
 
 	it("fetchMembers calls GET /team/members", async () => {
@@ -441,21 +346,16 @@ describe("HttpClient V2 methods", () => {
 		expect(Array.isArray(tasks)).toBe(true);
 	});
 
-	it("fetchInbox calls GET /team/inbox", async () => {
-		const messages = await client.fetchInbox();
-		expect(Array.isArray(messages)).toBe(true);
-	});
-
 	it("fetchMember returns member or undefined", async () => {
 		const member = await client.createMember({ name: "fetch-test", role: "dev", goal: "fetched" });
-		const found = await client.fetchMember(member.id);
+		const found = await client.fetchMember(member.name);
 		expect(found?.name).toBe("fetch-test");
-		const notFound = await client.fetchMember("mem_nonexistent");
+		const notFound = await client.fetchMember("nonexistent");
 		expect(notFound).toBeUndefined();
 	});
 
 	it("fetchTaskStatus returns task or undefined", async () => {
-		const notFound = await client.fetchTaskStatus("task_nonexistent");
+		const notFound = await client.fetchTaskStatus("T_nonexistent");
 		expect(notFound).toBeUndefined();
 	});
 
@@ -464,6 +364,5 @@ describe("HttpClient V2 methods", () => {
 		expect(() => client.getMember("x")).toThrow();
 		expect(() => client.listTasks()).toThrow();
 		expect(() => client.taskStatus("x")).toThrow();
-		expect(() => client.readInbox()).toThrow();
 	});
 });

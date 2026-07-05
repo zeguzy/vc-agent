@@ -6,21 +6,74 @@ import {
 	DefaultResourceLoader,
 } from "@earendil-works/pi-coding-agent";
 import { BUILTIN_TOOLS, resolveModel } from "../agent/session.js";
-import type { AgentConfig } from "../agents/types.js";
+import type { AgentConfig, SubagentServices } from "../agents/types.js";
+import type { ResolvedModel } from "./types.js";
 import { extractAssistantText } from "../utils/content.js";
 import { logTeamEvent } from "./logger.js";
-import {
-	generateWorkerId,
-	type WorkerEventEmitter,
-	type WorkerEventEnvelope,
-	type WorkerEventKind,
-	type WorkerId,
-	type WorkerSnapshot,
-	type WorkerSpawnOptions,
-	type WorkerStatus,
-} from "./types.js";
 
-const AGENT_DIR = join(homedir(), ".config", "openagent");
+export type WorkerId = string;
+export type WorkerStatus = "running" | "idle" | "done" | "error" | "cancelled";
+export type WorkerEventKind =
+	| "message_delta"
+	| "message_end"
+	| "tool_call"
+	| "tool_result"
+	| "agent_end"
+	| "error"
+	| "cancelled";
+
+export interface WorkerEventEnvelope {
+	readonly type: "team_worker_event";
+	readonly workerId: WorkerId;
+	readonly workerAgent: string;
+	readonly kind: WorkerEventKind;
+	readonly payload: AgentSessionEvent;
+	readonly lastError?: string;
+}
+
+export interface WorkerSnapshot {
+	id: WorkerId;
+	agent: string;
+	status: WorkerStatus;
+	turnCount: number;
+	inputTokens: number;
+	outputTokens: number;
+	cacheReadTokens: number;
+	cacheWriteTokens: number;
+	cost: number;
+	lastSummary: string | null;
+	lastError: string | null;
+	createdAt: number;
+}
+
+export interface WorkerSpawnOptions {
+	agent: AgentConfig;
+	task: string;
+	cwd: string;
+	services: SubagentServices;
+	parentModel?: ResolvedModel;
+	defaultMaxTurns?: number;
+	defaultWorkerModel?: string;
+	signal?: AbortSignal;
+	onDelta?: (text: string) => void;
+}
+
+export interface WorkerEventEmitter {
+	emit(kind: WorkerEventKind, payload: AgentSessionEvent, lastError?: string): void;
+	subscribe(listener: (event: WorkerEventEnvelope) => void): () => void;
+	dispose(): void;
+}
+
+function generateWorkerId(): WorkerId {
+	const alphabet = "abcdefghijklmnopqrstuvwxyz234567";
+	const rand = new Uint8Array(8);
+	(globalThis.crypto as Crypto).getRandomValues(rand);
+	let suffix = "";
+	for (const b of rand) suffix += alphabet[b % 32];
+	return `wkr_${suffix}`;
+}
+
+export const AGENT_DIR = join(homedir(), ".config", "openagent");
 
 const PERMISSION_DEFAULT_DENIED = ["edit", "write"] as const;
 const PERMISSION_PLAN_DENIED = ["edit", "write", "bash"] as const;

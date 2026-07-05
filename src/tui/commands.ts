@@ -461,8 +461,8 @@ export function registerBuiltinCommands(): void {
 
 	commandRegistry.register({
 		name: "team",
-		description: "Team worker management: spawn / poll / cancel",
-		usage: "/team spawn <agent> <task> | /team poll [workerId] | /team cancel [workerId]",
+		description: "Team member management: list / remove",
+		usage: "/team list | /team remove <name>",
 		handler: (args: string, ctx: CommandContext) => {
 			const config = ctx.getConfig();
 			if (config.teams?.enabled === false) {
@@ -476,131 +476,62 @@ export function registerBuiltinCommands(): void {
 			const parts = args.trim().split(/\s+/);
 			const sub = parts[0]?.toLowerCase();
 
-			if (sub === "spawn") {
-				const rest = parts.slice(1).join(" ");
-				const spaceIdx = rest.indexOf(" ");
-				if (spaceIdx === -1 || rest.length === 0) {
+			if (sub === "list") {
+				const members = ctx.client.listMembers();
+				if (members.length === 0) {
 					ctx.setMessages((prev) => [
 						...prev,
-						createAssistantMessage(
-							'/team spawn <agent> "<task>" — e.g. /team spawn lysosome "search X"',
-						),
+						createAssistantMessage("No team members yet. Use the team-edit tool to create one."),
 					]);
 					return;
 				}
-				const agent = rest.slice(0, spaceIdx);
-				const task = rest
-					.slice(spaceIdx + 1)
-					.replace(/^["']|["']$/g, "")
-					.trim();
-				if (!task) {
+				const lines = members.map((m) => {
+					const task = m.currentTaskId ? ` task=${m.currentTaskId}` : "";
+					return `  [${m.status}] ${m.name} (${m.role})${task}`;
+				});
+				ctx.setMessages((prev) => [
+					...prev,
+					createAssistantMessage(`Members (${members.length}):\n${lines.join("\n")}`),
+				]);
+				return;
+			}
+
+			if (sub === "remove") {
+				const name = parts[1];
+				if (!name) {
 					ctx.setMessages((prev) => [
 						...prev,
-						createAssistantMessage('/team spawn <agent> "<task>" — task is required'),
+						createAssistantMessage("/team remove <name> — name required"),
 					]);
 					return;
 				}
 				ctx.client
-					.spawnWorker(agent, task)
-					.then((result) => {
+					.removeMember(name)
+					.then(() => {
 						ctx.setMessages((prev) => [
 							...prev,
-							createAssistantMessage(
-								`Worker spawned: ${result.workerId} (${agent}) — status: ${result.status}\nCheck progress with /team poll or /workers panel.`,
-							),
+							createAssistantMessage(`Member "${name}" removed and archived.`),
 						]);
 					})
-					.catch((err) => {
+					.catch((err: Error) => {
 						ctx.setMessages((prev) => [
 							...prev,
-							createAssistantMessage(`Failed to spawn worker: ${formatError(err)}`),
+							createAssistantMessage(`Remove failed: ${formatError(err)}`),
 						]);
 					});
 				return;
 			}
 
-			if (sub === "poll") {
-				const ids = parts.slice(1).filter(Boolean);
-				const snapshots =
-					ids.length > 0
-						? ids.map((id) => ctx.client.getWorker(id)).filter(Boolean)
-						: ctx.client.listWorkers();
-
-				if (snapshots.length === 0) {
-					ctx.setMessages((prev) => [
-						...prev,
-						createAssistantMessage("No workers found. Spawn one with /team spawn."),
-					]);
-					return;
-				}
-
-				const running = snapshots.filter(
-					(s) => s && (s.status === "running" || s.status === "idle"),
-				).length;
-				const totalCost = snapshots.reduce((acc, s) => acc + (s?.cost ?? 0), 0);
-				const header = `${snapshots.length - running}/${snapshots.length} finished, ${running} running | cost $${totalCost.toFixed(4)}`;
-				const lines = snapshots.map((s) => {
-					if (!s) return "";
-					const preview =
-						s.lastSummary?.split("\n")[0]?.slice(0, 60) ??
-						(s.lastError ? `error: ${s.lastError.slice(0, 50)}` : "");
-					return `  [${s.status}] ${s.id} (${s.agent}) t=${s.turnCount} in=${s.inputTokens} out=${s.outputTokens}${preview ? ` — ${preview}` : ""}`;
-				});
-				ctx.setMessages((prev) => [
-					...prev,
-					createAssistantMessage(`${header}\n${lines.join("\n")}`),
-				]);
-				return;
-			}
-
-			if (sub === "cancel") {
-				const workerId = parts[1];
-				if (workerId) {
-					ctx.client
-						.cancelWorker(workerId)
-						.then(() => {
-							ctx.setMessages((prev) => [
-								...prev,
-								createAssistantMessage(`Worker ${workerId} cancelled.`),
-							]);
-						})
-						.catch((err) => {
-							ctx.setMessages((prev) => [
-								...prev,
-								createAssistantMessage(`Cancel failed: ${formatError(err)}`),
-							]);
-						});
-				} else {
-					ctx.client
-						.cancelAllWorkers()
-						.then(() => {
-							ctx.setMessages((prev) => [
-								...prev,
-								createAssistantMessage("All workers cancelled."),
-							]);
-						})
-						.catch((err) => {
-							ctx.setMessages((prev) => [
-								...prev,
-								createAssistantMessage(`Cancel all failed: ${formatError(err)}`),
-							]);
-						});
-				}
-				return;
-			}
-
 			ctx.setMessages((prev) => [
 				...prev,
-				createAssistantMessage(
-					"/team spawn <agent> <task> | /team poll [workerId...] | /team cancel [workerId]",
-				),
+				createAssistantMessage("/team list | /team remove <name>"),
 			]);
 		},
 	});
 
 	commandRegistry.register({
 		name: "workers",
-		description: "Show background workers panel",
+		description: "Show team members panel",
 		usage: "/workers",
 		handler: (_args: string, ctx: CommandContext) => {
 			const config = ctx.getConfig();
@@ -611,11 +542,11 @@ export function registerBuiltinCommands(): void {
 				]);
 				return;
 			}
-			const snapshots = ctx.client.listWorkers();
-			if (snapshots.length === 0) {
+			const members = ctx.client.listMembers();
+			if (members.length === 0) {
 				ctx.setMessages((prev) => [
 					...prev,
-					createAssistantMessage("No active workers. Spawn one with /team spawn."),
+					createAssistantMessage("No team members yet. Use the team-edit tool to create one."),
 				]);
 				return;
 			}

@@ -8,7 +8,7 @@ import {
 	createWorkerMessage,
 	type Message,
 } from "../../message.js";
-import type { AgentClientEvent } from "../../teams/types.js";
+import type { TeamEvent } from "../../teams/types-v2.js";
 import type { QuestionData } from "../../tools/question-bridge.js";
 import { extractAssistantContent } from "../../utils/content.js";
 import type { StreamingBuffer } from "./useStreamingBuffer.js";
@@ -183,98 +183,36 @@ export function useSessionEvents(
 		}
 		applyWorkerTextRef.current = applyWorkerText;
 
-		const onWorkerEvent = (event: AgentClientEvent) => {
-			// Team status dashboard — render as visible code block
-			if ((event as { type: string }).type === "team_status_update") {
-				const text = (event as { text: string }).text;
-				console.error("[tui] team_status_update received:", text.slice(0, 50));
-				setMessages((prev) => {
-					const filtered = prev.filter((m) => !m.id.startsWith("team-status-"));
-					return [
-						...filtered,
-						{
-							id: `team-status-${Date.now()}`,
-							role: "assistant" as const,
-							content: `\`\`\`\n${text}\n\`\`\``,
-						},
-					];
-				});
-				return;
-			}
-
-			if (event.type !== "team_worker_event") return;
-
-			const { workerId, workerAgent, kind } = event;
-
-			if (kind === "message_delta") {
-				const msgContent = (event.payload as { message?: { content?: unknown } }).message?.content;
-				const { text } = extractAssistantContent(msgContent);
-
-				let entry = workerThrottles.current.get(workerId);
-				if (!entry) {
-					entry = { text, agent: workerAgent, timer: null };
-					workerThrottles.current.set(workerId, entry);
-				} else {
-					entry.text = text;
-				}
-
-				if (!entry.timer) {
-					entry.timer = setTimeout(() => {
-						flushWorkerText(workerId);
-					}, 80);
-				}
-			}
-
-			if (kind === "message_end") {
-				const entry = workerThrottles.current.get(workerId);
-				if (entry?.timer) {
-					clearTimeout(entry.timer);
-					workerThrottles.current.delete(workerId);
-				}
-				const msgContent = (event.payload as { message?: { content?: unknown } }).message?.content;
-				const { text } = extractAssistantContent(msgContent);
-				applyWorkerText(workerId, workerAgent, text);
-
-				const usage = (event.payload as { message?: { usage?: { cost?: { total?: number } } } })
-					.message?.usage;
-				const cost = usage?.cost?.total;
-
-				const existingId = workerMsgMap.current.get(workerId);
-				if (existingId && cost) {
-					setMessages((prev) =>
-						prev.map((m) =>
-							m.id === existingId ? { ...m, workerCost: (m.workerCost ?? 0) + cost } : m,
-						),
-					);
-				}
-			}
-
-			if (kind === "agent_end") {
-				const existingId = workerMsgMap.current.get(workerId);
+		const onWorkerEvent = (event: TeamEvent) => {
+			if (event.type === "member_done") {
+				const memberName = event.memberName;
+				const summary = event.summary;
+				const existingId = workerMsgMap.current.get(memberName);
 				if (existingId) {
 					setMessages((prev) =>
 						prev.map((m) => (m.id === existingId ? { ...m, workerStatus: "done" } : m)),
 					);
 				} else {
-					const msg = createWorkerMessage(workerId, workerAgent, "");
+					const msg = createWorkerMessage(memberName, memberName, summary);
 					msg.workerStatus = "done";
-					workerMsgMap.current.set(workerId, msg.id);
+					workerMsgMap.current.set(memberName, msg.id);
 					setMessages((prev) => [...prev, msg]);
 				}
 			}
 
-			if (kind === "error" || kind === "cancelled") {
-				const workerError = event.lastError;
-				const existingId = workerMsgMap.current.get(workerId);
+			if (event.type === "member_error") {
+				const memberName = event.memberName;
+				const error = event.error;
+				const existingId = workerMsgMap.current.get(memberName);
 				if (existingId) {
 					setMessages((prev) =>
-						prev.map((m) => (m.id === existingId ? { ...m, workerStatus: kind, workerError } : m)),
+						prev.map((m) => (m.id === existingId ? { ...m, workerStatus: "error", workerError: error } : m)),
 					);
 				} else {
-					const msg = createWorkerMessage(workerId, workerAgent, workerError ?? "");
-					msg.workerStatus = kind;
-					if (workerError) msg.workerError = workerError;
-					workerMsgMap.current.set(workerId, msg.id);
+					const msg = createWorkerMessage(memberName, memberName, error);
+					msg.workerStatus = "error";
+					msg.workerError = error;
+					workerMsgMap.current.set(memberName, msg.id);
 					setMessages((prev) => [...prev, msg]);
 				}
 			}

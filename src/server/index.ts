@@ -1,7 +1,5 @@
 import type { AgentSession, AgentSessionEvent, AgentSessionRuntime } from "../agent/session.js";
 import { activeToolsFor } from "../agent/session.js";
-import { discoverAgents } from "../agents/discover.js";
-import type { AgentConfig } from "../agents/types.js";
 import type {
 	AgentMode,
 	ContextUsage,
@@ -19,27 +17,21 @@ import { NotificationRouter, setGlobalRouter } from "../notifications/notifier.j
 import { listSessions } from "../session/list.js";
 import { mapSdkMessagesToTui } from "../session/render.js";
 import type { SkillManager } from "../skills/manager.js";
-import { WorkerSessionPool } from "../teams/manager.js";
+import { TeamManager } from "../teams/manager-v2.js";
 import type {
-	AgentClientEvent,
-	MemberId,
-	ResolvedModel,
-	TeamMember,
-	TeamMessage,
-	TeamOrphansCancelledEvent,
-	TeamTask,
-	WorkerEventEnvelope,
-	WorkerId,
-	WorkerPoolRef,
-	WorkerSnapshot,
-	WorkerStatus,
-} from "../teams/types.js";
+	MemberName,
+	MemberState,
+	TeamEvent,
+	TeamManagerLike,
+	TeamManagerRef,
+	TaskState,
+} from "../teams/types-v2.js";
 
 export interface AgentServerOptions {
 	runtime: AgentSessionRuntime;
 	skillManager: SkillManager;
 	cwd: string;
-	poolRef?: WorkerPoolRef;
+	teamRef?: TeamManagerRef;
 }
 
 export class AgentServer {
@@ -47,14 +39,14 @@ export class AgentServer {
 	private readonly skillManager: SkillManager;
 	private readonly cwd: string;
 	private readonly eventHandlers = new Set<EventHandler>();
-	private readonly teamEventHandlers = new Set<(event: AgentClientEvent) => void>();
+	private readonly teamEventHandlers = new Set<(event: TeamEvent) => void>();
 	private readonly sessionChangeHandlers = new Set<(session: AgentSession) => Promise<void>>();
 	private currentUnsub: Unsubscribe | null = null;
 	private readonly notificationRouter: NotificationRouter;
-	readonly workerPool: WorkerSessionPool;
-	readonly poolRef: WorkerPoolRef;
+	readonly teamManager: TeamManager;
+	readonly teamRef: TeamManagerRef;
 	private readonly teamConfig: ReturnType<typeof resolveConfigTeams>;
-	private workerPoolUnsub: (() => void) | null = null;
+	private teamUnsub: (() => void) | null = null;
 
 	constructor(opts: AgentServerOptions) {
 		this.runtime = opts.runtime;
@@ -68,19 +60,18 @@ export class AgentServer {
 
 		const config = readConfig(opts.cwd);
 		this.teamConfig = resolveConfigTeams(config);
-		this.workerPool = new WorkerSessionPool(
+		this.teamManager = new TeamManager(
 			this.teamConfig,
 			this.runtime.services,
 			this.cwd,
-			this.runtime.session.sessionId,
 		);
-		if (opts.poolRef) {
-			opts.poolRef.current = this.workerPool;
+		if (opts.teamRef) {
+			opts.teamRef.current = this.teamManager;
 		}
-		this.poolRef = opts.poolRef ?? { current: this.workerPool };
+		this.teamRef = opts.teamRef ?? { current: this.teamManager };
 
 		this.runtime.setRebindSession(async (newSession) => {
-			await this.cancelOrphans("session_change");
+			await this.disposeTeam();
 			this.resubscribe();
 			for (const handler of this.sessionChangeHandlers) {
 				await handler(newSession);
@@ -90,7 +81,7 @@ export class AgentServer {
 		this.ensureSubscribed();
 
 		const dispose = () => {
-			void this.workerPool.dispose();
+			void this.disposeTeam();
 		};
 		process.once("exit", dispose);
 		process.once("SIGINT", () => {
@@ -107,7 +98,7 @@ export class AgentServer {
 		return this.runtime.session;
 	}
 
-	private broadcastTeamEvent(event: AgentClientEvent) {
+	private broadcastTeamEvent(event: TeamEvent) {
 		for (const handler of this.teamEventHandlers) {
 			try {
 				handler(event);
@@ -117,37 +108,19 @@ export class AgentServer {
 		}
 	}
 
-	handleSubscribeTeam(handler: (event: AgentClientEvent) => void): Unsubscribe {
+	handleSubscribeTeam(handler: (event: TeamEvent) => void): Unsubscribe {
 		this.teamEventHandlers.add(handler);
 		return () => {
 			this.teamEventHandlers.delete(handler);
 		};
 	}
 
-	private async cancelOrphans(cause: "agent_end" | "session_change") {
-		if (this.workerPool.runningCount() === 0) return;
-		const enabled =
-			cause === "agent_end"
-				? this.teamConfig.cancelOrphansOnAgentEnd
-				: this.teamConfig.cancelOrphansOnSessionChange;
-		if (!enabled) return;
-		// Team members (V2) are intentional long-lived workers — not orphans.
-		// Only cancel V1 workers that were spawned via spawnWorker (no member mapping).
-		const ids = this.workerPool
-			.list()
-			.filter(
-				(w) =>
-					(w.status === "running" || w.status === "idle") && !this.workerPool.isTeamMember(w.id),
-			)
-			.map((w) => w.id);
-		if (ids.length === 0) return;
-		await this.workerPool.cancelAll();
-		const event: TeamOrphansCancelledEvent = {
-			type: "team_orphans_cancelled",
-			workerIds: ids,
-			cause,
-		};
-		this.broadcastTeamEvent(event);
+	private async disposeTeam() {
+		if (this.teamUnsub) {
+			this.teamUnsub();
+			this.teamUnsub = null;
+		}
+		await this.teamManager.dispose();
 	}
 
 	private ensureSubscribed() {
@@ -157,40 +130,34 @@ export class AgentServer {
 			for (const handler of this.eventHandlers) {
 				handler(event);
 			}
-			if (event.type === "agent_end" && this.teamConfig.cancelOrphansOnAgentEnd) {
-				void this.cancelOrphans("agent_end");
-			}
 		});
-		if (!this.workerPoolUnsub) {
-			this.workerPoolUnsub = this.workerPool.subscribe((event: WorkerEventEnvelope) => {
+		if (!this.teamUnsub) {
+			this.teamUnsub = this.teamManager.subscribe((event: TeamEvent) => {
 				this.broadcastTeamEvent(event);
-				if (event.kind === "agent_end" || event.kind === "error" || event.kind === "cancelled") {
-					const snap = this.workerPool.get(event.workerId);
-					if (snap) {
-						const isMember = this.workerPool.isTeamMember(event.workerId);
-						if (isMember) {
-							const member = this.workerPool.findMemberByWorkerId(event.workerId);
-							const task = this.workerPool.findTaskByWorkerId(event.workerId);
-							const name = member?.name ?? event.workerAgent;
-							const status = member?.status ?? snap.status;
-							const summary = snap.lastSummary?.slice(0, 2000) ?? "(no output)";
-							const error = snap.lastError ? `\nError: ${snap.lastError}` : "";
-							const costStr = snap.cost > 0 ? ` | cost $${snap.cost.toFixed(4)}` : "";
-							const taskTitle = task?.title ? ` — ${task.title}` : "";
-							const note = `[Team Member ${name}${taskTitle} ${status}${costStr}]\n${summary}${error}`;
-							if (this.session.isStreaming) {
-								this.session.steer(note);
-							} else {
-								void this.session.prompt(note);
-							}
-						} else {
-							const status = snap.status;
-							const summary = snap.lastSummary?.slice(0, 2000) ?? "(no output)";
-							const error = snap.lastError ? `\nError: ${snap.lastError}` : "";
-							const costStr = snap.cost > 0 ? ` | cost $${snap.cost.toFixed(4)}` : "";
-							const note = `[Worker ${event.workerId.slice(0, 10)}/${event.workerAgent} ${status}${costStr}]\n${summary}${error}`;
+
+				if (event.type === "member_done") {
+					const state = this.teamManager.getMember(event.memberName);
+					if (state) {
+						const costStr = event.cost > 0 ? ` | cost $${event.cost.toFixed(4)}` : "";
+						const task = state.currentTaskId
+							? this.teamManager.listTasks().find((t) => t.id === state.currentTaskId)
+							: undefined;
+						const taskTitle = task?.title ? ` — ${task.title}` : "";
+						const note = `[Team Member ${event.memberName}${taskTitle} ${state.status}${costStr}]\n${event.summary}`;
+						if (this.session.isStreaming) {
 							this.session.steer(note);
+						} else {
+							void this.session.prompt(note);
 						}
+					}
+				}
+
+				if (event.type === "member_error") {
+					const note = `[Team Member ${event.memberName} error]\n${event.error}`;
+					if (this.session.isStreaming) {
+						this.session.steer(note);
+					} else {
+						void this.session.prompt(note);
 					}
 				}
 			});
@@ -319,98 +286,47 @@ export class AgentServer {
 		return commandRegistry.execute(name, args, ctx);
 	}
 
-	handleListWorkers(): WorkerSnapshot[] {
-		return this.workerPool.list();
+	handleListMembers(): MemberState[] {
+		return this.teamManager.listMembers();
 	}
 
-	handleGetWorker(id: WorkerId): WorkerSnapshot | undefined {
-		return this.workerPool.get(id);
+	handleGetMember(name: MemberName): MemberState | undefined {
+		return this.teamManager.getMember(name);
 	}
 
-	async handleSpawnWorker(
-		agent: string,
-		task: string,
-	): Promise<{ workerId: WorkerId; status: WorkerStatus }> {
-		const { agents } = discoverAgents(this.cwd);
-		const agentMap = new Map<string, AgentConfig>(agents.map((a) => [a.name, a]));
-		const agentConfig = agentMap.get(agent);
-
-		if (!agentConfig) {
-			throw new Error(
-				`agent "${agent}" not found. Available: ${agents.map((a) => a.name).join(", ") || "(none)"}`,
-			);
-		}
-
-		if (agentConfig.background === false) {
-			throw new Error(`agent "${agent}" has background:false — cannot be used as a team worker`);
-		}
-
-		return this.workerPool.spawnWorker({
-			agent: agentConfig,
-			task,
-			cwd: this.cwd,
+	async handleCreateMember(opts: {
+		name: MemberName;
+		role: string;
+		goal: string;
+		model?: string;
+	}): Promise<MemberState> {
+		return this.teamManager.createMember({
+			...opts,
 			services: this.runtime.services,
 			parentModel: this.session.model,
 		});
 	}
 
-	async handleCancelWorker(workerId: WorkerId): Promise<void> {
-		await this.workerPool.cancel(workerId);
-	}
-
-	async handleCancelAllWorkers(): Promise<void> {
-		await this.workerPool.cancelAll();
-	}
-
-	// V2 Team methods
-	async handleCreateMember(opts: {
-		name: string;
-		role: string;
-		goal: string;
-		model?: string;
-		tools?: string[];
-		systemPrompt?: string;
-	}): Promise<TeamMember> {
-		return this.workerPool.createMember(opts);
-	}
-
-	async handleRemoveMember(id: MemberId): Promise<void> {
-		return this.workerPool.removeMember(id);
-	}
-
-	handleGetMember(id: MemberId): TeamMember | undefined {
-		return this.workerPool.getMember(id);
-	}
-
-	handleListMembers(): TeamMember[] {
-		return this.workerPool.listMembers();
+	async handleRemoveMember(name: MemberName): Promise<void> {
+		return this.teamManager.removeMember(name);
 	}
 
 	async handleAssignTask(opts: {
 		title: string;
 		description: string;
-		memberId: MemberId;
+		memberName: MemberName;
 		priority?: "high" | "medium" | "low";
-		cwd?: string;
-		parentModel?: ResolvedModel;
-	}): Promise<TeamTask> {
-		return this.workerPool.assignTask(opts);
+	}): Promise<TaskState> {
+		return this.teamManager.assignTask(opts);
 	}
 
-	handleListTasks(): TeamTask[] {
-		return this.workerPool.listTasks();
+	handleListTasks(): TaskState[] {
+		return this.teamManager.listTasks();
 	}
 
-	handleTaskStatus(taskId: string): TeamTask | undefined {
-		return this.workerPool.taskStatus(taskId);
-	}
-
-	async handleSendMessage(from: MemberId, to: MemberId | "team", content: string): Promise<void> {
-		return this.workerPool.sendMessage(from, to, content);
-	}
-
-	handleReadInbox(memberId?: MemberId): TeamMessage[] {
-		return this.workerPool.readInbox(memberId);
+	handleTaskStatus(taskId: string): TaskState | undefined {
+		const tasks = this.teamManager.listTasks();
+		return tasks.find((t) => t.id === taskId);
 	}
 }
 

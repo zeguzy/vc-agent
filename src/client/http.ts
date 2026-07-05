@@ -2,16 +2,7 @@ import type { AgentSessionEvent } from "../agent/session.js";
 import type { CommandContext } from "../commands/registry.js";
 import type { Message } from "../message.js";
 import type { SessionInfo } from "../session/list.js";
-import type {
-	AgentClientEvent,
-	MemberId,
-	TeamMember,
-	TeamMessage,
-	TeamTask,
-	WorkerId,
-	WorkerSnapshot,
-	WorkerStatus,
-} from "../teams/types.js";
+import type { MemberName, MemberState, TaskState, TeamEvent } from "../teams/types-v2.js";
 import type {
 	AgentClient,
 	AgentMode,
@@ -226,100 +217,62 @@ export class HttpClient implements AgentClient {
 		throw new NotSupportedError("executeCommand");
 	}
 
-	listWorkers(): WorkerSnapshot[] {
-		throw new NotSupportedError("listWorkers");
-	}
-
-	getWorker(_id: WorkerId): WorkerSnapshot | undefined {
-		throw new NotSupportedError("getWorker");
-	}
-
-	async spawnWorker(
-		_agent: string,
-		_task: string,
-	): Promise<{ workerId: WorkerId; status: WorkerStatus }> {
-		throw new NotSupportedError("spawnWorker");
-	}
-
-	async cancelWorker(_workerId: WorkerId): Promise<void> {
-		throw new NotSupportedError("cancelWorker");
-	}
-
-	async cancelAllWorkers(): Promise<void> {
-		throw new NotSupportedError("cancelAllWorkers");
-	}
-
-	subscribeTeam(_handler: (event: AgentClientEvent) => void): Unsubscribe {
+	subscribeTeam(_handler: (event: TeamEvent) => void): Unsubscribe {
 		throw new NotSupportedError("subscribeTeam");
 	}
 
-	// V2 Team methods (not supported over HTTP)
-	async createMember(opts: Parameters<AgentClient["createMember"]>[0]): Promise<TeamMember> {
+	async createMember(opts: Parameters<AgentClient["createMember"]>[0]): Promise<MemberState> {
 		const res = await this.postJson("/team/members", opts);
-		return res as TeamMember;
+		return res as MemberState;
 	}
 
-	async removeMember(id: MemberId): Promise<void> {
-		await fetch(`${this.baseUrl}/team/members/${id}`, { method: "DELETE" });
+	async removeMember(name: MemberName): Promise<void> {
+		await fetch(`${this.baseUrl}/team/members/${name}`, { method: "DELETE" });
 	}
 
-	getMember(_id: MemberId): TeamMember | undefined {
+	getMember(_name: MemberName): MemberState | undefined {
 		throw new NotSupportedError("getMember (sync) — use fetchMember() instead");
 	}
 
-	listMembers(): TeamMember[] {
+	listMembers(): MemberState[] {
 		throw new NotSupportedError("listMembers (sync) — use fetchMembers() instead");
 	}
 
-	async assignTask(opts: Parameters<AgentClient["assignTask"]>[0]): Promise<TeamTask> {
+	async assignTask(opts: Parameters<AgentClient["assignTask"]>[0]): Promise<TaskState> {
 		const res = await this.postJson("/team/tasks", opts);
-		return res as TeamTask;
+		return res as TaskState;
 	}
 
-	listTasks(): TeamTask[] {
+	listTasks(): TaskState[] {
 		throw new NotSupportedError("listTasks (sync) — use fetchTasks() instead");
 	}
 
-	taskStatus(_taskId: string): TeamTask | undefined {
+	taskStatus(_taskId: string): TaskState | undefined {
 		throw new NotSupportedError("taskStatus (sync) — use fetchTaskStatus() instead");
 	}
 
-	async sendMessage(from: MemberId, to: MemberId | "team", content: string): Promise<void> {
-		await this.postJson("/team/messages", { from, to, content });
-	}
-
-	readInbox(_memberId?: MemberId): TeamMessage[] {
-		throw new NotSupportedError("readInbox (sync) — use fetchInbox() instead");
-	}
-
-	async fetchMember(id: MemberId): Promise<TeamMember | undefined> {
-		const res = await fetch(`${this.baseUrl}/team/members/${id}`);
+	async fetchMember(name: MemberName): Promise<MemberState | undefined> {
+		const res = await fetch(`${this.baseUrl}/team/members/${name}`);
 		if (res.status === 404) return undefined;
 		const data = await res.json();
-		return (data as { member: TeamMember }).member;
+		return (data as { member: MemberState }).member;
 	}
 
-	async fetchMembers(): Promise<TeamMember[]> {
-		const data = await this.getJson<{ members: TeamMember[] }>("/team/members");
+	async fetchMembers(): Promise<MemberState[]> {
+		const data = await this.getJson<{ members: MemberState[] }>("/team/members");
 		return data.members;
 	}
 
-	async fetchTasks(): Promise<TeamTask[]> {
-		const data = await this.getJson<{ tasks: TeamTask[] }>("/team/tasks");
+	async fetchTasks(): Promise<TaskState[]> {
+		const data = await this.getJson<{ tasks: TaskState[] }>("/team/tasks");
 		return data.tasks;
 	}
 
-	async fetchTaskStatus(taskId: string): Promise<TeamTask | undefined> {
+	async fetchTaskStatus(taskId: string): Promise<TaskState | undefined> {
 		const res = await fetch(`${this.baseUrl}/team/tasks/${taskId}`);
 		if (res.status === 404) return undefined;
 		const data = await res.json();
-		return (data as { task: TeamTask }).task;
-	}
-
-	async fetchInbox(memberId?: MemberId): Promise<TeamMessage[]> {
-		const path = memberId ? `/team/inbox?memberId=${memberId}` : "/team/inbox";
-		const data = await this.getJson<{ messages: TeamMessage[] }>(path);
-		return data.messages;
+		return (data as { task: TaskState }).task;
 	}
 }
 

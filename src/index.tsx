@@ -8,7 +8,7 @@ import { readConfig } from "./config.js";
 import { HeadlessRunner } from "./headless/runner.js";
 import { createHttpServer } from "./server/http.js";
 import { createServer } from "./server/index.js";
-import type { WorkerPoolRef } from "./teams/types.js";
+import type { TeamManagerRef } from "./teams/types-v2.js";
 import { createEditConfirmBridge } from "./tools/edit-confirm-bridge.js";
 import { createQuestionBridge } from "./tools/question-bridge.js";
 import { App } from "./tui/App.js";
@@ -133,16 +133,16 @@ async function runServe(argv: string[]): Promise<void> {
 
 	const cwd = process.cwd();
 	const config = readConfig(cwd);
-	const poolRef: WorkerPoolRef = { current: null };
+	const teamRef: TeamManagerRef = { current: null };
 	const { runtime, skillManager } = await createRuntime({
 		cwd,
 		model: config.model,
 		config,
 		mode: "new",
 		agentMode: getBaseMode(config),
-		poolRef,
+		teamRef,
 	});
-	const server = createServer({ runtime, skillManager, cwd, poolRef });
+	const server = createServer({ runtime, skillManager, cwd, teamRef });
 	createHttpServer({ server, port });
 
 	console.log(`openagent server: http://localhost:${port}`);
@@ -176,7 +176,7 @@ async function runTui(argv: string[]): Promise<void> {
 
 	const questionBridge = createQuestionBridge();
 	const editBridge = createEditConfirmBridge();
-	const poolRef: WorkerPoolRef = { current: null };
+	const teamRef: TeamManagerRef = { current: null };
 
 	let result: Awaited<ReturnType<typeof createRuntime>>;
 	try {
@@ -188,7 +188,7 @@ async function runTui(argv: string[]): Promise<void> {
 			agentMode,
 			bridge: questionBridge,
 			editBridge,
-			poolRef,
+			teamRef,
 			...(args.sessionRef ? { sessionRef: args.sessionRef } : {}),
 			...(args.name ? { name: args.name } : {}),
 		});
@@ -198,7 +198,7 @@ async function runTui(argv: string[]): Promise<void> {
 	}
 
 	const { runtime, skillManager } = result;
-	const server = createServer({ runtime, skillManager, cwd, poolRef });
+	const server = createServer({ runtime, skillManager, cwd, teamRef });
 	const client = createClient(server);
 
 	const renderer = await createCliRenderer({ exitOnCtrlC: false });

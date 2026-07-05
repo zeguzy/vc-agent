@@ -102,56 +102,12 @@ async function handleRequest(server: AgentServer, req: IncomingMessage, res: Ser
 		return sendJson(res, { sessions });
 	}
 
-	if (method === "POST" && path === "/team/spawn") {
-		const body = await readBody<{ agent: string; task: string }>(req);
-		if (!body.agent || !body.task) {
-			return sendJson(res, { error: "agent and task required" }, 400);
-		}
-		try {
-			const result = await server.handleSpawnWorker(body.agent, body.task);
-			return sendJson(res, result);
-		} catch (err) {
-			return sendJson(res, { error: String(err) }, 400);
-		}
-	}
-
-	if (method === "POST" && path.startsWith("/team/cancel/")) {
-		const workerId = path.slice("/team/cancel/".length);
-		if (!workerId) {
-			await server.handleCancelAllWorkers();
-			return sendJson(res, { ok: true });
-		}
-		await server.handleCancelWorker(workerId);
-		return sendJson(res, { ok: true });
-	}
-
-	if (method === "POST" && path === "/team/cancel") {
-		await server.handleCancelAllWorkers();
-		return sendJson(res, { ok: true });
-	}
-
-	if (method === "GET" && path === "/team/workers") {
-		return sendJson(res, { workers: server.handleListWorkers() });
-	}
-
-	if (method === "GET" && path === "/team/worker") {
-		const id = url.searchParams.get("id");
-		if (!id) return sendJson(res, { error: "?id= required" }, 400);
-		const worker = server.handleGetWorker(id);
-		if (!worker) return sendJson(res, { error: "worker not found" }, 404);
-		return sendJson(res, { worker });
-	}
-
-	// ── V2 Team Member/Task/Message routes ──
-
 	if (method === "POST" && path === "/team/members") {
 		const body = await readBody<{
 			name: string;
 			role: string;
 			goal: string;
 			model?: string;
-			tools?: string[];
-			systemPrompt?: string;
 		}>(req);
 		if (!body.name || !body.role || !body.goal) {
 			return sendJson(res, { error: "name, role, and goal required" }, 400);
@@ -169,16 +125,16 @@ async function handleRequest(server: AgentServer, req: IncomingMessage, res: Ser
 	}
 
 	if (method === "GET" && path.startsWith("/team/members/")) {
-		const id = path.slice("/team/members/".length);
-		const member = server.handleGetMember(id);
+		const name = path.slice("/team/members/".length);
+		const member = server.handleGetMember(name);
 		if (!member) return sendJson(res, { error: "member not found" }, 404);
 		return sendJson(res, { member });
 	}
 
 	if (method === "DELETE" && path.startsWith("/team/members/")) {
-		const id = path.slice("/team/members/".length);
+		const name = path.slice("/team/members/".length);
 		try {
-			await server.handleRemoveMember(id);
+			await server.handleRemoveMember(name);
 			return sendJson(res, { ok: true });
 		} catch (err) {
 			return sendJson(res, { error: String(err) }, 400);
@@ -189,11 +145,11 @@ async function handleRequest(server: AgentServer, req: IncomingMessage, res: Ser
 		const body = await readBody<{
 			title: string;
 			description: string;
-			memberId: string;
+			memberName: string;
 			priority?: "high" | "medium" | "low";
 		}>(req);
-		if (!body.title || !body.description || !body.memberId) {
-			return sendJson(res, { error: "title, description, and memberId required" }, 400);
+		if (!body.title || !body.description || !body.memberName) {
+			return sendJson(res, { error: "title, description, and memberName required" }, 400);
 		}
 		try {
 			const task = await server.handleAssignTask(body);
@@ -212,24 +168,6 @@ async function handleRequest(server: AgentServer, req: IncomingMessage, res: Ser
 		const task = server.handleTaskStatus(id);
 		if (!task) return sendJson(res, { error: "task not found" }, 404);
 		return sendJson(res, { task });
-	}
-
-	if (method === "POST" && path === "/team/messages") {
-		const body = await readBody<{ from: string; to: string; content: string }>(req);
-		if (!body.from || !body.to || !body.content) {
-			return sendJson(res, { error: "from, to, and content required" }, 400);
-		}
-		try {
-			await server.handleSendMessage(body.from, body.to, body.content);
-			return sendJson(res, { ok: true });
-		} catch (err) {
-			return sendJson(res, { error: String(err) }, 400);
-		}
-	}
-
-	if (method === "GET" && path === "/team/inbox") {
-		const memberId = url.searchParams.get("memberId") ?? undefined;
-		return sendJson(res, { messages: server.handleReadInbox(memberId) });
 	}
 
 	if (method === "GET" && path === "/events") {
@@ -273,11 +211,7 @@ function createSSEResponse(
 		res.write(`data: ${JSON.stringify(event)}\n\n`);
 	});
 
-	const streamTeamKinds = new Set(["message_end", "agent_end", "error"]);
 	const teamUnsub = server.handleSubscribeTeam((event) => {
-		if (event.type === "team_worker_event") {
-			if (!streaming && !streamTeamKinds.has(event.kind)) return;
-		}
 		res.write(`data: ${JSON.stringify(event)}\n\n`);
 	});
 

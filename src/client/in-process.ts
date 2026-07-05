@@ -3,16 +3,7 @@ import type { AgentSession, AgentSessionRuntime } from "../agent/session.js";
 import type { CommandContext } from "../commands/registry.js";
 import type { AgentServer } from "../server/index.js";
 import type { SkillManager } from "../skills/manager.js";
-import type {
-	AgentClientEvent,
-	MemberId,
-	TeamMember,
-	TeamMessage,
-	TeamTask,
-	WorkerId,
-	WorkerSnapshot,
-	WorkerStatus,
-} from "../teams/types.js";
+import type { MemberName, MemberState, TaskState, TeamEvent } from "../teams/types-v2.js";
 import type {
 	AgentClient,
 	ContextUsage,
@@ -130,80 +121,46 @@ export class InProcessClient implements AgentClient {
 		return this.server.handleExecuteCommand(name, args, ctx);
 	}
 
-	listWorkers(): WorkerSnapshot[] {
-		return this.server.handleListWorkers();
-	}
-
-	getWorker(id: WorkerId): WorkerSnapshot | undefined {
-		return this.server.handleGetWorker(id);
-	}
-
-	async spawnWorker(
-		agent: string,
-		task: string,
-	): Promise<{ workerId: WorkerId; status: WorkerStatus }> {
-		return this.server.handleSpawnWorker(agent, task);
-	}
-
-	async cancelWorker(workerId: WorkerId): Promise<void> {
-		return this.server.handleCancelWorker(workerId);
-	}
-
-	async cancelAllWorkers(): Promise<void> {
-		return this.server.handleCancelAllWorkers();
-	}
-
-	subscribeTeam(handler: (event: AgentClientEvent) => void): Unsubscribe {
+	subscribeTeam(handler: (event: TeamEvent) => void): Unsubscribe {
 		return this.server.handleSubscribeTeam(handler);
 	}
 
-	// V2 Team methods
 	async createMember(opts: {
-		name: string;
+		name: MemberName;
 		role: string;
 		goal: string;
 		model?: string;
-		tools?: string[];
-		systemPrompt?: string;
-	}): Promise<TeamMember> {
+	}): Promise<MemberState> {
 		return this.server.handleCreateMember(opts);
 	}
 
-	async removeMember(id: MemberId): Promise<void> {
-		return this.server.handleRemoveMember(id);
+	async removeMember(name: MemberName): Promise<void> {
+		return this.server.handleRemoveMember(name);
 	}
 
-	getMember(id: MemberId): TeamMember | undefined {
-		return this.server.handleGetMember(id);
+	getMember(name: MemberName): MemberState | undefined {
+		return this.server.handleGetMember(name);
 	}
 
-	listMembers(): TeamMember[] {
+	listMembers(): MemberState[] {
 		return this.server.handleListMembers();
 	}
 
 	async assignTask(opts: {
 		title: string;
 		description: string;
-		memberId: MemberId;
+		memberName: MemberName;
 		priority?: "high" | "medium" | "low";
-	}): Promise<TeamTask> {
+	}): Promise<TaskState> {
 		return this.server.handleAssignTask(opts);
 	}
 
-	listTasks(): TeamTask[] {
+	listTasks(): TaskState[] {
 		return this.server.handleListTasks();
 	}
 
-	taskStatus(taskId: string): TeamTask | undefined {
+	taskStatus(taskId: string): TaskState | undefined {
 		return this.server.handleTaskStatus(taskId);
-	}
-
-	async sendMessage(from: MemberId, to: MemberId | "team", content: string): Promise<void> {
-		return this.server.handleSendMessage(from, to, content);
-	}
-
-	readInbox(memberId?: MemberId): TeamMessage[] {
-		return this.server.handleReadInbox(memberId);
 	}
 }
 

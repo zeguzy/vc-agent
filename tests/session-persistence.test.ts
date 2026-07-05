@@ -131,7 +131,7 @@ describe("mapSdkMessagesToTui", () => {
 				content: [
 					{ type: "thinking", thinking: "deliberating" },
 					{ type: "text", text: "answer" },
-					{ type: "tool_use", name: "read", input: { path: "/x" } },
+					{ type: "toolCall", name: "read", arguments: { path: "/x" }, id: "tc_1" },
 				],
 			},
 		]);

@@ -1,7 +1,7 @@
 import { useKeyboard } from "@opentui/react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { AgentClient } from "../../client/index.js";
-import type { WorkerSnapshot } from "../../teams/types.js";
+import type { MemberState } from "../../teams/types-v2.js";
 import { colors } from "../utils/theme.js";
 
 interface WorkersViewProps {
@@ -9,9 +9,9 @@ interface WorkersViewProps {
 	onClose: () => void;
 }
 
-function statusIcon(status: WorkerSnapshot["status"]): string {
+function statusIcon(status: MemberState["status"]): string {
 	switch (status) {
-		case "running":
+		case "active":
 			return "◌";
 		case "idle":
 			return "○";
@@ -19,14 +19,12 @@ function statusIcon(status: WorkerSnapshot["status"]): string {
 			return "✓";
 		case "error":
 			return "✗";
-		case "cancelled":
-			return "⊘";
 	}
 }
 
-function statusColor(status: WorkerSnapshot["status"]): string {
+function statusColor(status: MemberState["status"]): string {
 	switch (status) {
-		case "running":
+		case "active":
 			return colors.warning;
 		case "idle":
 			return colors.textMuted;
@@ -34,43 +32,32 @@ function statusColor(status: WorkerSnapshot["status"]): string {
 			return colors.success;
 		case "error":
 			return colors.error;
-		case "cancelled":
-			return colors.textMuted;
 	}
-}
-
-function summaryPreview(s: WorkerSnapshot): string {
-	if (s.lastSummary) {
-		const line = s.lastSummary.split("\n")[0];
-		return line.length > 60 ? `${line.slice(0, 57)}…` : line;
-	}
-	if (s.lastError) return `error: ${s.lastError.slice(0, 50)}`;
-	return "";
 }
 
 export function WorkersView({ client, onClose }: WorkersViewProps) {
-	const [snapshots, setSnapshots] = useState<WorkerSnapshot[]>(() => client.listWorkers());
+	const [members, setMembers] = useState<MemberState[]>(() => client.listMembers());
 	const [selectedIdx, setSelectedIdx] = useState(0);
-	const [focusedId, setFocusedId] = useState<string | null>(null);
+	const [focusedName, setFocusedName] = useState<string | null>(null);
 
-	const snapshotsRef = useRef(snapshots);
-	snapshotsRef.current = snapshots;
+	const membersRef = useRef(members);
+	membersRef.current = members;
 	const selectedIdxRef = useRef(selectedIdx);
 	selectedIdxRef.current = selectedIdx;
 	const onCloseRef = useRef(onClose);
 	onCloseRef.current = onClose;
 
-	const focusedWorker = useMemo(
-		() => snapshots.find((s) => s.id === focusedId) ?? null,
-		[snapshots, focusedId],
+	const focusedMember = useMemo(
+		() => members.find((m) => m.name === focusedName) ?? null,
+		[members, focusedName],
 	);
 
 	useEffect(() => {
 		const unsub = client.subscribeTeam(() => {
-			setSnapshots(client.listWorkers());
+			setMembers(client.listMembers());
 		});
 		const interval = setInterval(() => {
-			setSnapshots(client.listWorkers());
+			setMembers(client.listMembers());
 		}, 500);
 		return () => {
 			unsub();
@@ -79,12 +66,12 @@ export function WorkersView({ client, onClose }: WorkersViewProps) {
 	}, [client]);
 
 	useKeyboard((key) => {
-		const list = snapshotsRef.current;
+		const list = membersRef.current;
 		const idx = selectedIdxRef.current;
 
-		if (focusedId) {
+		if (focusedName) {
 			if (key.name === "escape") {
-				setFocusedId(null);
+				setFocusedName(null);
 			}
 			return;
 		}
@@ -99,18 +86,15 @@ export function WorkersView({ client, onClose }: WorkersViewProps) {
 			setSelectedIdx(Math.max(0, list.length - 1));
 		} else if (key.name === "return") {
 			const target = list[idx];
-			if (target) setFocusedId(target.id);
+			if (target) setFocusedName(target.name);
 		} else if (key.name === "escape") {
 			onCloseRef.current();
 		}
 	});
 
-	if (focusedWorker) {
-		const summary = focusedWorker.lastSummary ?? "(no output)";
-		const error = focusedWorker.lastError;
-		const costStr = focusedWorker.cost > 0 ? ` $${focusedWorker.cost.toFixed(4)}` : "";
-		const sc = statusColor(focusedWorker.status);
-		const si = statusIcon(focusedWorker.status);
+	if (focusedMember) {
+		const sc = statusColor(focusedMember.status);
+		const si = statusIcon(focusedMember.status);
 
 		return (
 			<box
@@ -126,42 +110,30 @@ export function WorkersView({ client, onClose }: WorkersViewProps) {
 				</box>
 				<box flexDirection="row" flexShrink={0} marginTop={1}>
 					<text fg={sc}>{si} </text>
-					<text fg={colors.textMuted}>{focusedWorker.id}</text>
-					<text fg={colors.textSubtle}>/{focusedWorker.agent} </text>
-					<text fg={sc}>{focusedWorker.status}</text>
-					<text fg={colors.textMuted}>{costStr}</text>
+					<text fg={colors.primary}>{focusedMember.name}</text>
+					<text fg={colors.textSubtle}>/{focusedMember.role} </text>
+					<text fg={sc}>{focusedMember.status}</text>
 				</box>
 				<box flexDirection="row" flexShrink={0} marginTop={1}>
 					<text fg={colors.textSubtle}>
-						turns={focusedWorker.turnCount} in={focusedWorker.inputTokens} out=
-						{focusedWorker.outputTokens}
+						goal: {focusedMember.goal}
 					</text>
 				</box>
-				{error && (
-					<box flexShrink={0} marginTop={1}>
-						<text fg={colors.error}>error: {error}</text>
-					</box>
-				)}
-				<scrollbox flexGrow={1} scrollY marginTop={1}>
-					<box flexDirection="column">
-						<text fg={colors.text}>{summary}</text>
-					</box>
-				</scrollbox>
 			</box>
 		);
 	}
 
-	if (snapshots.length === 0) {
+	if (members.length === 0) {
 		return (
 			<box flexShrink={0} paddingLeft={2} paddingTop={1} paddingBottom={1} flexDirection="row">
 				<text fg={colors.textMuted}>
-					No active workers. Workers appear here when spawned via team.spawn().
+					No team members. Create one with team-edit (add-member).
 				</text>
 			</box>
 		);
 	}
 
-	const cur = Math.min(selectedIdx, Math.max(0, snapshots.length - 1));
+	const cur = Math.min(selectedIdx, Math.max(0, members.length - 1));
 
 	return (
 		<box flexShrink={0} paddingLeft={2} paddingRight={2} paddingTop={1} paddingBottom={1}>
@@ -175,20 +147,19 @@ export function WorkersView({ client, onClose }: WorkersViewProps) {
 				paddingRight={1}
 			>
 				<box flexDirection="row" flexShrink={0}>
-					<text fg={colors.primary}>Workers ({snapshots.length})</text>
+					<text fg={colors.primary}>Members ({members.length})</text>
 					<text fg={colors.textMuted}> ↑↓ navigate · Enter focus · Esc close</text>
 				</box>
 				<scrollbox flexGrow={0} maxHeight={12} scrollY>
-					{snapshots.map((s, i) => {
+					{members.map((m, i) => {
 						const isSelected = i === cur;
-						const sc = statusColor(s.status);
-						const si = statusIcon(s.status);
-						const preview = summaryPreview(s);
-						const costStr = s.cost > 0 ? ` $${s.cost.toFixed(4)}` : "";
+						const sc = statusColor(m.status);
+						const si = statusIcon(m.status);
+						const taskLabel = m.currentTaskId ? ` · task ${m.currentTaskId}` : "";
 
 						return (
 							<box
-								key={s.id}
+								key={m.name}
 								flexDirection="row"
 								backgroundColor={isSelected ? colors.backgroundMenu : undefined}
 							>
@@ -196,18 +167,11 @@ export function WorkersView({ client, onClose }: WorkersViewProps) {
 									{isSelected ? "▶ " : "  "}
 								</text>
 								<text fg={sc}>{si} </text>
-								<text fg={isSelected ? colors.primary : colors.textMuted}>{s.id.slice(0, 10)}</text>
+								<text fg={isSelected ? colors.primary : colors.textMuted}>{m.name}</text>
 								<text fg={isSelected ? colors.text : colors.textSubtle}>
 									{" "}
-									· {s.agent} · {s.status}
+									· {m.role} · {m.status}{taskLabel}
 								</text>
-								<text fg={colors.textMuted}>{costStr}</text>
-								{preview && (
-									<>
-										<text fg={colors.textSubtle}> — </text>
-										<text fg={colors.textSubtle}>{preview}</text>
-									</>
-								)}
 							</box>
 						);
 					})}
