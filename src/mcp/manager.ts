@@ -1,10 +1,16 @@
 import type { ToolDefinition } from "@earendil-works/pi-coding-agent";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
+import { SSEClientTransport } from "@modelcontextprotocol/sdk/client/sse.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import { convertMcpResultToAgentResult, convertMcpToolsToPiToolDefs } from "./bridge.js";
 import { readMcpConfig } from "./config.js";
-import type { McpServerConfig, McpServerConnection } from "./types.js";
+import type {
+	McpLocalServerConfig,
+	McpRemoteServerConfig,
+	McpServerConfig,
+	McpServerConnection,
+} from "./types.js";
 
 interface McpToolResult {
 	content: Array<{ type: "text"; text: string }>;
@@ -106,8 +112,73 @@ export class McpManager {
 	}
 
 	private async connectServer(name: string, config: McpServerConfig): Promise<McpServerConnection> {
+		if (config.type === "remote") {
+			return this.connectRemoteServer(name, config);
+		}
+		return this.connectLocalServer(name, config);
+	}
+
+	private async connectRemoteServer(
+		name: string,
+		config: McpRemoteServerConfig,
+	): Promise<McpServerConnection> {
+		const url = new URL(config.url);
+		const requestInit: RequestInit = config.headers ? { headers: config.headers } : {};
+
+		// Try StreamableHTTP first, then fallback to SSE for older servers
+		try {
+			return await this.connectWithTransport(
+				name,
+				new StreamableHTTPClientTransport(url, { requestInit }),
+			);
+		} catch (httpErr) {
+			console.error(`[mcp] StreamableHTTP failed for "${name}", trying SSE fallback...`);
+			// EventSourceInit doesn't have a headers field;
+			// inject headers via a custom fetch wrapper instead.
+			const sseOpts: import("@modelcontextprotocol/sdk/client/sse.js").SSEClientTransportOptions =
+				{};
+			if (config.headers) {
+				const extraHeaders = config.headers;
+				sseOpts.eventSourceInit = {
+					fetch: (input, init) => {
+						const merged = new Headers(init?.headers);
+						for (const [k, v] of Object.entries(extraHeaders)) {
+							if (!merged.has(k)) merged.set(k, v);
+						}
+						return globalThis.fetch(input, { ...init, headers: merged });
+					},
+				};
+				sseOpts.requestInit = { headers: config.headers };
+			}
+			try {
+				return await this.connectWithTransport(name, new SSEClientTransport(url, sseOpts));
+			} catch (sseErr) {
+				throw new Error(
+					`Both StreamableHTTP and SSE transports failed. HTTP: ${httpErr instanceof Error ? httpErr.message : String(httpErr)}. SSE: ${sseErr instanceof Error ? sseErr.message : String(sseErr)}`,
+				);
+			}
+		}
+	}
+
+	private async connectLocalServer(
+		name: string,
+		config: McpLocalServerConfig,
+	): Promise<McpServerConnection> {
+		const [command, ...args] = config.command;
+		const transport = new StdioClientTransport({
+			command,
+			args,
+			env: config.env,
+			cwd: config.cwd,
+		});
+		return this.connectWithTransport(name, transport);
+	}
+
+	private async connectWithTransport(
+		name: string,
+		transport: import("@modelcontextprotocol/sdk/shared/transport.js").Transport,
+	): Promise<McpServerConnection> {
 		const client = new Client({ name: "openagent", version: "1.0.0" });
-		const transport = this.createTransport(config);
 
 		await Promise.race([
 			client.connect(transport),
@@ -122,24 +193,5 @@ export class McpManager {
 		const { tools } = await client.listTools();
 
 		return { name, client, transport, tools };
-	}
-
-	/**
-	 * Create the appropriate transport for the server config.
-	 * Remote: StreamableHTTP with SSE fallback.
-	 * Local: Stdio (spawn process).
-	 */
-	private createTransport(config: McpServerConfig) {
-		if (config.type === "remote") {
-			return new StreamableHTTPClientTransport(new URL(config.url));
-		}
-
-		const [command, ...args] = config.command;
-		return new StdioClientTransport({
-			command,
-			args,
-			env: config.env,
-			cwd: config.cwd,
-		});
 	}
 }
