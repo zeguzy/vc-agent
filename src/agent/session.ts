@@ -24,17 +24,13 @@ import { SkillManager } from "../skills/manager.js";
 import type { TeamManagerRef } from "../teams/types-v2.js";
 import { createEditTool } from "../tools/edit.js";
 import { clearEditConfirmBridge, type EditConfirmBridge } from "../tools/edit-confirm-bridge.js";
-import { createMemberDirectTool } from "../tools/member-direct.js";
-import { createMemberEditTool } from "../tools/member-edit.js";
-import { createMemberReadTool } from "../tools/member-read.js";
-import { createMemoryWriteTool } from "../tools/memory-write.js";
+import { createMemoryTool } from "../tools/memory.js";
 import { createNotifyTool } from "../tools/notify.js";
 import { createQuestionTool } from "../tools/question.js";
 import { clearBridge, type QuestionBridge } from "../tools/question-bridge.js";
-import { createSelfEditTool } from "../tools/self-edit.js";
 import { createSubagentTool } from "../tools/subagent.js";
-import { createTeamEditTool } from "../tools/team-edit.js";
-import { createTeamReadTool } from "../tools/team-read.js";
+import { createTeamTool } from "../tools/team.js";
+import { createTeamGuardedBashTool, createTeamGuardedWriteTool } from "../tools/team-guard.js";
 import { createTodoTool } from "../tools/todo.js";
 import { createWebfetchTool } from "../tools/webfetch/index.js";
 
@@ -60,13 +56,13 @@ export const STANDARD_ACTIVE_TOOLS = [
 ];
 export const PLANNER_ACTIVE_TOOLS = [...PLANNER_TOOLS, "todo", "question", "webfetch"];
 export const TEAM_ACTIVE_TOOLS = [
-	...STANDARD_ACTIVE_TOOLS,
-	"team-read",
-	"team-edit",
-	"member-read",
-	"member-edit",
-	"member-direct",
-	"memory-write",
+	...ALL_TOOLS,
+	"edit",
+	"todo",
+	"question",
+	"webfetch",
+	"team",
+	"memory",
 ];
 
 export function activeToolsFor(agentMode: AgentMode): string[] {
@@ -251,10 +247,11 @@ export async function createSession(options: SessionOptions): Promise<SessionRes
 		modelStr: options.model ?? options.config?.model,
 	});
 	const teamTools =
-		options.teamRef && options.config?.teams?.enabled !== false && options.teamRef.current
-			? buildTeamTools(options.teamRef.current)
+		options.teamRef && options.config?.teams?.enabled !== false
+			? buildTeamTools(options.teamRef)
 			: [];
 
+	const mcpToolDefs = svc.mcpManager.getToolDefinitions();
 	const result = await createAgentSession({
 		cwd: options.cwd,
 		authStorage: svc.authStorage,
@@ -262,7 +259,7 @@ export async function createSession(options: SessionOptions): Promise<SessionRes
 		...(svc.model ? { model: svc.model } : {}),
 		settingsManager: svc.settingsManager,
 		resourceLoader: svc.resourceLoader,
-		tools: STANDARD_ACTIVE_TOOLS,
+		tools: [...STANDARD_ACTIVE_TOOLS, ...mcpToolDefs.map((d) => d.name)],
 		customTools: [
 			...createLspToolDefinitions({ client: svc.lspClient }),
 			createTodoTool(),
@@ -276,7 +273,7 @@ export async function createSession(options: SessionOptions): Promise<SessionRes
 				parentModel: svc.model,
 			}),
 			...teamTools,
-			...svc.mcpManager.getToolDefinitions(),
+			...mcpToolDefs,
 		],
 		sessionManager: SessionManager.inMemory(),
 	});
@@ -312,10 +309,33 @@ export async function createRuntime(options: RuntimeOptions): Promise<RuntimeRes
 	}) => {
 		if (options.bridge) clearBridge(options.bridge);
 		if (options.editBridge) clearEditConfirmBridge(options.editBridge);
+		const isTeamMode = agentMode === "team";
 		const teamTools =
-			options.teamRef && options.config?.teams?.enabled !== false && options.teamRef.current
-				? buildTeamTools(options.teamRef.current)
+			isTeamMode && options.teamRef && options.config?.teams?.enabled !== false
+				? buildTeamTools(options.teamRef)
 				: [];
+		const customTools: import("@earendil-works/pi-coding-agent").ToolDefinition[] = [
+			...createLspToolDefinitions({ client: svc.lspClient }),
+			createTodoTool(),
+			createEditTool(fCwd, options.editBridge),
+			createQuestionTool(options.bridge),
+			createNotifyTool(),
+			createWebfetchTool(),
+		];
+		if (isTeamMode) {
+			customTools.push(createTeamGuardedBashTool(fCwd), createTeamGuardedWriteTool(fCwd));
+		} else {
+			customTools.push(
+				createSubagentTool({
+					cwd: fCwd,
+					services: svc,
+					parentModel: svc.model,
+				}),
+			);
+		}
+		customTools.push(...teamTools);
+		const mcpToolDefs = svc.mcpManager.getToolDefinitions();
+		const mcpToolNames = mcpToolDefs.map((d) => d.name);
 		const result = await createAgentSession({
 			cwd: fCwd,
 			authStorage: svc.authStorage,
@@ -323,22 +343,8 @@ export async function createRuntime(options: RuntimeOptions): Promise<RuntimeRes
 			...(svc.model ? { model: svc.model } : {}),
 			settingsManager: svc.settingsManager,
 			resourceLoader: svc.resourceLoader,
-			tools: activeToolsFor(agentMode),
-			customTools: [
-				...createLspToolDefinitions({ client: svc.lspClient }),
-				createTodoTool(),
-				createEditTool(fCwd, options.editBridge),
-				createQuestionTool(options.bridge),
-				createNotifyTool(),
-				createWebfetchTool(),
-				createSubagentTool({
-					cwd: fCwd,
-					services: svc,
-					parentModel: svc.model,
-				}),
-				...teamTools,
-				...svc.mcpManager.getToolDefinitions(),
-			],
+			tools: [...activeToolsFor(agentMode), ...mcpToolNames],
+			customTools: [...customTools, ...mcpToolDefs],
 			sessionManager: fSessionManager,
 		});
 		const services: AgentSessionServices = {
@@ -444,15 +450,7 @@ export { extractAssistantContent, extractAssistantText, summarizeArgs } from "..
 export type { AgentSession, AgentSessionEvent, AgentSessionRuntime };
 
 function buildTeamTools(
-	manager: import("../teams/types-v2.js").TeamManagerLike,
+	teamRef: import("../teams/types-v2.js").TeamManagerRef,
 ): import("@earendil-works/pi-coding-agent").ToolDefinition[] {
-	return [
-		createTeamReadTool({ manager }),
-		createTeamEditTool({ manager }),
-		createMemberReadTool({ manager }),
-		createMemberEditTool({ manager }),
-		createMemberDirectTool({ manager }),
-		createSelfEditTool({ manager }),
-		createMemoryWriteTool({ manager }),
-	];
+	return [createTeamTool({ teamRef }), createMemoryTool({ teamRef })];
 }
