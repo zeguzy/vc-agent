@@ -615,14 +615,7 @@ export function App({
 				/>
 			)}
 			{showWorkers && <WorkersView client={client} onClose={() => setShowWorkers(false)} />}
-			<box
-				flexDirection="column"
-				flexShrink={0}
-				paddingLeft={1}
-				paddingRight={1}
-				paddingTop={1}
-				paddingBottom={1}
-			>
+			<box flexDirection="column" flexShrink={0} paddingLeft={1} paddingRight={1}>
 				{pendingEditConfirm && editBridge ? (
 					<DiffConfirmBox
 						bridge={editBridge}
@@ -656,16 +649,20 @@ export function App({
 						sentMessages={commandHistory}
 						pendingInput={pendingInput}
 						members={members}
+						tasks={client.listTasks()}
 						activeMemberName={activeMemberName}
 					/>
 				)}
 				<StatusBar
 					mode={mode}
+					agentMode={agentMode === "standard" ? getBaseMode(configState) : agentMode}
 					contextPercent={contextUsage.percent}
 					contextTokens={contextUsage.tokens}
 					contextWindow={contextUsage.window}
 					copyFeedback={copyFeedback}
 					onCopyFeedbackClear={() => setCopyFeedback(null)}
+					members={members}
+					activeMemberName={activeMemberName}
 				/>
 			</box>
 		</box>
