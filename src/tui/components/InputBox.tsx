@@ -4,9 +4,11 @@ import type { AgentMode } from "../../agent/session.js";
 import type { PollManager } from "../../poll/manager.js";
 import { usePollState } from "../../poll/usePollState.js";
 import type { SkillManager } from "../../skills/manager.js";
+import type { MemberState } from "../../teams/types-v2.js";
 import { matchSuggestions, type SuggestionItem } from "../commands.js";
 import type { Mode } from "../keymap.js";
 import { colors, icons } from "../utils/theme.js";
+import { MemberTags } from "./MemberTags.js";
 
 interface InputBoxProps {
 	disabled: boolean;
@@ -19,6 +21,8 @@ interface InputBoxProps {
 	onSubmit: (text: string) => void;
 	sentMessages: string[];
 	pendingInput?: { text: string; nonce: number } | null;
+	members?: MemberState[];
+	activeMemberName?: string | null;
 }
 
 export function InputBox({
@@ -32,6 +36,8 @@ export function InputBox({
 	onSubmit,
 	sentMessages,
 	pendingInput,
+	members = [],
+	activeMemberName = null,
 }: InputBoxProps) {
 	const [inputHeight, setInputHeight] = useState(2);
 	const [animationFrame, setAnimationFrame] = useState(0);
@@ -330,6 +336,13 @@ export function InputBox({
 						onSubmit={handleTextareaSubmit}
 					/>
 				</box>
+				{agentMode === "team" && members.length > 0 && (
+					<MemberTags
+						members={members}
+						activeMemberName={activeMemberName ?? null}
+						onMemberChange={() => {}}
+					/>
+				)}
 			</box>
 		</box>
 	);

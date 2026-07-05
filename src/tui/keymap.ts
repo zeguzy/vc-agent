@@ -40,6 +40,18 @@ export const keymap: readonly KeyBinding[] = [
 		action: "toggleAgentMode",
 		desc: "Cycle agent mode (standard/team/planner/orchestrator)",
 	},
+	{
+		mode: "normal",
+		key: { name: "[" },
+		action: "prevMember",
+		desc: "Previous team member sub-session",
+	},
+	{
+		mode: "normal",
+		key: { name: "]" },
+		action: "nextMember",
+		desc: "Next team member sub-session",
+	},
 ] as const;
 
 export function matchKey(

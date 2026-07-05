@@ -1,6 +1,7 @@
 import type { ScrollBoxRenderable } from "@opentui/core";
 import { useKeyboard, useRenderer } from "@opentui/react";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import type { AgentSessionEvent } from "../agent/session.js";
 import { buildAgentModeCycle, getBaseMode } from "../agent/session.js";
 import type { AgentClient, AgentMode } from "../client/index.js";
 import { commandRegistry } from "../commands/registry.js";
@@ -10,7 +11,9 @@ import { createAssistantMessage, createUserMessage, type Message } from "../mess
 import { resolveNotificationsConfig } from "../notifications/config.js";
 import { getGlobalRouter } from "../notifications/notifier.js";
 import { PollManager } from "../poll/manager.js";
+import { mapSdkMessagesToTui } from "../session/render.js";
 import type { SettingContext } from "../settings/types.js";
+import type { MemberState } from "../teams/types-v2.js";
 import type { EditConfirmBridge } from "../tools/edit-confirm-bridge.js";
 import type { QuestionBridge, QuestionData } from "../tools/question-bridge.js";
 import { formatError } from "../utils/formatError.js";
@@ -85,6 +88,10 @@ export function App({
 	const [copyFeedback, setCopyFeedback] = useState<{ ts: number } | null>(null);
 	const [pendingQuestion, setPendingQuestion] = useState<QuestionData | null>(null);
 	const [pendingEditConfirm, setPendingEditConfirm] = useState(false);
+	const [activeMemberName, setActiveMemberName] = useState<string | null>(null);
+	const [memberTick, setMemberTick] = useState(0);
+	const activeMemberMsgMapRef = useRef<Map<string, Message>>(new Map());
+	const [members, setMembers] = useState<MemberState[]>(() => client.listMembers());
 	const scrollRef = useRef<ScrollBoxRenderable>(null);
 	const vimOverlayRef = useRef<VimOverlay | null>(null);
 	const pollManagerRef = useRef(new PollManager());
@@ -135,12 +142,105 @@ export function App({
 	showSessionPickerRef.current = picker.showSessionPicker;
 	const configRef = useRef(configState);
 	configRef.current = configState;
+	const activeMemberNameRef = useRef<string | null>(null);
+	activeMemberNameRef.current = activeMemberName;
 	const lastCtrlCRef = useRef<number>(0);
 	const resumeListDoneRef = useRef(false);
 
 	const { toast, pushToast } = useToasts(toastDismissMs);
 	const toastPushRef = useRef(pushToast);
 	toastPushRef.current = pushToast;
+
+	// Real-time: subscribe to active member's session and stream messages into view
+	useEffect(() => {
+		if (!activeMemberName) return;
+		const member = client.getMember(activeMemberName);
+		if (!member) return;
+
+		// Build initial snapshot
+		const initial = mapSdkMessagesToTui(member.session.messages);
+		activeMemberMsgMapRef.current.clear();
+		for (const m of initial) {
+			activeMemberMsgMapRef.current.set(m.id, m);
+		}
+		setMemberTick(Date.now());
+
+		const flushToView = () => {
+			const latest = mapSdkMessagesToTui(member.session.messages);
+			if (latest.length === 0) return;
+			// Only update if messages actually changed (avoid no-op re-renders)
+			const prevLen = activeMemberMsgMapRef.current.size;
+			if (latest.length !== prevLen || latest[latest.length - 1]?.content !== "") {
+				activeMemberMsgMapRef.current.clear();
+				for (const m of latest) {
+					activeMemberMsgMapRef.current.set(m.id, m);
+				}
+				setMemberTick(Date.now());
+			}
+		};
+
+		let throttled: ReturnType<typeof setTimeout> | null = null;
+
+		const unsub = member.session.subscribe((event: AgentSessionEvent) => {
+			switch (event.type) {
+				case "agent_end":
+				case "message_end": {
+					// Immediately flush on completion
+					if (throttled) {
+						clearTimeout(throttled);
+						throttled = null;
+					}
+					flushToView();
+					break;
+				}
+				default: {
+					// Throttle streaming updates to 120ms
+					if (!throttled) {
+						throttled = setTimeout(() => {
+							throttled = null;
+							flushToView();
+						}, 120);
+					}
+					break;
+				}
+			}
+		});
+
+		return () => {
+			unsub();
+			if (throttled) {
+				clearTimeout(throttled);
+				throttled = null;
+			}
+			activeMemberMsgMapRef.current.clear();
+		};
+	}, [activeMemberName, client]);
+
+	// Keep members list in sync with team events
+	useEffect(() => {
+		const unsub = client.subscribeTeam(() => {
+			setMembers(client.listMembers());
+		});
+		return unsub;
+	}, [client]);
+
+	// Derive display messages based on active member
+	const displayMessages = useMemo(() => {
+		if (!activeMemberName) {
+			return messages;
+		}
+		const member = client.getMember(activeMemberName);
+		if (!member) {
+			setActiveMemberName(null);
+			return messages;
+		}
+		const memberMsgs = mapSdkMessagesToTui(member.session.messages);
+		if (memberMsgs.length === 0) {
+			return [createAssistantMessage(`No messages yet. ${activeMemberName} is working...`)];
+		}
+		return memberMsgs;
+		// eslint-disable-next-line react-hooks/exhaustive-deps
+	}, [activeMemberName, messages, client, memberTick]);
 
 	useEffect(() => {
 		const router = getGlobalRouter();
@@ -295,8 +395,30 @@ export function App({
 		client.executeCommand("sessions", "", buildCommandCtx()).catch(() => {});
 	}, [initialResumeList, buildCommandCtx, client]);
 
+	const handleMemberNav = useCallback(
+		(direction: "prev" | "next") => {
+			if (agentModeRef.current !== "team") return;
+			const list = [null, ...members.map((m) => m.name)];
+			const currentIdx = list.indexOf(activeMemberNameRef.current);
+			const nextIdx =
+				direction === "next"
+					? (currentIdx + 1) % list.length
+					: (currentIdx - 1 + list.length) % list.length;
+			setActiveMemberName(list[nextIdx]);
+		},
+		[members],
+	);
+
 	const handlePrompt = useCallback(
 		(text: string) => {
+			// Route to member when in member sub-session view
+			if (activeMemberNameRef.current) {
+				client.directMember(activeMemberNameRef.current, "directive", text);
+				setCommandHistory((prev) => [...prev, text]);
+				saveHistory(text);
+				return;
+			}
+
 			if (text.startsWith("/")) {
 				const [cmd, ...args] = text.slice(1).split(/\s+/);
 				const argStr = args.join(" ").trim();
@@ -343,7 +465,7 @@ export function App({
 				setIsRunning(false);
 			});
 		},
-		[client, buildCommandCtx],
+		[client, buildCommandCtx, members],
 	);
 
 	useKeyboard((key) => {
@@ -415,6 +537,12 @@ export function App({
 				setAgentMode(next);
 				return;
 			}
+			case "prevMember":
+				handleMemberNav("prev");
+				return;
+			case "nextMember":
+				handleMemberNav("next");
+				return;
 			case "ctrlC": {
 				const now = Date.now();
 				if (now - lastCtrlCRef.current < 1000) process.exit(0);
@@ -442,7 +570,7 @@ export function App({
 				</scrollbox>
 			) : (
 				<MessageList
-					messages={messages.filter((m) => !m.queued)}
+					messages={displayMessages.filter((m) => !m.queued)}
 					scrollRef={scrollRef}
 					thinkingCollapsed={thinkingCollapsed}
 				/>
@@ -527,6 +655,8 @@ export function App({
 						onSubmit={handlePrompt}
 						sentMessages={commandHistory}
 						pendingInput={pendingInput}
+						members={members}
+						activeMemberName={activeMemberName}
 					/>
 				)}
 				<StatusBar
