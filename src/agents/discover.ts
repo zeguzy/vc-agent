@@ -143,3 +143,19 @@ export function formatAgentList(
 		remaining,
 	};
 }
+
+export function buildAvailableAgentsPrompt(agents: AgentConfig[]): string {
+	if (agents.length === 0) return "";
+	const lines = agents.map((a) => {
+		const firstLine = a.description.split("\n")[0];
+		const tools = a.tools?.length ? a.tools.join(", ") : "default";
+		return `- **${a.name}** (${a.source}): ${firstLine} [tools: ${tools}]`;
+	});
+	return [
+		"## Available subagents",
+		"",
+		lines.join("\n"),
+		"",
+		"Use these agents via the `subagent` tool. See the tool description for call syntax.",
+	].join("\n");
+}

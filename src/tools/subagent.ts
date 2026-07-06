@@ -79,14 +79,9 @@ export function createSubagentTool(options: SubagentToolOptions): ToolDefinition
 	const initialAgents = discoverAgents(cwd).agents;
 	const agentList = formatAgentNames(initialAgents);
 
-	const agentTable = initialAgents
-		.map((a) => `'${a.name}' — ${a.description.split("\n")[0]}`)
-		.join(" ");
-
 	const DESCRIPTION = [
-		`Delegate tasks to specialized subagents with isolated context windows. Available: ${agentTable}.`,
-		"Use parallel mode for independent tasks — fire them simultaneously, never sequentially.",
-		"Use chain mode when each task depends on the previous result ({previous} placeholder).",
+		`Delegate tasks to specialized subagents with isolated context windows. Available agents: see system prompt for the full list (${initialAgents.length} total).`,
+		"Modes: single (one agent, one task), parallel (multiple tasks concurrently, max 8), chain (sequential, {previous} placeholder).",
 		"Each delegation prompt MUST include: specific GOAL, relevant file CONTEXT, and clear SCOPE boundaries.",
 		"Vague prompts produce poor results — be exhaustive in your task description.",
 	].join(" ");

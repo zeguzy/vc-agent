@@ -14,6 +14,7 @@ import {
 	SessionManager,
 	SettingsManager,
 } from "@earendil-works/pi-coding-agent";
+import { buildAvailableAgentsPrompt, discoverAgents } from "../agents/discover.js";
 import type { Config, ProviderConfig } from "../config.js";
 import { ORCHESTRATOR_SYSTEM_PROMPT, TEAM_ORCHESTRATOR_PROMPT } from "../context-files.js";
 import { createLspToolDefinitions, LspClient } from "../lsp/index.js";
@@ -102,12 +103,31 @@ export function buildAgentModeCycle(config?: Config): Record<string, AgentMode> 
 	return cycle;
 }
 
-export function appendSystemPromptFor(agentMode: AgentMode, config?: Config): string[] | undefined {
+// CACHE-STATIC: appended prompts (ORCHESTRATOR/TEAM/agent list) are stable
+// across turns. Runtime task injections go through session.steer(), which is
+// CACHE-DYNAMIC and must be appended after these static segments.
+export function appendSystemPromptFor(
+	agentMode: AgentMode,
+	config?: Config,
+	cwd?: string,
+): string[] | undefined {
+	const injectAgentList = (prompts: string[]): string[] => {
+		if (!cwd) return prompts;
+		if (agentMode !== "standard" && agentMode !== "orchestrator") return prompts;
+		const { agents } = discoverAgents(cwd);
+		const agentList = buildAvailableAgentsPrompt(agents);
+		return agentList ? [...prompts, agentList] : prompts;
+	};
+
 	if (agentMode === "team") return [TEAM_ORCHESTRATOR_PROMPT];
 	if (agentMode === "orchestrator") {
 		const prompts = [ORCHESTRATOR_SYSTEM_PROMPT];
 		if (config?.teams?.enabled !== false) prompts.push(TEAM_ORCHESTRATOR_PROMPT);
-		return prompts;
+		return injectAgentList(prompts);
+	}
+	if (agentMode === "standard") {
+		const injected = injectAgentList([]);
+		return injected.length ? injected : undefined;
 	}
 	return undefined;
 }
@@ -299,7 +319,7 @@ export async function createRuntime(options: RuntimeOptions): Promise<RuntimeRes
 		cwd,
 		config: options.config,
 		modelStr: options.model ?? options.config?.model,
-		appendSystemPrompt: appendSystemPromptFor(agentMode, options.config),
+		appendSystemPrompt: appendSystemPromptFor(agentMode, options.config, cwd),
 	});
 
 	const factory: CreateAgentSessionRuntimeFactory = async ({
