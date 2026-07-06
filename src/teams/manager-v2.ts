@@ -1,6 +1,17 @@
+import { basename } from "node:path";
 import type { AgentSession, AgentSessionEvent } from "@earendil-works/pi-coding-agent";
-import { createAgentSession, DefaultResourceLoader } from "@earendil-works/pi-coding-agent";
+import {
+	createAgentSession,
+	DefaultResourceLoader,
+	SessionManager,
+} from "@earendil-works/pi-coding-agent";
 import type { SubagentServices } from "../agents/types.js";
+import {
+	resolveMemberSessionPath,
+	resolveSessionDir,
+	validateMemberSessionPath,
+	validateSessionId,
+} from "../session/storage.js";
 import { AGENT_DIR } from "../teams/worker.js";
 import { createMemoryTool } from "../tools/memory.js";
 import { handleCompactionEnd } from "./auto-memory.js";
@@ -8,7 +19,7 @@ import { buildCompactionReinject, buildMemberSystemPrompt, buildTaskLayer } from
 import { TeamFiles } from "./files.js";
 import { logTeamEvent } from "./logger.js";
 import { validateName } from "./memory-types.js";
-import type { ResolvedTeamConfig } from "./types.js";
+import type { ResolvedModel, ResolvedTeamConfig } from "./types.js";
 import type {
 	MemberIndexStructure,
 	MemberName,
@@ -31,6 +42,7 @@ export class TeamManager implements TeamManagerLike {
 	private readonly listeners = new Set<(event: TeamEvent) => void>();
 	private readonly sessionUnsubs = new Map<MemberName, () => void>();
 	private disposed = false;
+	private isRestoring = false;
 
 	constructor(
 		config: ResolvedTeamConfig,
@@ -95,6 +107,8 @@ export class TeamManager implements TeamManagerLike {
 
 		const resolvedModel = opts.parentModel ?? undefined;
 		const memberToolNames = ["read", "bash", "grep", "find"];
+		const sessionDir = resolveSessionDir();
+		const sessionManager = await SessionManager.create(this.cwd, sessionDir);
 		const { session } = await createAgentSession({
 			cwd: this.cwd,
 			agentDir: AGENT_DIR,
@@ -105,7 +119,12 @@ export class TeamManager implements TeamManagerLike {
 			tools: memberToolNames,
 			customTools: [createMemoryTool({ teamRef: { current: this } })],
 			resourceLoader,
+			sessionManager,
 		});
+
+		const sessionId = session.sessionFile
+			? basename(session.sessionFile).replace(/\.jsonl$/, "")
+			: undefined;
 
 		// Build member state — starts idle until assignTask is called
 		const state: MemberState = {
@@ -115,6 +134,7 @@ export class TeamManager implements TeamManagerLike {
 			model: opts.model,
 			status: "idle",
 			session,
+			sessionId,
 			currentTaskId: null,
 			lastTaskPrompt: null,
 		};
@@ -130,6 +150,7 @@ export class TeamManager implements TeamManagerLike {
 			role: opts.role,
 			status: "idle",
 			currentTask: "—",
+			...(sessionId ? { sessionId } : {}),
 		});
 		this.files.writeTeamMd(teamMd);
 
@@ -137,6 +158,127 @@ export class TeamManager implements TeamManagerLike {
 		logTeamEvent("member_created", { memberName: opts.name, role: opts.role });
 
 		return state;
+	}
+
+	async restoreMembers(opts: {
+		services: SubagentServices;
+		parentModel?: ResolvedModel;
+	}): Promise<void> {
+		if (this.isRestoring) return;
+		this.isRestoring = true;
+		try {
+			const teamMd = this.files.readTeamMd();
+			if (teamMd.members.length === 0) return;
+
+			const { activeTasks } = teamMd;
+			const restoredNames: MemberName[] = [];
+
+			for (const memberRow of teamMd.members) {
+				try {
+					const memberIndex = this.files.readMemberIndex(memberRow.name);
+					const systemPrompts = buildMemberSystemPrompt({
+						role: memberRow.role,
+						goal: memberIndex?.profile.goal ?? "",
+						memberIndex,
+						teamMd,
+						selfName: memberRow.name,
+					});
+
+					// Resolve SessionManager — open existing or create new
+					const sessionDir = resolveSessionDir();
+					let sessionManager: SessionManager;
+
+					if (memberRow.sessionId) {
+						const resolvedPath = resolveMemberSessionPath(memberRow.sessionId);
+						const idValid = validateSessionId(memberRow.sessionId);
+						const pathValid = validateMemberSessionPath(resolvedPath);
+						if (idValid && pathValid) {
+							try {
+								sessionManager = SessionManager.open(resolvedPath, sessionDir);
+							} catch {
+								sessionManager = await SessionManager.create(this.cwd, sessionDir);
+							}
+						} else {
+							sessionManager = await SessionManager.create(this.cwd, sessionDir);
+						}
+					} else {
+						sessionManager = await SessionManager.create(this.cwd, sessionDir);
+					}
+
+					// Create AgentSession (same tools/settings as createMember)
+					const resourceLoader = new DefaultResourceLoader({
+						cwd: this.cwd,
+						agentDir: AGENT_DIR,
+						settingsManager: opts.services.settingsManager,
+						appendSystemPrompt: systemPrompts,
+						noExtensions: true,
+						noSkills: true,
+						noContextFiles: true,
+					});
+
+					const resolvedModel = opts.parentModel ?? undefined;
+					const memberToolNames = ["read", "bash", "grep", "find"];
+					const { session } = await createAgentSession({
+						cwd: this.cwd,
+						agentDir: AGENT_DIR,
+						authStorage: opts.services.authStorage,
+						modelRegistry: opts.services.modelRegistry,
+						model: resolvedModel,
+						settingsManager: opts.services.settingsManager,
+						tools: memberToolNames,
+						customTools: [createMemoryTool({ teamRef: { current: this } })],
+						resourceLoader,
+						sessionManager,
+					});
+
+					const sessionId = session.sessionFile
+						? basename(session.sessionFile).replace(/\.jsonl$/, "")
+						: undefined;
+
+					// Derive currentTaskId from active tasks
+					const activeTask = activeTasks.find((t) => t.memberName === memberRow.name && !t.done);
+					const currentTaskId = activeTask?.id ?? null;
+
+					// Build member state
+					const state: MemberState = {
+						name: memberRow.name,
+						role: memberRow.role,
+						goal: memberIndex?.profile.goal ?? "",
+						model: memberIndex?.profile.model,
+						status: "idle",
+						session,
+						sessionId,
+						currentTaskId,
+						lastTaskPrompt: null,
+					};
+					this.members.set(memberRow.name, state);
+
+					// Subscribe to session events
+					const unsub = session.subscribe((event) => this.handleMemberEvent(memberRow.name, event));
+					this.sessionUnsubs.set(memberRow.name, unsub);
+
+					restoredNames.push(memberRow.name);
+				} catch (err) {
+					console.warn(`[team] failed to restore member "${memberRow.name}": ${err}`);
+				}
+			}
+
+			// Update TEAM.md — all restored members get status=idle
+			if (restoredNames.length > 0) {
+				const updatedMd = this.files.readTeamMd();
+				for (const member of updatedMd.members) {
+					if (restoredNames.includes(member.name)) {
+						member.status = "idle";
+					}
+				}
+				this.files.writeTeamMd(updatedMd);
+
+				this.emit({ type: "members_restored", memberNames: restoredNames });
+				logTeamEvent("members_restored", { memberNames: restoredNames });
+			}
+		} finally {
+			this.isRestoring = false;
+		}
 	}
 
 	async removeMember(name: MemberName): Promise<void> {

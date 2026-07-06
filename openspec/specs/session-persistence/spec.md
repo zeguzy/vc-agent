@@ -2,24 +2,33 @@
 
 ## Purpose
 定义 openagent 会话的磁盘持久化、进程重启后的历史上下文恢复，以及多会话的列表 / 打开 / 命名管理。基于 Pi SDK 的 `SessionManager`（append-only JSONL）实现，openagent 仅提供目录策略与恢复入口薄层，不自建存储或重放。
-
 ## Requirements
 ### Requirement: 会话磁盘持久化
-系统 SHALL 使用 Pi SDK 的磁盘 `SessionManager` 把会话持久化到 openagent 数据目录（`~/.config/openagent/sessions/`），采用 SDK 的 append-only JSONL 格式；SHALL NOT 写入 `~/.pi/` 目录。`AuthStorage` / `ModelRegistry` / `SettingsManager` 保持 `inMemory()`（API key 仍来自 openagent `config.json`），仅 `SessionManager` 磁盘化。
+
+系统 SHALL 使用 Pi SDK 的磁盘 `SessionManager` 把会话持久化到 openagent 数据目录，采用 SDK 的 append-only JSONL 格式；SHALL NOT 写入 `~/.pi/` 目录。`AuthStorage` / `ModelRegistry` / `SettingsManager` 保持 `inMemory()`。此持久化 SHALL 同时覆盖 leader session 和 team 成员 session——两者使用相同的 `SessionManager` API，成员 session 文件存放在标准 sessions 目录（`~/.config/openagent/sessions/`）下，与 leader session 并列。TEAM.md 只持有成员的 sessionFile 引用。
 
 #### Scenario: 新建持久化会话
 - **WHEN** 用户无恢复参数启动（`openagent`）
-- **THEN** 系统 SHALL 调用 `SessionManager.create(cwd, sessionDir)` 创建磁盘会话（`sessionDir` 解析为 `~/.config/openagent/sessions/`）
-- **AND** 后续对话通过 SDK 自动 append-only 写入 `~/.config/openagent/sessions/--<encoded-cwd>--/<timestamp>_<sessionId>.jsonl`
+- **THEN** 系统 SHALL 调用 `SessionManager.create(cwd, sessionDir)` 创建磁盘会话
+- **AND** 后续对话通过 SDK 自动 append-only 写入 JSONL 文件
+
+#### Scenario: 成员会话持久化（与 leader 同构）
+- **WHEN** `TeamManager.createMember` 创建新成员
+- **THEN** SHALL 使用 `SessionManager.create(cwd, sessionDir)` 创建持久化成员会话
+- **AND** sessionDir SHALL 为标准 `resolveSessionDir()`（与 leader 相同）
+- **AND** 成员对话消息 SHALL 通过 SDK 自动写入 JSONL 文件
+- **AND** `MemberState.sessionFile` SHALL 记录成员的 session 文件路径
+- **AND** TEAM.md members 表 SHALL 通过 Session 列记录该路径
 
 #### Scenario: 运行时追加写盘
-- **WHEN** 用户发送消息（`session.prompt`）触发 Agent 循环
-- **THEN** SDK SHALL 通过 `SessionManager.appendMessage` 把每条 user / assistant / tool 消息追加到当前会话的 JSONL 文件
-- **AND** 仅当出现首条 assistant 消息后才真正落盘（避免空会话产生文件）
+- **WHEN** 用户或成员发送消息触发 Agent 循环
+- **THEN** SDK SHALL 通过 `SessionManager.appendMessage` 把每条消息追加到当前会话的 JSONL 文件
 
-#### Scenario: 会话目录按 cwd 隔离
-- **WHEN** 系统写入会话文件
-- **THEN** 文件 SHALL 位于按 cwd 编码的子目录 `--<encoded-cwd>--/` 下，不同 cwd 的会话互不干扰
+#### Scenario: 会话恢复对称性
+- **WHEN** 系统恢复已有会话
+- **THEN** leader SHALL 使用 `SessionManager.open/continueRecent` 恢复
+- **AND** 成员 SHALL 使用 `SessionManager.open(sessionFile, sessionDir)` 恢复（与 leader 的恢复路径完全对称）
+- **AND** 两者的恢复方式 SHALL 遵循相同的 SDK API
 
 #### Scenario: 不污染 pi 目录
 - **WHEN** 系统创建或写入会话
@@ -77,3 +86,4 @@
 #### Scenario: 列表优先显示名称
 - **WHEN** 渲染 `/sessions` 列表且某会话已命名
 - **THEN** 该项 SHALL 优先显示会话名称，未命名的会话显示首条消息预览
+

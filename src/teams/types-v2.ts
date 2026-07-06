@@ -28,6 +28,7 @@ export interface MemberState {
 	model?: string;
 	status: "active" | "idle" | "done" | "error" | "paused" | "cancelled";
 	session: AgentSession;
+	sessionId?: string;
 	currentTaskId: string | null;
 	lastTaskPrompt: string | null;
 }
@@ -46,7 +47,13 @@ export interface TaskState {
 
 export interface TeamMdStructure {
 	mission: string;
-	members: Array<{ name: MemberName; role: string; status: string; currentTask: string }>;
+	members: Array<{
+		name: MemberName;
+		role: string;
+		status: string;
+		currentTask: string;
+		sessionId?: string;
+	}>;
 	activeTasks: TaskState[];
 	importantNotes: string;
 	sharedMemoryIndex: Array<{ path: string; description: string }>;
@@ -148,7 +155,8 @@ export type TeamEvent =
 	| { type: "member_resumed"; memberName: MemberName }
 	| { type: "member_cancelled"; memberName: MemberName }
 	| { type: "team_md_updated"; section: string }
-	| { type: "memory_written"; memberName: MemberName; topic: string; memoryType: MemoryType };
+	| { type: "memory_written"; memberName: MemberName; topic: string; memoryType: MemoryType }
+	| { type: "members_restored"; memberNames: MemberName[] };
 
 /** Lazy reference to TeamManager — mirrors WorkerPoolRef pattern. */
 export interface TeamManagerRef {
