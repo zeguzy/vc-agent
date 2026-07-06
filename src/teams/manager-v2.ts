@@ -68,8 +68,6 @@ export class TeamManager implements TeamManagerLike {
 		name: MemberName;
 		role: string;
 		goal: string;
-		/** Optional role-specific constraints; sanitized then injected into L1 Anti-Patterns. */
-		constraints?: string;
 		model?: string;
 		services: SubagentServices;
 		parentModel?: import("./types.js").ResolvedModel;
@@ -80,10 +78,8 @@ export class TeamManager implements TeamManagerLike {
 			throw new Error(`team capacity exhausted: maxWorkers=${this.config.maxWorkers} reached`);
 		}
 
-		const constraints = sanitizeConstraints(opts.constraints);
-
 		// Create member directory + index
-		this.files.initMemberDir(opts.name, opts.role, opts.goal, opts.model, constraints);
+		this.files.initMemberDir(opts.name, opts.role, opts.goal, opts.model);
 
 		// Read current state for context injection
 		const memberIndex = this.files.readMemberIndex(opts.name);
@@ -91,10 +87,8 @@ export class TeamManager implements TeamManagerLike {
 
 		// Build L1 + L2 + L3 system prompts
 		const systemPrompts = buildMemberSystemPrompt({
-			name: opts.name,
 			role: opts.role,
 			goal: opts.goal,
-			constraints,
 			memberIndex,
 			teamMd,
 			selfName: opts.name,
@@ -183,10 +177,8 @@ export class TeamManager implements TeamManagerLike {
 				try {
 					const memberIndex = this.files.readMemberIndex(memberRow.name);
 					const systemPrompts = buildMemberSystemPrompt({
-						name: memberRow.name,
 						role: memberRow.role,
 						goal: memberIndex?.profile.goal ?? "",
-						constraints: memberIndex?.constraints,
 						memberIndex,
 						teamMd,
 						selfName: memberRow.name,
@@ -676,22 +668,6 @@ export class TeamManager implements TeamManagerLike {
 }
 
 // ─── Helpers ─────────────────────────────────────────────────
-
-/** ~200 tokens; keeps L1 ≤ ~800 tokens total (design decision 7). */
-const CONSTRAINTS_MAX_LEN = 800;
-
-// Strip `## ` lines (would corrupt splitSections of `## Constraints` index
-// section) and cap length. Truncate, never reject — leader can edit-member.
-function sanitizeConstraints(raw?: string): string | undefined {
-	if (!raw) return undefined;
-	const stripped = raw
-		.split("\n")
-		.filter((line) => !line.startsWith("## "))
-		.join("\n")
-		.trim();
-	if (!stripped) return undefined;
-	return stripped.length > CONSTRAINTS_MAX_LEN ? stripped.slice(0, CONSTRAINTS_MAX_LEN) : stripped;
-}
 
 function extractLastAssistantText(session: AgentSession): string | null {
 	// Get the last assistant message text from session messages

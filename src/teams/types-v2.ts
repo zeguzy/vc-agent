@@ -67,12 +67,6 @@ export interface MemberIndexStructure {
 		goal: string;
 		model?: string;
 	};
-	/**
-	 * Role-specific behavioral constraints (leader-provided). Top-level, not in
-	 * profile — persisted as `## Constraints` markdown section (multi-line free
-	 * text), distinct from profile's single-line `- Key: value` metadata.
-	 */
-	constraints?: string;
 	activeContext: string;
 	memoryIndex: Array<{ file: string; type: MemoryType; description: string }>;
 	recentActivity: Array<{ date: string; entry: string }>;
@@ -100,8 +94,6 @@ export interface TeamManagerLike {
 		name: MemberName;
 		role: string;
 		goal: string;
-		/** Optional role-specific constraints; injected into L1 Anti-Patterns. */
-		constraints?: string;
 		model?: string;
 		services: SubagentServices;
 		parentModel?: ResolvedModel;

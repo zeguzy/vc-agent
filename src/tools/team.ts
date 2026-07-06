@@ -26,12 +26,6 @@ const BatchMemberSchema = Type.Object({
 	name: Type.String({ description: "Member name" }),
 	role: Type.String({ description: "Member role" }),
 	goal: Type.String({ description: "Member goal" }),
-	constraints: Type.Optional(
-		Type.String({
-			description:
-				'Role-specific behavioral constraints (max 800 chars, injected into Anti-Patterns). Example for reviewer: "must run tests, no rubber-stamping"',
-		}),
-	),
 	taskTitle: Type.Optional(
 		Type.String({ description: "Optional first task title — member starts working immediately" }),
 	),
@@ -48,12 +42,6 @@ const TeamParamsSchema = Type.Object({
 	),
 	role: Type.Optional(Type.String({ description: "Member role (for create)" })),
 	goal: Type.Optional(Type.String({ description: "Member goal (for create)" })),
-	constraints: Type.Optional(
-		Type.String({
-			description:
-				'Role-specific behavioral constraints for the member (max 800 chars). Injected into the member\'s Anti-Patterns section. Example for reviewer: "must run tests, no rubber-stamping"',
-		}),
-	),
 	members: Type.Optional(
 		Type.Array(BatchMemberSchema, {
 			description: "Array of members to create in one call (for create-batch). Soft limit: 20.",
@@ -92,9 +80,9 @@ export function createTeamTool(opts: TeamToolOptions): ToolDefinition {
 			"Manage your team. Actions:\n" +
 			"- read: See who's on the team, what they're working on, current tasks.\n" +
 			"- create: Add a member. Give them a name, role, and goal. Optionally include taskTitle + taskDescription to start them working right away.\n" +
-			'  Example: team(action="create", name="sasha", role="frontend dev", goal="Build the login page", constraints="must pass lint and biome checks", taskTitle="Login page", taskDescription="Create Login.tsx with email+password form")\n' +
-			"- create-batch: Add multiple members in one call. Provide a `members` array; each item has name/role/goal plus optional constraints/taskTitle/taskDescription/taskPriority. Capacity is checked up-front (current + batch size must fit maxWorkers); per-member failures are isolated (succeeded/failed reported separately).\n" +
-			'  Example: team(action="create-batch", members=[{name="alice",role="frontend",goal="UI",constraints="must pass lint",taskTitle="Login",taskDescription="..."},{name="bob",role="backend",goal="API"}])\n' +
+			'  Example: team(action="create", name="sasha", role="frontend dev", goal="Build the login page", taskTitle="Login page", taskDescription="Create Login.tsx with email+password form")\n' +
+			"- create-batch: Add multiple members in one call. Provide a `members` array; each item has name/role/goal plus optional taskTitle/taskDescription/taskPriority. Capacity is checked up-front (current + batch size must fit maxWorkers); per-member failures are isolated (succeeded/failed reported separately).\n" +
+			'  Example: team(action="create-batch", members=[{name="alice",role="frontend",goal="UI",taskTitle="Login",taskDescription="..."},{name="bob",role="backend",goal="API"}])\n' +
 			"- assign: Give a task to an idle member. They'll start working on it.\n" +
 			'  Example: team(action="assign", name="sasha", title="Add validation", description="Validate email format before submit")\n' +
 			'- direct: Send a message to a member mid-task. kind="directive" (change approach), "context" (extra info), "redirect" (new priority).\n' +
@@ -111,12 +99,10 @@ export function createTeamTool(opts: TeamToolOptions): ToolDefinition {
 				name?: string;
 				role?: string;
 				goal?: string;
-				constraints?: string;
 				members?: Array<{
 					name: string;
 					role: string;
 					goal: string;
-					constraints?: string;
 					taskTitle?: string;
 					taskDescription?: string;
 					taskPriority?: "high" | "medium" | "low";
@@ -207,7 +193,6 @@ async function handleCreate(manager: TeamManagerLike, args: Record<string, unkno
 		name,
 		role,
 		goal,
-		constraints: args.constraints as string | undefined,
 		model: undefined,
 		services: {} as never,
 		parentModel: undefined,
@@ -233,7 +218,6 @@ type BatchMember = {
 	name: string;
 	role: string;
 	goal: string;
-	constraints?: string;
 	taskTitle?: string;
 	taskDescription?: string;
 	taskPriority?: "high" | "medium" | "low";
@@ -280,7 +264,6 @@ async function handleCreateBatch(manager: TeamManagerLike, args: Record<string, 
 				name: m.name,
 				role: m.role,
 				goal: m.goal,
-				constraints: m.constraints,
 				model: undefined,
 				services: {} as never,
 				parentModel: undefined,
