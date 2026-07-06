@@ -1,6 +1,6 @@
 import type { KeyEvent, TextareaRenderable } from "@opentui/core";
 import { useKeyboard } from "@opentui/react";
-import { useCallback, useMemo, useRef, useState } from "react";
+import { useCallback, useRef, useState } from "react";
 import type { QuestionData } from "../../tools/question-bridge.js";
 import { colors } from "../utils/theme.js";
 
@@ -30,23 +30,41 @@ export function QuestionBox({ questionData, onSubmit, onCancel }: QuestionBoxPro
 	const isLast = currentIdx === total - 1;
 	const isMulti = currentQ.multiple === true;
 
-	const collectedAnswers = useMemo(() => {
-		return questionData.questions.map((q, i) => {
-			const selected = multiSelected[i];
-			const labels = [...selected].sort((a, b) => a - b).map((idx) => q.options[idx].label);
-			if (customTexts[i].trim()) labels.push(customTexts[i].trim());
-			return labels;
-		});
-	}, [multiSelected, customTexts, questionData.questions]);
+	// Patch reflects an in-flight setState that React hasn't flushed yet — without it,
+	// onSubmit() would observe stale state and report the just-selected answer as "Unanswered".
+	const buildAnswers = useCallback(
+		(
+			patchIdx: number,
+			patchSelected: Set<number> | null,
+			patchCustom: string | null,
+		): string[][] => {
+			return questionData.questions.map((q, i) => {
+				const selected = patchIdx === i && patchSelected ? patchSelected : multiSelected[i];
+				const custom = patchIdx === i && patchCustom !== null ? patchCustom : customTexts[i];
+				const labels = [...selected].sort((a, b) => a - b).map((idx) => q.options[idx].label);
+				const trimmed = custom.trim();
+				if (trimmed) labels.push(trimmed);
+				return labels;
+			});
+		},
+		[multiSelected, customTexts, questionData.questions],
+	);
+
+	const advanceWith = useCallback(
+		(answers: string[][]) => {
+			if (isLast) {
+				onSubmit(answers);
+			} else {
+				setCurrentIdx((i) => i + 1);
+				setCursor(0);
+			}
+		},
+		[isLast, onSubmit],
+	);
 
 	const advance = useCallback(() => {
-		if (isLast) {
-			onSubmit(collectedAnswers);
-		} else {
-			setCurrentIdx((i) => i + 1);
-			setCursor(0);
-		}
-	}, [isLast, onSubmit, collectedAnswers]);
+		advanceWith(buildAnswers(-1, null, null));
+	}, [advanceWith, buildAnswers]);
 
 	const handleConfirm = useCallback(() => {
 		if (cursor === optionCount) {
@@ -55,15 +73,16 @@ export function QuestionBox({ questionData, onSubmit, onCancel }: QuestionBoxPro
 		}
 		if (isMulti) {
 			advance();
-		} else {
-			setMultiSelected((prev) => {
-				const copy = [...prev];
-				copy[currentIdx] = new Set([cursor]);
-				return copy;
-			});
-			advance();
+			return;
 		}
-	}, [cursor, optionCount, isMulti, advance, currentIdx]);
+		const nextSelected = new Set<number>([cursor]);
+		setMultiSelected((prev) => {
+			const copy = [...prev];
+			copy[currentIdx] = nextSelected;
+			return copy;
+		});
+		advanceWith(buildAnswers(currentIdx, nextSelected, customTexts[currentIdx]));
+	}, [cursor, optionCount, isMulti, advance, advanceWith, buildAnswers, currentIdx, customTexts]);
 
 	useKeyboard((key: KeyEvent) => {
 		if (inCustomMode) {
@@ -107,23 +126,22 @@ export function QuestionBox({ questionData, onSubmit, onCancel }: QuestionBoxPro
 
 	const handleCustomSubmit = useCallback(() => {
 		const text = textareaRef.current?.plainText ?? "";
+		const nextSelected = isMulti ? multiSelected[currentIdx] : new Set<number>();
 		setCustomTexts((prev) => {
 			const copy = [...prev];
 			copy[currentIdx] = text;
 			return copy;
 		});
-		setInCustomMode(false);
-		if (isMulti) {
-			advance();
-		} else {
+		if (!isMulti) {
 			setMultiSelected((prev) => {
 				const copy = [...prev];
-				copy[currentIdx] = new Set();
+				copy[currentIdx] = nextSelected;
 				return copy;
 			});
-			advance();
 		}
-	}, [currentIdx, isMulti, advance]);
+		setInCustomMode(false);
+		advanceWith(buildAnswers(currentIdx, nextSelected, text));
+	}, [currentIdx, isMulti, multiSelected, advanceWith, buildAnswers]);
 
 	return (
 		<box flexDirection="column" flexShrink={0} paddingLeft={1} paddingRight={1}>
