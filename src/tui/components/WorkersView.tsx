@@ -2,45 +2,11 @@ import { useKeyboard } from "@opentui/react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { AgentClient } from "../../client/index.js";
 import type { MemberState } from "../../teams/types-v2.js";
-import { colors } from "../utils/theme.js";
+import { colors, teamStatusColor, teamStatusIcon } from "../utils/theme.js";
 
 interface WorkersViewProps {
 	client: AgentClient;
 	onClose: () => void;
-}
-
-function statusIcon(status: MemberState["status"]): string {
-	switch (status) {
-		case "active":
-			return "◌";
-		case "idle":
-			return "○";
-		case "done":
-			return "✓";
-		case "error":
-			return "✗";
-		case "paused":
-			return "⏸";
-		case "cancelled":
-			return "⊘";
-	}
-}
-
-function statusColor(status: MemberState["status"]): string {
-	switch (status) {
-		case "active":
-			return colors.warning;
-		case "idle":
-			return colors.textMuted;
-		case "done":
-			return colors.success;
-		case "error":
-			return colors.error;
-		case "paused":
-			return colors.info;
-		case "cancelled":
-			return colors.textMuted;
-	}
 }
 
 export function WorkersView({ client, onClose }: WorkersViewProps) {
@@ -101,8 +67,8 @@ export function WorkersView({ client, onClose }: WorkersViewProps) {
 	});
 
 	if (focusedMember) {
-		const sc = statusColor(focusedMember.status);
-		const si = statusIcon(focusedMember.status);
+		const sc = teamStatusColor(focusedMember.status);
+		const si = teamStatusIcon(focusedMember.status);
 
 		return (
 			<box
@@ -157,8 +123,8 @@ export function WorkersView({ client, onClose }: WorkersViewProps) {
 				<scrollbox flexGrow={0} maxHeight={12} scrollY>
 					{members.map((m, i) => {
 						const isSelected = i === cur;
-						const sc = statusColor(m.status);
-						const si = statusIcon(m.status);
+						const sc = teamStatusColor(m.status);
+						const si = teamStatusIcon(m.status);
 						const taskLabel = m.currentTaskId ? ` · task ${m.currentTaskId}` : "";
 
 						return (

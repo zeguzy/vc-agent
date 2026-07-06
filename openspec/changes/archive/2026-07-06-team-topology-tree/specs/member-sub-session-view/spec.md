@@ -1,7 +1,5 @@
-## Purpose
+## MODIFIED Requirements
 
-定义 team 模式下用户在主会话（leader）与成员子会话（member）之间切换视图、并将输入路由到当前聚焦成员的能力。
-## Requirements
 ### Requirement: 成员子会话视图切换
 
 系统 SHALL 支持在 team 模式下通过快捷键切换成员子会话视图，允许用户查看任意团队成员的完整对话历史。切换的视觉反馈通过 InputBox 与 StatusBar 之间的拓扑图节点高亮体现（不再使用 StatusBar 内的成员标签行）。
@@ -47,19 +45,3 @@
 - **WHEN** `agentMode` 不是 "team"
 - **THEN** `[` / `]` 快捷键 SHALL 不触发成员切换（无操作）
 - **AND** 拓扑图组件 SHALL 不可见（`return null`）
-
-### Requirement: 成员视图输入路由
-
-系统 SHALL 在成员子会话视图中将用户输入发送给对应成员，而非 orchestrator。
-
-#### Scenario: 发送指令给成员
-
-- **WHEN** `activeMemberName` 不为 null 且用户提交输入
-- **THEN** 系统 SHALL 调用 `client.directMember(activeMemberName, "directive", text)` 发送消息
-- **AND** 输入框 SHALL 清空
-
-#### Scenario: leader 视图输入不变
-
-- **WHEN** `activeMemberName` 为 null 且用户提交输入
-- **THEN** 系统 SHALL 保持原有行为：Agent 空闲时 `client.prompt(text)`，运行中 `client.followUp(text)`
-
