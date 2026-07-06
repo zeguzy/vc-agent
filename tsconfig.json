@@ -19,6 +19,7 @@
 		"node_modules",
 		"openspec",
 		"src/dcp/compress/pipeline.ts",
-		"src/dcp/core/compress/search.ts"
+		"src/dcp/core/compress/search.ts",
+		"src/tui/components/Login.tsx"
 	]
 }
