@@ -1,10 +1,6 @@
 import { afterAll, beforeAll, describe, expect, it } from "bun:test";
-import {
-	createWebfetchTool,
-	decodeHtmlEntities,
-	htmlToMarkdown,
-	stripHtml,
-} from "../src/tools/webfetch.js";
+import { decodeHtmlEntities, htmlToMarkdown, stripHtml } from "../src/tools/webfetch/html.js";
+import { createWebfetchTool } from "../src/tools/webfetch/index.js";
 
 describe("decodeHtmlEntities", () => {
 	it("decodes named entities", () => {

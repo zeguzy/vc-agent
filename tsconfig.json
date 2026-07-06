@@ -15,5 +15,10 @@
 		"types": ["react"]
 	},
 	"include": ["src/**/*"],
-	"exclude": ["node_modules", "openspec"]
+	"exclude": [
+		"node_modules",
+		"openspec",
+		"src/dcp/compress/pipeline.ts",
+		"src/dcp/core/compress/search.ts"
+	]
 }

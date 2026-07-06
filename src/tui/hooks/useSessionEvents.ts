@@ -228,7 +228,7 @@ export function useSessionEvents(
 			}
 			workerThrottles.current.clear();
 		};
-	}, [client, setMessages, flushWorkerText]);
+	}, [client, setMessages]);
 
 	return { toolCallIdToMsgId };
 }
