@@ -3,7 +3,7 @@ import type { MemoryType, TopicFileFrontmatter } from "./types-v2.js";
 // ─── Validation ──────────────────────────────────────────────
 
 /** Allowed pattern for member names and topic names. */
-const NAME_RE = /^[a-z0-9-]+$/;
+const NAME_RE = /^[a-zA-Z0-9_-]+$/;
 const MAX_NAME_LEN = 64;
 
 /** Validate a member name or topic name. Throws on invalid input. */
@@ -12,7 +12,7 @@ export function validateName(name: string, label: string): void {
 	if (name.length > MAX_NAME_LEN) throw new Error(`${label} too long (max ${MAX_NAME_LEN})`);
 	if (!NAME_RE.test(name)) {
 		throw new Error(
-			`${label} "${name}" invalid — only [a-z0-9-] allowed (no .. / \\ absolute paths)`,
+			`${label} "${name}" invalid — only [a-zA-Z0-9_-] allowed (no .. / \\ absolute paths)`,
 		);
 	}
 }

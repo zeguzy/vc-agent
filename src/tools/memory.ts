@@ -104,26 +104,40 @@ function handleWrite(manager: TeamManagerLike, args: Record<string, unknown>) {
 	if (!content) return err("content is required for write");
 
 	const selfName = manager.getSelfMemberName();
-	const targetMember = (args.name as string) || selfName;
+	const isSharedWrite = args.shared === true && (type === "project" || type === "reference");
+	// Leader (no selfMemberName) can write shared memory without specifying a member name.
+	// For non-shared writes, a member name is required.
+	const targetMember = (args.name as string) || selfName || (isSharedWrite ? "leader" : undefined);
 	if (!targetMember) return err("no member specified and you are not a team member");
-
-	const shared = args.shared === true && (type === "project" || type === "reference");
 
 	manager.writeMemory({
 		memberName: targetMember,
 		type,
 		topic,
 		content,
-		shared,
+		shared: isSharedWrite,
 	});
 
-	const location = shared ? "shared/" : `members/${targetMember}/`;
+	const location = isSharedWrite ? "shared/" : `members/${targetMember}/`;
 	return ok(`Memory written: ${location}${topic}.md [${type}]`);
 }
 
 function handleRead(manager: TeamManagerLike, args: Record<string, unknown>) {
 	const name = (args.name as string) || manager.getSelfMemberName();
-	if (!name) return err("no member name specified and you are not a member");
+	if (!name) {
+		// Leader (no selfMemberName) without a name arg: show shared memory index
+		const teamMd = manager.readTeamMd();
+		if (teamMd.sharedMemoryIndex.length === 0) {
+			return ok(
+				"No shared memories yet. Use memory(action='write', type='project', shared=true, ...) to create one.",
+			);
+		}
+		const lines = ["Shared Memories:"];
+		for (const s of teamMd.sharedMemoryIndex) {
+			lines.push(`  - ${s.path} — ${s.description}`);
+		}
+		return ok(lines.join("\n"));
+	}
 
 	const selfName = manager.getSelfMemberName();
 	if (selfName && args.name && (args.name as string) !== selfName) {
