@@ -11,5 +11,6 @@
   },
   "contextPruning": {
     "enabled": false
-  }
+  },
+  "model": "deepseek-v4-flash"
 }
