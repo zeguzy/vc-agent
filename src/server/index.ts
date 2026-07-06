@@ -1,3 +1,4 @@
+import { basename, dirname, join } from "node:path";
 import type { AgentSession, AgentSessionEvent, AgentSessionRuntime } from "../agent/session.js";
 import { activeToolsFor } from "../agent/session.js";
 import type {
@@ -45,7 +46,7 @@ export class AgentServer {
 	private readonly sessionChangeHandlers = new Set<(session: AgentSession) => Promise<void>>();
 	private currentUnsub: Unsubscribe | null = null;
 	private readonly notificationRouter: NotificationRouter;
-	readonly teamManager: TeamManager;
+	teamManager: TeamManager;
 	readonly teamRef: TeamManagerRef;
 	private readonly teamConfig: ReturnType<typeof resolveConfigTeams>;
 	private teamUnsub: (() => void) | null = null;
@@ -63,14 +64,28 @@ export class AgentServer {
 
 		const config = readConfig(opts.cwd);
 		this.teamConfig = resolveConfigTeams(config);
-		this.teamManager = new TeamManager(this.teamConfig, this.runtime.services, this.cwd);
+		this.teamManager = new TeamManager(
+			this.teamConfig,
+			this.runtime.services,
+			this.cwd,
+			this.sessionTeamDir(),
+		);
 		if (opts.teamRef) {
 			opts.teamRef.current = this.teamManager;
 		}
 		this.teamRef = opts.teamRef ?? { current: this.teamManager };
 
 		this.runtime.setRebindSession(async (newSession) => {
-			await this.disposeTeam();
+			if (this.teamConfig.cancelOrphansOnSessionChange) {
+				await this.disposeTeam();
+				this.teamManager = new TeamManager(
+					this.teamConfig,
+					this.runtime.services,
+					this.cwd,
+					this.sessionTeamDir(),
+				);
+				this.teamRef.current = this.teamManager;
+			}
 			this.resubscribe();
 			for (const handler of this.sessionChangeHandlers) {
 				await handler(newSession);
@@ -96,6 +111,15 @@ export class AgentServer {
 
 	private get session(): AgentSession {
 		return this.runtime.session;
+	}
+
+	private sessionTeamDir(): string {
+		const sf = this.session.sessionFile;
+		if (sf) {
+			const stem = basename(sf).replace(/\.jsonl$/, "");
+			return join(dirname(sf), "team", stem);
+		}
+		return join(this.cwd, ".openagent", "team");
 	}
 
 	private broadcastTeamEvent(event: TeamEvent) {

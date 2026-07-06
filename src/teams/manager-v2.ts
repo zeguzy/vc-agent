@@ -36,12 +36,13 @@ export class TeamManager implements TeamManagerLike {
 		config: ResolvedTeamConfig,
 		services: SubagentServices,
 		cwd: string,
+		teamDir: string,
 		private readonly selfMemberName?: MemberName,
 	) {
 		this.config = config;
 		this.services = services;
 		this.cwd = cwd;
-		this.files = new TeamFiles(cwd);
+		this.files = new TeamFiles(teamDir);
 		this.files.initTeamDir();
 	}
 

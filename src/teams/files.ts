@@ -31,8 +31,7 @@ import type {
 export class TeamFiles {
 	readonly paths: TeamDirectoryPaths;
 
-	constructor(readonly cwd: string) {
-		const teamDir = join(cwd, ".openagent", "team");
+	constructor(teamDir: string) {
 		this.paths = {
 			teamDir,
 			teamMd: join(teamDir, "TEAM.md"),

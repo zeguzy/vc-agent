@@ -89,7 +89,7 @@ export function App({
 	const [pendingQuestion, setPendingQuestion] = useState<QuestionData | null>(null);
 	const [pendingEditConfirm, setPendingEditConfirm] = useState(false);
 	const [activeMemberName, setActiveMemberName] = useState<string | null>(null);
-	const [memberTick, setMemberTick] = useState(0);
+	const [_memberTick, setMemberTick] = useState(0);
 	const activeMemberMsgMapRef = useRef<Map<string, Message>>(new Map());
 	const [members, setMembers] = useState<MemberState[]>(() => client.listMembers());
 	const scrollRef = useRef<ScrollBoxRenderable>(null);
@@ -114,7 +114,7 @@ export function App({
 			setAgentMode(expected);
 			client.setAgentMode(expected);
 		}
-	}, [configState.teams?.enabled, client]);
+	}, [configState.teams?.enabled, client, agentMode]);
 
 	useEffect(() => {
 		if (!editBridge) return;
@@ -240,7 +240,7 @@ export function App({
 		}
 		return memberMsgs;
 		// eslint-disable-next-line react-hooks/exhaustive-deps
-	}, [activeMemberName, messages, client, memberTick]);
+	}, [activeMemberName, messages, client]);
 
 	useEffect(() => {
 		const router = getGlobalRouter();
@@ -340,6 +340,8 @@ export function App({
 			setIsRunning(false);
 			toolCallIdToMsgId.current.clear();
 			setContextUsage({ tokens: null, window: null, percent: null });
+			setMembers(client.listMembers());
+			setActiveMemberName(null);
 			const cu = client.getContextUsage();
 			if (cu) {
 				setContextUsage({
@@ -465,7 +467,7 @@ export function App({
 				setIsRunning(false);
 			});
 		},
-		[client, buildCommandCtx, members],
+		[client, buildCommandCtx],
 	);
 
 	useKeyboard((key) => {
