@@ -69,6 +69,8 @@ export class AgentServer {
 			this.runtime.services,
 			this.cwd,
 			this.sessionTeamDir(),
+			undefined,
+			this.session.model,
 		);
 		if (opts.teamRef) {
 			opts.teamRef.current = this.teamManager;
@@ -83,6 +85,8 @@ export class AgentServer {
 					this.runtime.services,
 					this.cwd,
 					this.sessionTeamDir(),
+					undefined,
+					this.session.model,
 				);
 				this.teamRef.current = this.teamManager;
 			}

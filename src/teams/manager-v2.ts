@@ -50,6 +50,8 @@ export class TeamManager implements TeamManagerLike {
 		cwd: string,
 		teamDir: string,
 		private readonly selfMemberName?: MemberName,
+		/** Fallback model for members without an explicit model (leader session's model). */
+		private readonly defaultParentModel?: ResolvedModel,
 	) {
 		this.config = config;
 		this.services = services;
@@ -111,7 +113,7 @@ export class TeamManager implements TeamManagerLike {
 			noContextFiles: true,
 		});
 
-		const resolvedModel = opts.parentModel ?? undefined;
+		const resolvedModel = opts.parentModel ?? this.defaultParentModel;
 		const memberToolNames = ["read", "bash", "grep", "find"];
 		const sessionDir = resolveSessionDir();
 		const sessionManager = await SessionManager.create(this.cwd, sessionDir);
@@ -224,7 +226,7 @@ export class TeamManager implements TeamManagerLike {
 						noContextFiles: true,
 					});
 
-					const resolvedModel = opts.parentModel ?? undefined;
+					const resolvedModel = opts.parentModel ?? this.defaultParentModel;
 					const memberToolNames = ["read", "bash", "grep", "find"];
 					const { session } = await createAgentSession({
 						cwd: this.cwd,
