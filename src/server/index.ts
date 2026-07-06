@@ -329,6 +329,7 @@ export class AgentServer {
 		name: MemberName;
 		role: string;
 		goal: string;
+		constraints?: string;
 		model?: string;
 	}): Promise<MemberState> {
 		return this.teamManager.createMember({

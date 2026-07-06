@@ -129,6 +129,7 @@ export class InProcessClient implements AgentClient {
 		name: MemberName;
 		role: string;
 		goal: string;
+		constraints?: string;
 		model?: string;
 	}): Promise<MemberState> {
 		return this.server.handleCreateMember(opts);

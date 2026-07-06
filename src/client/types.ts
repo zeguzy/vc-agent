@@ -75,6 +75,8 @@ export interface AgentClient {
 		name: MemberName;
 		role: string;
 		goal: string;
+		/** Optional role-specific constraints; injected into member's Anti-Patterns. */
+		constraints?: string;
 		model?: string;
 	}): Promise<MemberState>;
 	removeMember(name: MemberName): Promise<void>;
