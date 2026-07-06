@@ -133,6 +133,8 @@ export interface TeamManagerLike {
 	cancelMember(name: MemberName): void;
 	directMember(name: MemberName, kind: "directive" | "context" | "redirect", payload: string): void;
 
+	getMaxWorkers(): number;
+
 	// Member identity (for tool permission checks)
 	isSelfMember(name: MemberName): boolean;
 	getSelfMemberName(): MemberName | undefined;

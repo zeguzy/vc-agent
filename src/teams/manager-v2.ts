@@ -312,6 +312,10 @@ export class TeamManager implements TeamManagerLike {
 		return [...this.members.values()];
 	}
 
+	getMaxWorkers(): number {
+		return this.config.maxWorkers;
+	}
+
 	// ─── Task Management ───────────────────────────────────
 
 	assignTask(opts: {

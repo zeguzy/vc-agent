@@ -6,10 +6,13 @@ interface TeamToolOptions {
 	teamRef: TeamManagerRef;
 }
 
+export const CREATE_BATCH_SOFT_LIMIT = 20;
+
 const ActionSchema = Type.Union(
 	[
 		Type.Literal("read"),
 		Type.Literal("create"),
+		Type.Literal("create-batch"),
 		Type.Literal("assign"),
 		Type.Literal("direct"),
 		Type.Literal("edit-member"),
@@ -19,6 +22,19 @@ const ActionSchema = Type.Union(
 	{ description: "Action to perform on the team" },
 );
 
+const BatchMemberSchema = Type.Object({
+	name: Type.String({ description: "Member name" }),
+	role: Type.String({ description: "Member role" }),
+	goal: Type.String({ description: "Member goal" }),
+	taskTitle: Type.Optional(
+		Type.String({ description: "Optional first task title — member starts working immediately" }),
+	),
+	taskDescription: Type.Optional(Type.String({ description: "Optional first task description" })),
+	taskPriority: Type.Optional(
+		Type.Union([Type.Literal("high"), Type.Literal("medium"), Type.Literal("low")]),
+	),
+});
+
 const TeamParamsSchema = Type.Object({
 	action: ActionSchema,
 	name: Type.Optional(
@@ -26,6 +42,11 @@ const TeamParamsSchema = Type.Object({
 	),
 	role: Type.Optional(Type.String({ description: "Member role (for create)" })),
 	goal: Type.Optional(Type.String({ description: "Member goal (for create)" })),
+	members: Type.Optional(
+		Type.Array(BatchMemberSchema, {
+			description: "Array of members to create in one call (for create-batch). Soft limit: 20.",
+		}),
+	),
 	taskTitle: Type.Optional(
 		Type.String({
 			description: "First task title (for create) — member starts working immediately",
@@ -60,6 +81,8 @@ export function createTeamTool(opts: TeamToolOptions): ToolDefinition {
 			"- read: See who's on the team, what they're working on, current tasks.\n" +
 			"- create: Add a member. Give them a name, role, and goal. Optionally include taskTitle + taskDescription to start them working right away.\n" +
 			'  Example: team(action="create", name="sasha", role="frontend dev", goal="Build the login page", taskTitle="Login page", taskDescription="Create Login.tsx with email+password form")\n' +
+			"- create-batch: Add multiple members in one call. Provide a `members` array; each item has name/role/goal plus optional taskTitle/taskDescription/taskPriority. Capacity is checked up-front (current + batch size must fit maxWorkers); per-member failures are isolated (succeeded/failed reported separately).\n" +
+			'  Example: team(action="create-batch", members=[{name="alice",role="frontend",goal="UI",taskTitle="Login",taskDescription="..."},{name="bob",role="backend",goal="API"}])\n' +
 			"- assign: Give a task to an idle member. They'll start working on it.\n" +
 			'  Example: team(action="assign", name="sasha", title="Add validation", description="Validate email format before submit")\n' +
 			'- direct: Send a message to a member mid-task. kind="directive" (change approach), "context" (extra info), "redirect" (new priority).\n' +
@@ -76,6 +99,14 @@ export function createTeamTool(opts: TeamToolOptions): ToolDefinition {
 				name?: string;
 				role?: string;
 				goal?: string;
+				members?: Array<{
+					name: string;
+					role: string;
+					goal: string;
+					taskTitle?: string;
+					taskDescription?: string;
+					taskPriority?: "high" | "medium" | "low";
+				}>;
 				taskTitle?: string;
 				taskDescription?: string;
 				taskPriority?: string;
@@ -94,6 +125,8 @@ export function createTeamTool(opts: TeamToolOptions): ToolDefinition {
 						return handleRead(manager);
 					case "create":
 						return await handleCreate(manager, args);
+					case "create-batch":
+						return await handleCreateBatch(manager, args);
 					case "assign":
 						return handleAssign(manager, args);
 					case "direct":
@@ -179,6 +212,116 @@ async function handleCreate(manager: TeamManagerLike, args: Record<string, unkno
 	}
 
 	return ok(`Member "${name}" (${role}) created. Status: ${state.status}`);
+}
+
+type BatchMember = {
+	name: string;
+	role: string;
+	goal: string;
+	taskTitle?: string;
+	taskDescription?: string;
+	taskPriority?: "high" | "medium" | "low";
+};
+
+type BatchSuccess = {
+	name: string;
+	role: string;
+	taskId: string | null;
+	taskWarn?: string;
+};
+
+type BatchFailure = {
+	name: string;
+	error: string;
+};
+
+async function handleCreateBatch(manager: TeamManagerLike, args: Record<string, unknown>) {
+	const members = args.members as BatchMember[] | undefined;
+	if (!members || members.length === 0) {
+		return err("members array is required and must not be empty");
+	}
+	if (members.length > CREATE_BATCH_SOFT_LIMIT) {
+		return err(
+			`members array length ${members.length} exceeds soft limit ${CREATE_BATCH_SOFT_LIMIT}; split into multiple calls`,
+		);
+	}
+
+	const currentCount = manager.listMembers().length;
+	const maxWorkers = manager.getMaxWorkers();
+	if (currentCount + members.length > maxWorkers) {
+		return err(
+			`Batch rejected: capacity exceeded.\n  Current members: ${currentCount}\n  Batch size: ${members.length}\n  maxWorkers: ${maxWorkers}\n  Remove existing members first or reduce batch size.`,
+		);
+	}
+
+	const succeeded: BatchSuccess[] = [];
+	const failed: BatchFailure[] = [];
+
+	for (const m of members) {
+		let state: { name: string; role: string } | null = null;
+		try {
+			state = await manager.createMember({
+				name: m.name,
+				role: m.role,
+				goal: m.goal,
+				model: undefined,
+				services: {} as never,
+				parentModel: undefined,
+			});
+		} catch (e) {
+			failed.push({ name: m.name, error: e instanceof Error ? e.message : String(e) });
+			continue;
+		}
+
+		if (!m.taskTitle) {
+			succeeded.push({ name: m.name, role: m.role, taskId: null });
+			continue;
+		}
+
+		try {
+			const task = manager.assignTask({
+				title: m.taskTitle,
+				description: m.taskDescription ?? "",
+				memberName: m.name,
+				priority: m.taskPriority ?? "medium",
+			});
+			succeeded.push({ name: m.name, role: m.role, taskId: task.id });
+		} catch (e) {
+			succeeded.push({
+				name: m.name,
+				role: m.role,
+				taskId: null,
+				taskWarn: e instanceof Error ? e.message : String(e),
+			});
+		}
+	}
+
+	const lines: string[] = [];
+	lines.push(`Created ${succeeded.length} member(s):`);
+	for (const s of succeeded) {
+		if (s.taskWarn) {
+			lines.push(`  ✓ ${s.name} (${s.role}) — task error: ${s.taskWarn}`);
+		} else if (s.taskId) {
+			lines.push(`  ✓ ${s.name} (${s.role}) [${s.taskId}]`);
+		} else {
+			lines.push(`  ✓ ${s.name} (${s.role}) — no task`);
+		}
+	}
+	if (failed.length > 0) {
+		lines.push("");
+		lines.push(`Failed ${failed.length} member(s):`);
+		for (const f of failed) {
+			lines.push(`  ✗ ${f.name}: ${f.error}`);
+		}
+	}
+
+	const isError = succeeded.length === 0;
+	const text = lines.join("\n");
+	return {
+		content: [{ type: "text" as const, text: isError ? `Error: ${text}` : text }],
+		details: {},
+		isError,
+	};
 }
 
 function handleAssign(manager: TeamManagerLike, args: Record<string, unknown>) {
