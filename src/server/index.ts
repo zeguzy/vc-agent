@@ -87,6 +87,12 @@ export class AgentServer {
 				this.teamRef.current = this.teamManager;
 			}
 			this.resubscribe();
+			if (this.teamConfig.cancelOrphansOnSessionChange) {
+				await this.teamManager.restoreMembers({
+					services: this.runtime.services,
+					parentModel: this.session.model,
+				});
+			}
 			for (const handler of this.sessionChangeHandlers) {
 				await handler(newSession);
 			}

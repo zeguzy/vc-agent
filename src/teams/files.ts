@@ -263,13 +263,15 @@ function parseTeamMd(raw: string): TeamMdStructure {
 function serializeTeamMd(data: TeamMdStructure): string {
 	const lines: string[] = ["# Team", "", "## Mission", data.mission, "", "## Members"];
 	if (data.members.length === 0) {
-		lines.push("| Name | Role | Status | Current Task |");
-		lines.push("|------|------|--------|--------------|");
+		lines.push("| Name | Role | Status | Current Task | Session |");
+		lines.push("|------|------|--------|--------------|---------|");
 	} else {
-		lines.push("| Name | Role | Status | Current Task |");
-		lines.push("|------|------|--------|--------------|");
+		lines.push("| Name | Role | Status | Current Task | Session |");
+		lines.push("|------|------|--------|--------------|---------|");
 		for (const m of data.members) {
-			lines.push(`| ${m.name} | ${m.role} | ${m.status} | ${m.currentTask} |`);
+			lines.push(
+				`| ${m.name} | ${m.role} | ${m.status} | ${m.currentTask} | ${m.sessionId ?? ""} |`,
+			);
 		}
 	}
 	lines.push("", "## Active Tasks");
@@ -293,11 +295,13 @@ function parseMembersTable(raw: string): TeamMdStructure["members"] {
 			.split("|")
 			.filter(Boolean)
 			.map((c) => c.trim());
+		const sessionId = cells[4] ?? "";
 		return {
 			name: cells[0] ?? "",
 			role: cells[1] ?? "",
 			status: cells[2] ?? "",
 			currentTask: cells[3] ?? "",
+			...(sessionId ? { sessionId } : {}),
 		};
 	});
 }
