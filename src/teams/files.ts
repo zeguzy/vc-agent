@@ -92,13 +92,20 @@ export class TeamFiles {
 	}
 
 	/** Create member directory + initial index. */
-	initMemberDir(name: MemberName, role: string, goal: string, model?: string): void {
+	initMemberDir(
+		name: MemberName,
+		role: string,
+		goal: string,
+		model?: string,
+		constraints?: string,
+	): void {
 		validateName(name, "member name");
 		const topicsDir = this.paths.memberTopics(name);
 		if (!existsSync(topicsDir)) mkdirSync(topicsDir, { recursive: true });
 		if (!existsSync(this.paths.memberIndex(name))) {
 			this.writeMemberIndex(name, {
 				profile: { role, goal, model },
+				constraints: constraints || undefined,
 				activeContext: "",
 				memoryIndex: [],
 				recentActivity: [],
@@ -347,9 +354,12 @@ function parseMemberIndex(raw: string): MemberIndexStructure {
 	const role = extractField(profileRaw, "Role");
 	const goal = extractField(profileRaw, "Goal");
 	const model = extractField(profileRaw, "Model");
+	const constraintsRaw = sections.get("Constraints") ?? "";
+	const constraints = constraintsRaw.trim() || undefined;
 
 	return {
 		profile: { role, goal, model: model || undefined },
+		constraints,
 		activeContext: sections.get("Active Context") ?? "",
 		memoryIndex: parseMemoryIndexLines(sections.get("Memory Index") ?? ""),
 		recentActivity: parseRecentActivityLines(sections.get("Recent Activity") ?? ""),
@@ -365,6 +375,9 @@ function serializeMemberIndex(data: MemberIndexStructure): string {
 		`- Goal: ${data.profile.goal}`,
 	];
 	if (data.profile.model) lines.push(`- Model: ${data.profile.model}`);
+	if (data.constraints) {
+		lines.push("", "## Constraints", data.constraints);
+	}
 	lines.push("", "## Active Context", data.activeContext, "", "## Memory Index");
 	for (const m of data.memoryIndex) {
 		lines.push(`- \`${m.file}\` [${m.type}] — ${m.description}`);
