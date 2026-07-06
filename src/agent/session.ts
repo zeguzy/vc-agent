@@ -416,7 +416,7 @@ function registerCustomProvider(registry: ModelRegistry, name: string, config: P
 					models: config.models.map((m) => ({
 						id: m.id,
 						name: m.name,
-						api: (config.api ?? "openai") as any,
+						api: (config.api ?? "openai-completions") as any,
 						...(config.baseUrl ? { baseUrl: config.baseUrl } : {}),
 						reasoning: false,
 						input: ["text" as const],

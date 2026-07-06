@@ -1,4 +1,19 @@
 {
+  "providers": {
+    "xfyun": {
+      "apiKey": "<YOUR_XFYUN_API_KEY>",
+      "baseUrl": "https://maas-coding-api.cn-huabei-1.xf-yun.com/v2",
+      "api": "openai-completions",
+      "models": [
+        {
+          "id": "astron-code-latest",
+          "name": "Astron Coding Plan",
+          "contextWindow": 128000,
+          "maxTokens": 8192
+        }
+      ]
+    }
+  },
   "thinking": {
     "level": "high"
   },
@@ -12,5 +27,5 @@
   "contextPruning": {
     "enabled": false
   },
-  "model": "deepseek-v4-flash"
+  "model": "xfyun:astron-code-latest"
 }
