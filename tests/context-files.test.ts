@@ -1,7 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { loadSystemContext, resolveNearbyContext } from "../src/context-files.js";
+import {
+	loadSystemContext,
+	ORCHESTRATOR_SYSTEM_PROMPT,
+	resolveNearbyContext,
+} from "../src/context-files.js";
 
 const tmpBase = join(import.meta.dirname, ".tmp-test-context-files");
 
@@ -144,5 +148,52 @@ describe("resolveNearbyContext", () => {
 	it("returns empty for files outside cwd", () => {
 		const result = resolveNearbyContext("/tmp/outside.ts", tmpBase, new Set());
 		expect(result).toEqual([]);
+	});
+});
+
+describe("ORCHESTRATOR_SYSTEM_PROMPT content", () => {
+	const prompt = ORCHESTRATOR_SYSTEM_PROMPT;
+
+	it("contains Never delegate understanding section", () => {
+		expect(prompt).toMatch(/Never delegate understanding/i);
+	});
+
+	it("contains anti-pattern example 'based on your findings'", () => {
+		expect(prompt.toLowerCase()).toContain("based on your findings");
+	});
+
+	it("contains synthesized delegation example with concrete paths", () => {
+		expect(prompt).toMatch(/src\/[a-z/]+\.ts:\d+/);
+	});
+
+	it("contains 3-line hard constraint for delegation prompts", () => {
+		expect(prompt).toMatch(/shorter than 3 lines/i);
+	});
+
+	it("preserves Intent Gate section (regression guard)", () => {
+		expect(prompt).toMatch(/## Intent Gate/i);
+		expect(prompt).toMatch(/Trivial|Explicit|Exploratory|Implementation/i);
+	});
+
+	it("preserves GOAL/CONTEXT/SCOPE delegation template (regression guard)", () => {
+		expect(prompt).toContain("GOAL");
+		expect(prompt).toContain("CONTEXT");
+		expect(prompt).toContain("SCOPE");
+	});
+
+	it("preserves Parallel Execution section (regression guard)", () => {
+		expect(prompt).toMatch(/## Parallel Execution/i);
+	});
+
+	it("preserves Failure Recovery section (regression guard)", () => {
+		expect(prompt).toMatch(/## Failure Recovery/i);
+	});
+
+	it("preserves Evidence Requirements section (regression guard)", () => {
+		expect(prompt).toMatch(/## Evidence Requirements/i);
+	});
+
+	it("preserves Communication section (regression guard)", () => {
+		expect(prompt).toMatch(/## Communication/i);
 	});
 });
