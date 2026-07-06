@@ -10,5 +10,8 @@ package-lock.json
 # opencode runtime artifacts
 .omo/
 
+# openagent local config (contains per-user API keys)
+.openagent/config.json
+
 node_modules
 !.gitignore
