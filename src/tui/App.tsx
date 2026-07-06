@@ -25,6 +25,7 @@ import { QuestionBox } from "./components/QuestionBox.js";
 import { SessionPicker } from "./components/SessionPicker.js";
 import { SettingsPanel } from "./components/SettingsPanel.js";
 import { StatusBar } from "./components/StatusBar.js";
+import { TeamTopology } from "./components/TeamTopology.js";
 import { Toast } from "./components/Toast.js";
 import { WelcomeBanner } from "./components/WelcomeBanner.js";
 import { WorkersView } from "./components/WorkersView.js";
@@ -655,16 +656,20 @@ export function App({
 						activeMemberName={activeMemberName}
 					/>
 				)}
+				{agentMode === "team" && (
+					<TeamTopology
+						members={members}
+						tasks={client.listTasks()}
+						activeMemberName={activeMemberName}
+					/>
+				)}
 				<StatusBar
 					mode={mode}
-					agentMode={agentMode === "standard" ? getBaseMode(configState) : agentMode}
 					contextPercent={contextUsage.percent}
 					contextTokens={contextUsage.tokens}
 					contextWindow={contextUsage.window}
 					copyFeedback={copyFeedback}
 					onCopyFeedbackClear={() => setCopyFeedback(null)}
-					members={members}
-					activeMemberName={activeMemberName}
 				/>
 			</box>
 		</box>

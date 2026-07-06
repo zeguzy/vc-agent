@@ -1,27 +1,9 @@
 import type { MemberState, TaskState } from "../../teams/types-v2.js";
-import { colors } from "../utils/theme.js";
-import { statusIcon } from "./MemberTags.js";
+import { colors, teamStatusColor, teamStatusIcon } from "../utils/theme.js";
 
 interface MemberCardProps {
 	member: MemberState;
 	tasks: TaskState[];
-}
-
-function statusColor(status: MemberState["status"]): string {
-	switch (status) {
-		case "active":
-			return colors.warning;
-		case "idle":
-			return colors.textMuted;
-		case "done":
-			return colors.success;
-		case "error":
-			return colors.error;
-		case "paused":
-			return colors.info;
-		case "cancelled":
-			return colors.textMuted;
-	}
 }
 
 export function MemberCard({ member, tasks }: MemberCardProps) {
@@ -53,7 +35,7 @@ export function MemberCard({ member, tasks }: MemberCardProps) {
 				paddingBottom={1}
 			>
 				<box flexDirection="row">
-					<text fg={statusColor(member.status)}>{statusIcon(member.status)} </text>
+					<text fg={teamStatusColor(member.status)}>{teamStatusIcon(member.status)} </text>
 					<text fg={colors.secondary}>{member.name}</text>
 					<text fg={colors.textSubtle}> · </text>
 					<text fg={colors.textMuted}>{member.role}</text>

@@ -1,3 +1,5 @@
+import type { MemberState } from "../../teams/types-v2.js";
+
 export const colors = {
 	background: "#000000",
 	backgroundPanel: "#1C1C1E",
@@ -71,3 +73,37 @@ export const icons = {
 	assistant: "▣",
 	folder: "󰝰",
 } as const;
+
+export function teamStatusIcon(status: MemberState["status"]): string {
+	switch (status) {
+		case "active":
+			return "◌";
+		case "idle":
+			return "○";
+		case "done":
+			return "✓";
+		case "error":
+			return "✗";
+		case "paused":
+			return "⏸";
+		case "cancelled":
+			return "⊘";
+	}
+}
+
+export function teamStatusColor(status: MemberState["status"]): string {
+	switch (status) {
+		case "active":
+			return colors.warning;
+		case "idle":
+			return colors.textMuted;
+		case "done":
+			return colors.success;
+		case "error":
+			return colors.error;
+		case "paused":
+			return colors.info;
+		case "cancelled":
+			return colors.textMuted;
+	}
+}
