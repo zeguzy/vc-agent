@@ -114,7 +114,7 @@ The TUI SHALL support vim-style visual mode for selecting text and yanking (copy
 
 ### Requirement: Normal Mode Keymap
 
-The NORMAL mode keymap is extended to include vim cursor navigation commands. The `j` and `k` keys change from viewport scrolling to cursor movement with auto-scroll.
+The NORMAL mode keymap SHALL be extended to include vim cursor navigation commands. The `j` and `k` keys SHALL change from viewport scrolling to cursor movement with auto-scroll.
 
 #### Scenario: j/k cursor movement (CHANGED from scroll-by-2)
 

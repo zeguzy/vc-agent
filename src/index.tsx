@@ -1,4 +1,7 @@
 #!/usr/bin/env bun
+import { appendFileSync, mkdirSync } from "node:fs";
+import { homedir } from "node:os";
+import { join } from "node:path";
 import { createCliRenderer } from "@opentui/core";
 import { createRoot } from "@opentui/react";
 import { type AgentMode, createRuntime, getBaseMode, type SessionMode } from "./agent/session.js";
@@ -13,6 +16,36 @@ import { createEditConfirmBridge } from "./tools/edit-confirm-bridge.js";
 import { createQuestionBridge } from "./tools/question-bridge.js";
 import { App } from "./tui/App.js";
 import { formatError } from "./utils/formatError.js";
+
+const STARTUP_LOG_DIR = join(homedir(), ".config", "openagent", "logs");
+const STARTUP_LOG = join(STARTUP_LOG_DIR, "startup.log");
+
+function appendStartupLog(level: string, args: unknown[]): void {
+	try {
+		mkdirSync(STARTUP_LOG_DIR, { recursive: true });
+		const msg = args.map((a) => (typeof a === "string" ? a : String(a))).join(" ");
+		appendFileSync(STARTUP_LOG, `${new Date().toISOString()} [${level}] ${msg}\n`, "utf-8");
+	} catch {
+		// logging is non-critical
+	}
+}
+
+function suppressConsoleToFile(): () => void {
+	const origLog = console.log;
+	const origWarn = console.warn;
+	const origError = console.error;
+	let restored = false;
+	console.log = (...args: unknown[]) => appendStartupLog("log", args);
+	console.warn = (...args: unknown[]) => appendStartupLog("warn", args);
+	console.error = (...args: unknown[]) => appendStartupLog("error", args);
+	return () => {
+		if (restored) return;
+		restored = true;
+		console.log = origLog;
+		console.warn = origWarn;
+		console.error = origError;
+	};
+}
 
 interface ParsedArgs {
 	model?: string;
@@ -168,56 +201,64 @@ async function runTui(argv: string[]): Promise<void> {
 		process.exit(0);
 	}
 
-	const cwd = process.cwd();
-	const config = readConfig(cwd);
-	const model = args.model ?? config.model;
-	const mode = resolveMode(args);
-	const agentMode: AgentMode = args.plan ? "planner" : getBaseMode(config);
-
-	const questionBridge = createQuestionBridge();
-	const editBridge = createEditConfirmBridge();
-	const teamRef: TeamManagerRef = { current: null };
-
-	let result: Awaited<ReturnType<typeof createRuntime>>;
+	// Renderer doesn't own the terminal until createCliRenderer runs, so redirect
+	// init-phase console output to the startup log to avoid screen-bottom leaks.
+	const restoreConsole = suppressConsoleToFile();
 	try {
-		result = await createRuntime({
-			cwd,
-			model,
-			config,
-			mode,
-			agentMode,
-			bridge: questionBridge,
-			editBridge,
-			teamRef,
-			...(args.sessionRef ? { sessionRef: args.sessionRef } : {}),
-			...(args.name ? { name: args.name } : {}),
-		});
-	} catch (err) {
-		console.error("创建 Agent 会话失败:", formatError(err));
-		process.exit(1);
+		const cwd = process.cwd();
+		const config = readConfig(cwd);
+		const model = args.model ?? config.model;
+		const mode = resolveMode(args);
+		const agentMode: AgentMode = args.plan ? "planner" : getBaseMode(config);
+
+		const questionBridge = createQuestionBridge();
+		const editBridge = createEditConfirmBridge();
+		const teamRef: TeamManagerRef = { current: null };
+
+		let result: Awaited<ReturnType<typeof createRuntime>>;
+		try {
+			result = await createRuntime({
+				cwd,
+				model,
+				config,
+				mode,
+				agentMode,
+				bridge: questionBridge,
+				editBridge,
+				teamRef,
+				...(args.sessionRef ? { sessionRef: args.sessionRef } : {}),
+				...(args.name ? { name: args.name } : {}),
+			});
+		} catch (err) {
+			restoreConsole();
+			console.error("创建 Agent 会话失败:", formatError(err));
+			process.exit(1);
+		}
+
+		const { runtime, skillManager, mcpManager } = result;
+		const server = createServer({ runtime, skillManager, mcpManager, cwd, teamRef });
+		const client = createClient(server);
+
+		const renderer = await createCliRenderer({ exitOnCtrlC: false });
+		process.on("exit", () => renderer.destroy());
+
+		const root = createRoot(renderer);
+		root.render(
+			<App
+				client={client}
+				model={model || "default"}
+				cwd={cwd}
+				config={config}
+				bridge={questionBridge}
+				editBridge={editBridge}
+				initialResumeList={args.resumeList}
+				initialAgentMode={agentMode}
+				mcpManager={mcpManager}
+			/>,
+		);
+	} finally {
+		restoreConsole();
 	}
-
-	const { runtime, skillManager, mcpManager } = result;
-	const server = createServer({ runtime, skillManager, mcpManager, cwd, teamRef });
-	const client = createClient(server);
-
-	const renderer = await createCliRenderer({ exitOnCtrlC: false });
-	process.on("exit", () => renderer.destroy());
-
-	const root = createRoot(renderer);
-	root.render(
-		<App
-			client={client}
-			model={model || "default"}
-			cwd={cwd}
-			config={config}
-			bridge={questionBridge}
-			editBridge={editBridge}
-			initialResumeList={args.resumeList}
-			initialAgentMode={agentMode}
-			mcpManager={mcpManager}
-		/>,
-	);
 }
 
 async function main(): Promise<void> {

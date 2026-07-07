@@ -1,5 +1,5 @@
 import { describe, expect, it } from "bun:test";
-import { buildMemberCapabilitiesSection, buildToolContractLayer } from "../src/teams/context.js";
+import { buildToolContractLayer } from "../src/teams/context.js";
 
 describe("buildToolContractLayer", () => {
 	it("includes only tools actually assigned", () => {
@@ -37,16 +37,5 @@ describe("buildToolContractLayer", () => {
 		});
 		expect(layer).not.toContain("`postgres`");
 		expect(layer).not.toContain("`mcp`");
-	});
-});
-
-describe("buildMemberCapabilitiesSection (legacy)", () => {
-	it("delegates to buildToolContractLayer", () => {
-		const section = buildMemberCapabilitiesSection({
-			tools: ["read", "bash", "memory", "message"],
-		});
-		expect(section).toContain("`read`");
-		expect(section).toContain("`bash`");
-		expect(section).toContain("## How You Work");
 	});
 });

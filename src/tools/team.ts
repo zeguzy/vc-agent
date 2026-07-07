@@ -634,8 +634,14 @@ function handleWait(teamRef: TeamManagerRef, args: { duration?: number }) {
 	if (!wakeUp) {
 		return err("Wake-up callback not available. Use read to poll manually.");
 	}
+	console.error(`[team] wait: scheduling wake-up in ${seconds}s`);
 	setTimeout(() => {
-		wakeUp(`[Team Wake-up] ${seconds}s elapsed. Check team status now.`);
+		console.error(`[team] wait: timer fired, calling wakeUp`);
+		try {
+			wakeUp(`[Team Wake-up] ${seconds}s elapsed. Check team status now.`);
+		} catch (e) {
+			console.error(`[team] wait: wakeUp threw:`, e);
+		}
 	}, seconds * 1000);
 	return ok(`Waiting ${seconds}s. I'll check back then.`);
 }

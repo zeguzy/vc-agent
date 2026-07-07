@@ -2,7 +2,6 @@ import { describe, expect, it } from "bun:test";
 import {
 	buildCompactionReinject,
 	buildContractLayer,
-	buildIdentityLayer,
 	buildIndexLayer,
 	buildMemberSystemPrompt,
 	buildRuntimeLayer,
@@ -348,15 +347,5 @@ describe("buildCompactionReinject", () => {
 		});
 
 		expect(reinject).toContain("[Your Current State Re-injected]");
-	});
-});
-
-describe("buildIdentityLayer (legacy)", () => {
-	it("still works for backward compatibility", () => {
-		const l1 = buildIdentityLayer({ name: "alice", role: "reviewer", goal: "审查代码" });
-		expect(l1).toContain("You are alice, a reviewer on this team.");
-		expect(l1).toContain("## Anti-Patterns");
-		expect(l1).toContain("## Your Tools");
-		expect(l1).toContain("## How You Work");
 	});
 });

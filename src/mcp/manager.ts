@@ -435,7 +435,11 @@ export class McpManager {
 			args,
 			env: config.env,
 			cwd: config.cwd,
+			stderr: "pipe",
 		});
+		transport.onerror = (err) => {
+			console.error(`[mcp] ${name}: transport error:`, err);
+		};
 		return this.connectWithTransport(name, transport);
 	}
 
