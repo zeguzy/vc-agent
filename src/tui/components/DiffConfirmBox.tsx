@@ -66,33 +66,27 @@ export function DiffConfirmBox({ bridge, onDecision }: DiffConfirmBoxProps) {
 				<text fg={colors.secondary}>确认 edit · </text>
 				<text fg={colors.textMuted}>{pending.filePath}</text>
 			</box>
-			<scrollbox
+			<diff
+				diff={pending.patch}
+				filetype={filetype}
+				syntaxStyle={syntaxStyle}
+				view={width > 120 ? "split" : "unified"}
+				showLineNumbers={true}
+				width="100%"
+				wrapMode="word"
+				fg={colors.text}
+				addedBg={colors.diffAddedBg}
+				removedBg={colors.diffRemovedBg}
+				contextBg={colors.diffContextBg}
+				addedSignColor={colors.diffAdded}
+				removedSignColor={colors.diffRemoved}
+				lineNumberFg={colors.diffLineNumber}
+				lineNumberBg={colors.diffContextBg}
+				addedLineNumberBg={colors.diffAddedLineNumberBg}
+				removedLineNumberBg={colors.diffRemovedLineNumberBg}
 				maxHeight={20}
-				minHeight={3}
-				focused={false}
-				backgroundColor={colors.backgroundInset}
-			>
-				<diff
-					diff={pending.patch}
-					filetype={filetype}
-					syntaxStyle={syntaxStyle}
-					view={width > 120 ? "split" : "unified"}
-					showLineNumbers={true}
-					width="100%"
-					wrapMode="word"
-					fg={colors.text}
-					addedBg={colors.diffAddedBg}
-					removedBg={colors.diffRemovedBg}
-					contextBg={colors.diffContextBg}
-					addedSignColor={colors.diffAdded}
-					removedSignColor={colors.diffRemoved}
-					lineNumberFg={colors.diffLineNumber}
-					lineNumberBg={colors.diffContextBg}
-					addedLineNumberBg={colors.diffAddedLineNumberBg}
-					removedLineNumberBg={colors.diffRemovedLineNumberBg}
-					flexShrink={0}
-				/>
-			</scrollbox>
+				flexShrink={0}
+			/>
 			{phase === "reject-feedback" ? (
 				<box
 					borderStyle="rounded"
