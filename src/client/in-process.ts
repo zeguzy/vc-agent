@@ -10,6 +10,7 @@ import type {
 	MemberState,
 	ReadInboxOptions,
 	TaskState,
+	TaskType,
 	TeamEvent,
 } from "../teams/types-v2.js";
 import type {
@@ -160,6 +161,7 @@ export class InProcessClient implements AgentClient {
 		description: string;
 		memberName: MemberName;
 		priority?: "high" | "medium" | "low";
+		type?: TaskType;
 	}): Promise<TaskState> {
 		return this.server.handleAssignTask(opts);
 	}

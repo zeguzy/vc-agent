@@ -10,6 +10,7 @@ import type {
 	MemberState,
 	ReadInboxOptions,
 	TaskState,
+	TaskType,
 	TeamEvent,
 } from "../teams/types-v2.js";
 
@@ -99,6 +100,7 @@ export interface AgentClient {
 		description: string;
 		memberName: MemberName;
 		priority?: "high" | "medium" | "low";
+		type?: TaskType;
 	}): Promise<TaskState>;
 	listTasks(): TaskState[];
 	taskStatus(taskId: string): TaskState | undefined;
