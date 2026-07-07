@@ -34,6 +34,16 @@ export interface MemberState {
 	assignedTools?: string[];
 	assignedSkills?: string[];
 	assignedMcps?: string[];
+	/** Number of completed assistant turns (incremented on message_end). */
+	turnCount: number;
+	/** Cumulative input tokens across all turns. */
+	inputTokens: number;
+	/** Cumulative output tokens across all turns. */
+	outputTokens: number;
+	/** Cumulative cost in USD across all turns. */
+	cost: number;
+	/** Wall-clock timestamp (Date.now()) when member was created or restored. */
+	startedAt: number;
 }
 
 /** Task type determines how the team manager handles completion. */
@@ -216,7 +226,17 @@ export type TeamEvent =
 	| { type: "member_removed"; memberName: MemberName }
 	| { type: "task_assigned"; taskId: string; memberName: MemberName }
 	| { type: "task_completed"; taskId: string; memberName: MemberName }
-	| { type: "member_done"; memberName: MemberName; summary: string; cost: number }
+	| {
+			type: "member_done";
+			memberName: MemberName;
+			summary: string;
+			cost: number;
+			inputTokens: number;
+			outputTokens: number;
+			turnCount: number;
+			durationMs: number;
+			model?: string;
+	  }
 	| { type: "member_error"; memberName: MemberName; error: string }
 	| { type: "member_paused"; memberName: MemberName }
 	| { type: "member_resumed"; memberName: MemberName }

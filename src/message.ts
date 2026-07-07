@@ -1,4 +1,4 @@
-export type MessageRole = "user" | "assistant" | "tool" | "separator" | "worker" | "worker-summary";
+export type MessageRole = "user" | "assistant" | "tool" | "separator" | "worker";
 
 export interface Message {
 	id: string;
@@ -16,6 +16,12 @@ export interface Message {
 	workerStatus?: "running" | "done" | "error" | "cancelled";
 	workerError?: string;
 	workerCost?: number;
+	workerSummary?: string;
+	workerModel?: string;
+	workerTurns?: number;
+	workerTokensIn?: number;
+	workerTokensOut?: number;
+	workerDurationMs?: number;
 }
 
 let _idCounter = 0;
@@ -62,23 +68,5 @@ export function createWorkerMessage(
 		workerId,
 		workerAgent: agent,
 		workerStatus: "running",
-	};
-}
-
-export function createWorkerSummaryMessage(
-	workerId: string,
-	agent: string,
-	status: Message["workerStatus"],
-	content: string = "",
-	cost?: number,
-): Message {
-	return {
-		id: nextId(),
-		role: "worker-summary",
-		content,
-		workerId,
-		workerAgent: agent,
-		workerStatus: status,
-		workerCost: cost,
 	};
 }
