@@ -1,10 +1,4 @@
-# harness-acceptance Specification
-
-## Purpose
-
-基于 httpClient 的通用验收机制。把任意 OpenSpec change 的验收从「纯人工逐项核对」升级为「httpClient 驱动的三层自动验收 + 报告展示 + 用户最终确认」。复用 `team-verify` skill 验证过的「启动真实 server + HttpClient 调用 + SSE 事件」模式，泛化到 harness 流水线步骤 6。环境隔离确保烟测不污染用户配置、不消耗 LLM token、不暴露到网络。
-
-## Requirements
+## ADDED Requirements
 
 ### Requirement: 三层验收策略
 验收机制 SHALL 提供三层独立判定的断言，每层产出 PASS/FAIL/SKIP 状态。
@@ -31,7 +25,7 @@
 #### Scenario: 临时 HOME 隔离
 - **WHEN** createRealServer 启动
 - **THEN** 系统 SHALL 设置 `process.env.HOME` 为 `os.tmpdir()/openagent-test-<pid>-<rand>/` 唯一路径
-- **AND** 在函数返回的 `restoreHome()` 回调中还原原 HOME
+- **AND** 在返回的 `restoreHome()` 回调中还原原 HOME
 
 #### Scenario: 绑定 127.0.0.1
 - **WHEN** createHttpServer 启动
@@ -70,7 +64,7 @@
 
 #### Scenario: 烟测默认 skip
 - **WHEN** 环境变量 `ACCEPTANCE_SMOKE` 未设置为 `1`
-- **THEN** 整个烟测套件 SHALL 通过 `describe.skip` 跳过，不污染 `bun run check`
+- **THEN** 整个烟测套件 SHALL 通过 `describe.skipIf` 跳过，不污染 `bun run check`
 
 ### Requirement: 结构化验收报告
 验收机制 SHALL 产出结构化报告供 harness 步骤 6 展示。
@@ -103,7 +97,7 @@ harness SKILL.md 步骤 6 SHALL 调用 `/opsx-accept` skill 执行自动验收�
 - **THEN** 系统 SHALL 仍调用 AskUserQuestion 请求用户拍板，不自动合并到 main
 
 ### Requirement: change 级 acceptance.md 约定
-change 目录可选地包含 `acceptance.md` 定义定制断言。
+change 目录可选地包含 `acceptance.md`，系统 SHALL 按 definition 执行定制断言。
 
 #### Scenario: acceptance.md 三段结构
 - **WHEN** change 携带 acceptance.md
