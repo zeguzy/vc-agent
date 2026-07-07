@@ -87,6 +87,9 @@ const UserMessageView = memo(function UserMessageView({
 const SPINNER_FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"] as const;
 const SPINNER_INTERVAL_MS = 80;
 
+const RESULT_BLOCK_MAX_HEIGHT = 15;
+const RESULT_BLOCK_MIN_HEIGHT = 3;
+
 const ThinkingSpinner = memo(function ThinkingSpinner({ fg }: { fg: string }) {
 	const [frame, setFrame] = useState(0);
 	useEffect(() => {
@@ -219,33 +222,40 @@ function formatToolDetail(toolName: string, args: unknown): { label: string; lin
 			if (a.index != null) lines.push(`index: ${a.index}`);
 			return { label: "lsp", lines };
 		}
+		case "subagent": {
+			const agent = a.agent ? String(a.agent) : undefined;
+			const mode = a.mode ? String(a.mode) : undefined;
+			const description = a.description ? String(a.description) : undefined;
+			const lines: string[] = [];
+			if (agent) lines.push(agent);
+			else if (mode) lines.push(mode);
+			if (description) lines.push(description);
+			return { label: "subagent", lines };
+		}
 		default:
 			return { label: toolName, lines: [] };
 	}
 }
 
-function formatToolResult(result: unknown): string[] {
-	if (result == null) return [];
-	let text: string;
-	if (typeof result === "string") {
-		text = result;
-	} else if (typeof result === "object" && result !== null) {
+function extractResultText(result: unknown): string {
+	if (result == null) return "";
+	if (typeof result === "string") return result;
+	if (typeof result === "object" && result !== null) {
 		const r = result as Record<string, unknown>;
 		if (Array.isArray(r.content)) {
-			text = (r.content as Array<Record<string, unknown>>)
+			return (r.content as Array<Record<string, unknown>>)
 				.filter((c) => c.type === "text" && typeof c.text === "string")
 				.map((c) => c.text as string)
 				.join("\n");
-		} else if (typeof r.text === "string") {
-			text = r.text;
-		} else if (typeof r.stdout === "string") {
-			text = [r.stdout, r.stderr].filter(Boolean).join("\n");
-		} else {
-			return [];
 		}
-	} else {
-		return [];
+		if (typeof r.text === "string") return r.text;
+		if (typeof r.stdout === "string") return [r.stdout, r.stderr].filter(Boolean).join("\n");
 	}
+	return "";
+}
+
+function formatToolResult(result: unknown): string[] {
+	const text = extractResultText(result);
 	if (!text.trim()) return [];
 	const allLines = text.split("\n");
 	const MAX_LINES = 15;
@@ -291,10 +301,11 @@ const ToolMessageView = memo(function ToolMessageView({ message }: { message: Me
 		message.toolName === "edit"
 			? String(((message.toolArgs as Record<string, unknown>) ?? {}).path ?? "")
 			: "";
+	const isSubagent = message.toolName === "subagent";
+	const resultDone = message.toolStatus === "done" || message.toolStatus === "error";
+	const subagentText = isSubagent && resultDone ? extractResultText(message.toolResult).trim() : "";
 	const resultLines =
-		message.toolName !== "read" &&
-		!editPatch &&
-		(message.toolStatus === "done" || message.toolStatus === "error")
+		message.toolName !== "read" && !editPatch && !isSubagent && resultDone
 			? formatToolResult(message.toolResult)
 			: [];
 
@@ -360,6 +371,25 @@ const ToolMessageView = memo(function ToolMessageView({ message }: { message: Me
 						))
 					}
 				</box>
+			)}
+			{subagentText && (
+				<scrollbox
+					minHeight={RESULT_BLOCK_MIN_HEIGHT}
+					maxHeight={RESULT_BLOCK_MAX_HEIGHT}
+					scrollY
+					focused={false}
+					paddingLeft={2}
+					paddingRight={2}
+					marginTop={0}
+				>
+					<markdown
+						id={`md-subagent-${message.id}`}
+						syntaxStyle={syntaxStyle}
+						content={subagentText}
+						fg={message.toolStatus === "error" ? colors.error : colors.markdownText}
+						bg={colors.background}
+					/>
+				</scrollbox>
 			)}
 		</box>
 	);
@@ -528,7 +558,16 @@ const WorkerMessageView = memo(function WorkerMessageView({ message }: { message
 				<text fg={statusColor}>{message.workerStatus}</text>
 			</box>
 			{message.content && (
-				<box paddingLeft={3} paddingRight={1} flexDirection="column">
+				<scrollbox
+					minHeight={RESULT_BLOCK_MIN_HEIGHT}
+					maxHeight={RESULT_BLOCK_MAX_HEIGHT}
+					scrollY
+					stickyScroll
+					stickyStart="bottom"
+					focused={false}
+					paddingLeft={3}
+					paddingRight={1}
+				>
 					<markdown
 						id={`md-${message.id}`}
 						syntaxStyle={syntaxStyle}
@@ -537,7 +576,7 @@ const WorkerMessageView = memo(function WorkerMessageView({ message }: { message
 						fg={colors.markdownText}
 						bg={colors.background}
 					/>
-				</box>
+				</scrollbox>
 			)}
 		</box>
 	);
