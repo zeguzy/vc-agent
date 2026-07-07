@@ -2,9 +2,10 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import type { ContextPruningUserConfig } from "./dcp/config.js";
+import { getDefaultNotificationsConfig } from "./notifications/config.js";
 import type { NotificationsConfig } from "./notifications/types.js";
 import type { TeamConfig } from "./teams/types.js";
-import { resolveTeamConfig } from "./teams/types.js";
+import { DEFAULT_TEAM_CONFIG, resolveTeamConfig } from "./teams/types.js";
 import { formatError } from "./utils/formatError.js";
 
 export interface CustomModel {
@@ -132,4 +133,18 @@ export function writeConfig(
 			: join(cwd, ".openagent", "config.json");
 	mkdirSync(join(path, ".."), { recursive: true });
 	writeFileSync(path, `${JSON.stringify(config, null, 2)}\n`, "utf-8");
+}
+
+export function getDefaultConfigTemplate(): Config {
+	return {
+		thinking: { level: "medium", collapsed: false },
+		compaction: { enabled: true, reserveTokens: 4096, keepRecentTokens: 8192 },
+		skills: { paths: [], autoLoad: true, disabled: [] },
+		instructions: [],
+		providers: {},
+		display: {},
+		teams: { ...DEFAULT_TEAM_CONFIG },
+		notifications: getDefaultNotificationsConfig(),
+		contextPruning: { enabled: false },
+	};
 }
