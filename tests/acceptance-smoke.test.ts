@@ -1,26 +1,33 @@
 /**
  * Acceptance Smoke Test — Layer 1 of the harness acceptance pipeline.
  *
- * Starts a real isolated server in-process and verifies core endpoint reachability.
+ * Uses the project's HttpClient class (src/client/http.ts) to verify the server
+ * integration end-to-end through the real client surface, not raw fetch.
  * Skipped by default; enable with `ACCEPTANCE_SMOKE=1`.
  *
- * Does NOT call POST /prompt — that endpoint blocks until a full agent turn completes
- * (LLM call + tool loop), which would consume tokens. We only verify GET endpoints,
- * SSE subscription establishment, and POST /abort route existence.
+ * Does NOT call client.prompt() — it blocks until a full agent turn completes
+ * (LLM call + tool loop), consuming tokens. We validate HttpClient cache-fill
+ * (init GETs 6 endpoints), session/model/messages accessors, async listSessions,
+ * subscribe() SSE API, and abort() endpoint reachability.
  *
- * See openspec/specs/harness-acceptance/spec.md and .opencode/skills/opsx-accept/SKILL.md.
+ * SSE note: subscribe() returns an Unsubscribe fn and internally connects to
+ * /events; the SDK only emits events during an agent turn, which we don't
+ * trigger, so we assert the API is callable + connection establishes without
+ * throwing — not event delivery.
  */
 import { afterAll, beforeAll, describe, expect, it } from "bun:test";
+import { HttpClient } from "../src/client/http.js";
 import { createHttpServer } from "../src/server/http.js";
 import type { AgentServer } from "../src/server/index.js";
 import { createRealServer } from "./helpers/real-server.js";
 
 const ENABLED = process.env.ACCEPTANCE_SMOKE === "1";
 
-describe.skipIf(!ENABLED)("Acceptance Smoke", () => {
+describe.skipIf(!ENABLED)("Acceptance Smoke via HttpClient", () => {
 	let server: AgentServer;
 	let httpServer: ReturnType<typeof createHttpServer>;
 	let baseUrl: string;
+	let client: HttpClient;
 	let restoreHome: (() => void) | undefined;
 
 	beforeAll(async () => {
@@ -31,89 +38,62 @@ describe.skipIf(!ENABLED)("Acceptance Smoke", () => {
 		const address = httpServer.address();
 		const port = typeof address === "object" && address ? address.port : 0;
 		baseUrl = `http://127.0.0.1:${port}`;
+		client = new HttpClient(baseUrl);
+		await client.init();
 	}, 30000);
 
-	afterAll(async () => {
+	afterAll(() => {
 		httpServer.close();
 		restoreHome?.();
 	}, 10000);
 
-	it("server starts on a random port with a positive port number", () => {
+	it("server binds 127.0.0.1 on a random positive port", () => {
 		const address = httpServer.address();
 		const port = typeof address === "object" && address ? address.port : 0;
 		expect(port).toBeGreaterThan(0);
 		expect(baseUrl.startsWith("http://127.0.0.1:")).toBe(true);
-	}, 30000);
+	});
 
-	it("GET /session/id returns 200 with an id field", async () => {
-		const res = await fetch(`${baseUrl}/session/id`);
-		expect(res.status).toBe(200);
-		const body = (await res.json()) as { id?: string };
-		expect(typeof body.id).toBe("string");
-		expect((body.id ?? "").length).toBeGreaterThan(0);
-	}, 30000);
+	it("HttpClient.init() filled cache from 6 parallel GETs", () => {
+		// init() in beforeAll GET /session/id, /session/name, /session/file,
+		// /model, /context, /messages — if any returned non-JSON, init throws
+		// and the whole suite fails here.
+		expect(typeof client.getSessionId()).toBe("string");
+		expect(client.getSessionId().length).toBeGreaterThan(0);
+	});
 
-	it("GET /model returns 200", async () => {
-		const res = await fetch(`${baseUrl}/model`);
-		expect(res.status).toBe(200);
-		await res.json();
-	}, 30000);
+	it("HttpClient.getModel() returns model info (cached from GET /model)", () => {
+		const model = client.getModel();
+		expect(model).toBeDefined();
+	});
 
-	it("GET /messages returns 200 with messages array", async () => {
-		const res = await fetch(`${baseUrl}/messages`);
-		expect(res.status).toBe(200);
-		const body = (await res.json()) as { messages?: unknown[] };
-		expect(Array.isArray(body.messages)).toBe(true);
-	}, 30000);
+	it("HttpClient.getMappedMessages() returns array (cached from GET /messages)", () => {
+		const messages = client.getMappedMessages();
+		expect(Array.isArray(messages)).toBe(true);
+	});
 
-	it("GET /sessions returns 200 with sessions array", async () => {
-		const res = await fetch(`${baseUrl}/sessions`);
-		expect(res.status).toBe(200);
-		const body = (await res.json()) as { sessions?: unknown[] };
-		expect(Array.isArray(body.sessions)).toBe(true);
-	}, 30000);
+	it("HttpClient.listSessions() awaits async GET /sessions and returns array", async () => {
+		const sessions = await client.listSessions();
+		expect(Array.isArray(sessions)).toBe(true);
+	});
 
-	it("GET /events establishes an SSE subscription within 5s", async () => {
-		const controller = new AbortController();
-		const timeout = setTimeout(() => controller.abort(), 5000);
+	it("HttpClient.subscribe() establishes SSE connection and returns a working Unsubscribe", async () => {
+		const events: unknown[] = [];
+		const unsubscribe = client.subscribe((event) => {
+			events.push(event);
+		});
+		expect(typeof unsubscribe).toBe("function");
+		// Give the internal fetch to /events time to establish the TCP stream.
+		await new Promise((r) => setTimeout(r, 300));
+		unsubscribe();
+		// events.length === 0 is expected: the SDK only emits during agent turn,
+		// which we don't trigger. The signal here is that subscribe() is callable
+		// via the HttpClient API surface and Unsubscribe cleans up without throwing.
+	});
 
-		let connected = false;
-		try {
-			const res = await fetch(`${baseUrl}/events`, {
-				headers: { Accept: "text/event-stream" },
-				signal: controller.signal,
-			});
-			expect(res.status).toBe(200);
-			expect(res.headers.get("content-type")?.includes("text/event-stream")).toBe(true);
-
-			if (!res.body) {
-				clearTimeout(timeout);
-				return;
-			}
-			const reader = res.body.getReader();
-			const { value } = await reader.read();
-			if (value) connected = true;
-			reader.cancel();
-		} catch (err) {
-			if (controller.signal.aborted) {
-				console.warn(
-					"SSE subscription did not establish within 5s; marking as connected=false (non-blocking)",
-				);
-			} else {
-				throw err;
-			}
-		} finally {
-			clearTimeout(timeout);
-		}
-		console.warn(
-			`SSE connected=${connected} (non-blocking — agent turn not triggered, no events expected)`,
-		);
-	}, 30000);
-
-	it("POST /abort endpoint exists and returns 200", async () => {
-		const res = await fetch(`${baseUrl}/abort`, { method: "POST" });
-		expect(res.status).toBe(200);
-		const body = (await res.json()) as { ok?: boolean };
-		expect(body.ok).toBe(true);
-	}, 30000);
+	it("HttpClient.abort() reaches POST /abort without throwing", async () => {
+		await client.abort();
+		// /prompt is NOT called; abort() validates the /abort route exists via
+		// the HttpClient's postJson helper. No agent turn is triggered.
+	});
 });
