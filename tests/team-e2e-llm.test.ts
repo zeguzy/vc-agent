@@ -54,8 +54,12 @@ describe.skip("Team E2E with real LLM", () => {
 
 	afterAll(async () => {
 		for (const fn of cleanupFns) fn();
+		for (const m of server.handleListMembers()) {
+			try {
+				server.handleCancelMember(m.name);
+			} catch {}
+		}
 		httpServer.close();
-		await server.handleCancelAllWorkers();
 		restoreHome?.();
 	}, 10000);
 

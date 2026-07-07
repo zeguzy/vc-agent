@@ -35,7 +35,6 @@ describe.skipIf(!ENABLED)("Acceptance Smoke", () => {
 
 	afterAll(async () => {
 		httpServer.close();
-		await server.handleCancelAllWorkers();
 		restoreHome?.();
 	}, 10000);
 
