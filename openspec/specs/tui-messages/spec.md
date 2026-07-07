@@ -341,7 +341,7 @@
 
 ### Requirement: worker 角色消息与并行流式渲染
 
-系统 SHALL 在 `src/message.ts:MessageRole` 新增 `"worker"` 与 `"worker-summary"` 角色，并扩展 `Message` 接口可选字段 `workerId?` / `workerAgent?` / `workerStatus?: "running" | "idle" | "done" | "error" | "cancelled"`。`src/tui/components/MessageList.tsx` SHALL 在主消息流内**为每个 active worker 渲染一条独立的 worker 消息块**，实时显示该 worker 的流式 token；终态时把流式块折叠为 `worker-summary` 单行摘要。
+系统 SHALL 在 `src/message.ts:MessageRole` 新增 `"worker"` 角色，并扩展 `Message` 接口可选字段 `workerId?` / `workerAgent?` / `workerStatus?: "running" | "idle" | "done" | "error" | "cancelled"` / `workerSummary?` / `workerModel?` / `workerTurns?` / `workerTokensIn?` / `workerTokensOut?` / `workerDurationMs?` / `workerCost?` / `workerError?`。`src/tui/components/MessageList.tsx` SHALL 在主消息流内**为每个 active worker 渲染一条独立的 worker 消息块**：running 态实时显示流式 token；终态（done/error）切换为结果卡片，展示 member 返回的完整 summary 与 usage 元信息。
 
 #### Scenario: worker 消息插入主消息流
 - **WHEN** `team_worker_event` `kind: "message_delta"` 到达且不存在对应 `workerId` 的 worker 角色消息
@@ -353,23 +353,17 @@
 - **THEN** SHALL 追加 `text_delta` 到该 worker 消息的 content 字段
 - **AND** MessageList SHALL 触发对应 worker 消息块重渲染（不重新渲染整列表，对齐 `React.memo` 既有约定）
 
-#### Scenario: worker 终态折叠为 summary
-- **WHEN** 收到 `kind: "agent_end"` 或 `kind: "error"` 对应 workerId
-- **THEN** SHALL 把该 worker 消息 role 改为 `"worker-summary"`，content 设为 worker `lastSummary`（截断到 ≤ 1KB）
-- **AND** SHALL 置 `workerStatus` 为终态值（`"done"` / `"error"` / `"cancelled"`）
-- **AND** 流式 token 块 SHALL 折叠为单行摘要 + 状态指示符（✓ / ✗ / ⊘）
+#### Scenario: worker 终态切换为结果卡片
+- **WHEN** 收到 `member_done` 事件（携带 summary、cost、tokens、turns、durationMs、model）
+- **THEN** SHALL 置 `workerStatus` 为 `"done"`，并把 summary 写入 `workerSummary`（不覆盖流式 content），usage 写入对应 `worker*` 字段
+- **AND** MessageList SHALL 把该 worker 消息块切换为结果卡片：`borderDim` 圆角框，header（状态图标 + workerId/agent + 状态），meta 行（model · turns），结果区用 `<markdown>` + `<scrollbox minHeight3 maxHeight15>` 完整渲染 summary（不截断），usage 行（$cost · tokens↑↓ · duration），error 态用 `error` 边色 + `↳ workerError` 行
+- **AND** 同一 member 再次完成（re-done）时 SHALL 新建 worker 消息（不 patch 旧终态消息）
 
 #### Scenario: worker 消息块视觉样式
 - **WHEN** 渲染 worker 角色消息
-- **THEN** SHALL 使用 `borderStyle="rounded"` 圆角框，背景 `backgroundInset`
+- **THEN** SHALL 使用 `borderStyle="rounded"` 圆角框
 - **AND** 顶部行 SHALL 显示状态图标 + `workerId` / `workerAgent`（`secondary` 色）：running → `⠹ wkr_a1 / lysosome`，done → `✓ wkr_a1 / lysosome`，error → `✗ wkr_a1 / lysosome`（`error` 色）
-- **AND** 内容区 SHALL 渲染流式 token（`markdown` 组件复用 markdownText 前景色）
-
-#### Scenario: worker-summary 单行样式
-- **WHEN** 渲染 `worker-summary` 角色消息
-- **THEN** SHALL 显示**单行**格式：`<状态图标> <workerId>/<agent> summary: <truncated text>`，无边框
-- **AND** summary 文本超过 100 字符时 SHALL 截断并追加 `"…"`
-- **AND** 该行 SHALL 使用 `textSubtle` 色，与工具卡片视觉层级一致
+- **AND** running 态内容区 SHALL 渲染流式 token（`markdown` 组件复用 markdownText 前景色，sticky scrollbox）
 
 #### Scenario: 并行 worker 互不污染渲染
 - **WHEN** `TeamSessionPool` 同时有 2 个 running worker 各自流式输出

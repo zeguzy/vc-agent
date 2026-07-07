@@ -534,14 +534,38 @@ export function getReadEntries(messages: Message[]): ReadEntry[] {
 	return messages.filter((m) => m.role === "tool" && m.toolName === "read").map(extractReadInfo);
 }
 
+function formatTokens(n: number): string {
+	return n >= 1000 ? `${(n / 1000).toFixed(1)}k` : String(n);
+}
+
 const WorkerMessageView = memo(function WorkerMessageView({ message }: { message: Message }) {
 	const statusColor = workerStatusColor(message.workerStatus);
 	const statusIcon = workerStatusIcon(message.workerStatus);
+	const isResult = message.workerStatus === "done" || message.workerStatus === "error";
+	const borderColor =
+		message.workerStatus === "error"
+			? colors.error
+			: isResult
+				? colors.borderDim
+				: colors.borderSoft;
+
+	const metaParts: string[] = [];
+	if (message.workerModel) metaParts.push(message.workerModel);
+	if (message.workerTurns != null)
+		metaParts.push(`${message.workerTurns} turn${message.workerTurns === 1 ? "" : "s"}`);
+
+	const usageParts: string[] = [];
+	if (message.workerCost) usageParts.push(`$${message.workerCost.toFixed(4)}`);
+	if (message.workerTokensIn != null) usageParts.push(`${formatTokens(message.workerTokensIn)}↑`);
+	if (message.workerTokensOut != null) usageParts.push(`${formatTokens(message.workerTokensOut)}↓`);
+	if (message.workerDurationMs != null)
+		usageParts.push(`${(message.workerDurationMs / 1000).toFixed(1)}s`);
+
 	return (
 		<box
 			borderStyle="rounded"
 			border={["top", "right", "bottom", "left"]}
-			borderColor={colors.borderSoft}
+			borderColor={borderColor}
 			marginTop={1}
 			flexShrink={0}
 			flexDirection="column"
@@ -557,55 +581,64 @@ const WorkerMessageView = memo(function WorkerMessageView({ message }: { message
 				<text fg={colors.textSubtle}>/{message.workerAgent} </text>
 				<text fg={statusColor}>{message.workerStatus}</text>
 			</box>
-			{message.content && (
-				<scrollbox
-					minHeight={RESULT_BLOCK_MIN_HEIGHT}
-					maxHeight={RESULT_BLOCK_MAX_HEIGHT}
-					scrollY
-					stickyScroll
-					stickyStart="bottom"
-					focused={false}
-					paddingLeft={3}
-					paddingRight={1}
-				>
-					<markdown
-						id={`md-${message.id}`}
-						syntaxStyle={syntaxStyle}
-						streaming={true}
-						content={message.content}
-						fg={colors.markdownText}
-						bg={colors.background}
-					/>
-				</scrollbox>
-			)}
-		</box>
-	);
-});
-
-const WorkerSummaryView = memo(function WorkerSummaryView({ message }: { message: Message }) {
-	const statusColor = workerStatusColor(message.workerStatus);
-	const statusIcon = workerStatusIcon(message.workerStatus);
-	const summary = message.content.slice(0, 100) + (message.content.length > 100 ? "…" : "");
-	const costStr = message.workerCost ? ` $${message.workerCost.toFixed(4)}` : "";
-	return (
-		<box paddingLeft={3} marginTop={1} flexShrink={0} flexDirection="column">
-			<box flexDirection="row">
-				<text fg={statusColor}>{statusIcon} </text>
-				<text fg={colors.textMuted}>{message.workerId?.slice(0, 10)}</text>
-				<text fg={colors.textSubtle}>/{message.workerAgent} </text>
-				<text fg={statusColor}>{message.workerStatus}</text>
-				<text fg={colors.textMuted}>{costStr}</text>
-				{summary && (
-					<>
-						<text fg={colors.textSubtle}> — </text>
-						<text fg={colors.textSubtle}>{summary}</text>
-					</>
-				)}
-			</box>
-			{message.workerError && (
-				<box paddingLeft={3} flexDirection="row">
-					<text fg={colors.error}>↳ {message.workerError}</text>
-				</box>
+			{isResult ? (
+				<>
+					{metaParts.length > 0 && (
+						<box paddingLeft={3} paddingRight={1} flexDirection="row">
+							<text fg={colors.textMuted}>{metaParts.join(" · ")}</text>
+						</box>
+					)}
+					{message.workerSummary && (
+						<scrollbox
+							minHeight={RESULT_BLOCK_MIN_HEIGHT}
+							maxHeight={RESULT_BLOCK_MAX_HEIGHT}
+							scrollY
+							focused={false}
+							paddingLeft={3}
+							paddingRight={1}
+						>
+							<markdown
+								id={`md-${message.id}`}
+								syntaxStyle={syntaxStyle}
+								content={message.workerSummary}
+								fg={colors.markdownText}
+								bg={colors.background}
+							/>
+						</scrollbox>
+					)}
+					{usageParts.length > 0 && (
+						<box paddingLeft={3} paddingRight={1} flexDirection="row">
+							<text fg={colors.textSubtle}>{usageParts.join(" · ")}</text>
+						</box>
+					)}
+					{message.workerError && (
+						<box paddingLeft={3} paddingRight={1} flexDirection="row">
+							<text fg={colors.error}>↳ {message.workerError}</text>
+						</box>
+					)}
+				</>
+			) : (
+				message.content && (
+					<scrollbox
+						minHeight={RESULT_BLOCK_MIN_HEIGHT}
+						maxHeight={RESULT_BLOCK_MAX_HEIGHT}
+						scrollY
+						stickyScroll
+						stickyStart="bottom"
+						focused={false}
+						paddingLeft={3}
+						paddingRight={1}
+					>
+						<markdown
+							id={`md-${message.id}`}
+							syntaxStyle={syntaxStyle}
+							streaming={true}
+							content={message.content}
+							fg={colors.markdownText}
+							bg={colors.background}
+						/>
+					</scrollbox>
+				)
 			)}
 		</box>
 	);
@@ -648,8 +681,6 @@ export function MessageList({
 						return <ToolMessageView key={msg.id} message={msg} />;
 					}
 					if (msg.role === "worker") return <WorkerMessageView key={msg.id} message={msg} />;
-					if (msg.role === "worker-summary")
-						return <WorkerSummaryView key={msg.id} message={msg} />;
 					return (
 						<AssistantMessageView
 							key={msg.id}

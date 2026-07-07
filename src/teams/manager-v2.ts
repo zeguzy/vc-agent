@@ -236,6 +236,11 @@ export class TeamManager implements TeamManagerLike {
 			assignedTools,
 			assignedSkills,
 			assignedMcps,
+			turnCount: 0,
+			inputTokens: 0,
+			outputTokens: 0,
+			cost: 0,
+			startedAt: Date.now(),
 		};
 		this.members.set(opts.name, state);
 		this.inboxes.set(
@@ -356,6 +361,11 @@ export class TeamManager implements TeamManagerLike {
 						assignedTools,
 						assignedSkills,
 						assignedMcps,
+						turnCount: 0,
+						inputTokens: 0,
+						outputTokens: 0,
+						cost: 0,
+						startedAt: Date.now(),
 					};
 					this.members.set(memberRow.name, state);
 					this.inboxes.set(
@@ -1125,9 +1135,21 @@ export class TeamManager implements TeamManagerLike {
 		const state = this.members.get(memberName);
 		if (!state) return;
 
+		if (event.type === "message_end" && event.message.role === "assistant") {
+			state.turnCount++;
+			const u = (
+				event.message as { usage?: { input?: number; output?: number; cost?: { total?: number } } }
+			).usage;
+			if (u) {
+				state.inputTokens += u.input ?? 0;
+				state.outputTokens += u.output ?? 0;
+				state.cost += u.cost?.total ?? 0;
+			}
+		}
+
 		if (event.type === "agent_end") {
 			const summary = extractLastAssistantText(state.session);
-			const cost = 0;
+			const durationMs = Date.now() - state.startedAt;
 
 			if (state.currentTaskId) {
 				const teamMd = this.files.readTeamMd();
@@ -1135,18 +1157,48 @@ export class TeamManager implements TeamManagerLike {
 
 				if (task?.type === "discussion") {
 					state.status = "idle";
-					this.emit({ type: "member_done", memberName, summary: summary ?? "(no output)", cost });
+					this.emit({
+						type: "member_done",
+						memberName,
+						summary: summary ?? "(no output)",
+						cost: state.cost,
+						inputTokens: state.inputTokens,
+						outputTokens: state.outputTokens,
+						turnCount: state.turnCount,
+						durationMs,
+						model: state.model,
+					});
 					logTeamEvent("member_done", { memberName, status: "idle" });
 					void this.evaluateDiscussion(task);
 				} else {
 					this.completeTask(state.currentTaskId);
 					state.status = "idle";
-					this.emit({ type: "member_done", memberName, summary: summary ?? "(no output)", cost });
+					this.emit({
+						type: "member_done",
+						memberName,
+						summary: summary ?? "(no output)",
+						cost: state.cost,
+						inputTokens: state.inputTokens,
+						outputTokens: state.outputTokens,
+						turnCount: state.turnCount,
+						durationMs,
+						model: state.model,
+					});
 					logTeamEvent("member_done", { memberName, status: "idle" });
 				}
 			} else {
 				state.status = "idle";
-				this.emit({ type: "member_done", memberName, summary: summary ?? "(no output)", cost });
+				this.emit({
+					type: "member_done",
+					memberName,
+					summary: summary ?? "(no output)",
+					cost: state.cost,
+					inputTokens: state.inputTokens,
+					outputTokens: state.outputTokens,
+					turnCount: state.turnCount,
+					durationMs,
+					model: state.model,
+				});
 				logTeamEvent("member_done", { memberName, status: "idle" });
 			}
 		}

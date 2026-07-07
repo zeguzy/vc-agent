@@ -186,15 +186,38 @@ export function useSessionEvents(
 		const onWorkerEvent = (event: TeamEvent) => {
 			if (event.type === "member_done") {
 				const memberName = event.memberName;
-				const summary = event.summary;
 				const existingId = workerMsgMap.current.get(memberName);
+				const usageFields = {
+					workerSummary: event.summary,
+					workerModel: event.model,
+					workerTurns: event.turnCount,
+					workerTokensIn: event.inputTokens,
+					workerTokensOut: event.outputTokens,
+					workerDurationMs: event.durationMs,
+				};
 				if (existingId) {
-					setMessages((prev) =>
-						prev.map((m) => (m.id === existingId ? { ...m, workerStatus: "done" } : m)),
-					);
+					setMessages((prev) => {
+						const existing = prev.find((m) => m.id === existingId);
+						const terminal = existing && existing.workerStatus !== "running";
+						if (terminal || !existing) {
+							const msg = createWorkerMessage(
+								memberName,
+								existing?.workerAgent ?? memberName,
+								event.summary,
+							);
+							msg.workerStatus = "done";
+							Object.assign(msg, usageFields);
+							workerMsgMap.current.set(memberName, msg.id);
+							return [...prev, msg];
+						}
+						return prev.map((m) =>
+							m.id === existingId ? { ...m, workerStatus: "done" as const, ...usageFields } : m,
+						);
+					});
 				} else {
-					const msg = createWorkerMessage(memberName, memberName, summary);
+					const msg = createWorkerMessage(memberName, memberName, event.summary);
 					msg.workerStatus = "done";
+					Object.assign(msg, usageFields);
 					workerMsgMap.current.set(memberName, msg.id);
 					setMessages((prev) => [...prev, msg]);
 				}
