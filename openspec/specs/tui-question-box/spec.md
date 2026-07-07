@@ -1,7 +1,7 @@
 # tui-question-box Specification
 
 ## Purpose
-TBD - created by archiving change add-question-tool. Update Purpose after archive.
+定义 question 工具激活时替换 InputBox 渲染的 `QuestionBox` React 组件，以及 App 集成的 `tool_execution_start` 事件检测：涵盖选项 ↑↓ 导航、单选 Enter / 多选 Space 确认、自定义输入、多问题 Tab 导航与进度指示、Esc 取消、回答提交与 InputBox 恢复。
 ## Requirements
 ### Requirement: QuestionBox 组件
 系统 SHALL 提供 `QuestionBox` React 组件，在 question 工具激活时替换 InputBox 渲染于编辑框区域（底部 flexShrink=0 位置）。QuestionBox SHALL 使用与 InputBox 相同的圆角边框样式（borderStyle="rounded"），边框颜色为 `borderActive`。

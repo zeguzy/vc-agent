@@ -1,7 +1,7 @@
 # question-tool Specification
 
 ## Purpose
-TBD - created by archiving change add-question-tool. Update Purpose after archive.
+定义 Agent 向用户提出结构化问题（含选项列表、多选、自定义输入）并阻塞等待用户交互式回答的 `question` 工具：参数 schema、单问题/多问题调用语义、返回值格式与 prompt 描述。
 ## Requirements
 ### Requirement: question 工具定义
 系统 SHALL 提供一个名为 `question` 的 Agent 工具，允许 Agent 向用户展示结构化问题并等待用户交互式回答。工具参数 SHALL 使用 TypeBox schema 定义，包含 `questions` 数组，每个问题包含 `question`（完整描述）、`header`（≤30 字符短标签）、`options`（选项数组，每项含 `label` 和 `description`）、可选 `multiple`（布尔值，是否允许多选）。

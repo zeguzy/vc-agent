@@ -1,7 +1,7 @@
 # question-bridge Specification
 
 ## Purpose
-TBD - created by archiving change add-question-tool. Update Purpose after archive.
+定义 `QuestionBridge` 可变单例作为 question 工具的 Agent 工具层与 React TUI 层之间的通信桥梁，涵盖创建与传递、pending/resolve/reject 协议、中断清理、session 热切换清理和非交互模式降级。
 ## Requirements
 ### Requirement: QuestionBridge 桥接机制
 系统 SHALL 提供 `QuestionBridge` 类型的可变对象，作为 Agent 工具层与 React TUI 层之间的通信桥梁。Bridge SHALL 在 `index.tsx` 中创建（进程级单例），并传递给 `createRuntime`（→ 工具工厂）和 `<App>`（→ QuestionBox 组件）。
