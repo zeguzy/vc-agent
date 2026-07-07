@@ -1,4 +1,4 @@
-import { basename, dirname, join } from "node:path";
+import { join } from "node:path";
 import type { AgentSession, AgentSessionEvent, AgentSessionRuntime } from "../agent/session.js";
 import { activeToolsFor } from "../agent/session.js";
 import type {
@@ -27,6 +27,7 @@ import type {
 	TeamEvent,
 	TeamManagerRef,
 } from "../teams/types-v2.js";
+import { parseSessionIdFromUri, teamDirForSession } from "../utils/paths.js";
 
 export interface AgentServerOptions {
 	runtime: AgentSessionRuntime;
@@ -137,8 +138,8 @@ export class AgentServer {
 	private sessionTeamDir(): string {
 		const sf = this.session.sessionFile;
 		if (sf) {
-			const stem = basename(sf).replace(/\.jsonl$/, "");
-			return join(dirname(sf), "team", stem);
+			const sessionId = parseSessionIdFromUri(sf);
+			return teamDirForSession(sessionId);
 		}
 		return join(this.cwd, ".openagent", "team");
 	}

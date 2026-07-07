@@ -14,6 +14,7 @@ import {
 import type { SubagentServices } from "../agents/types.js";
 import type { McpManager } from "../mcp/manager.js";
 import {
+	parseSessionIdFromUri,
 	resolveMemberSessionPath,
 	resolveSessionDir,
 	validateMemberSessionPath,
@@ -219,9 +220,7 @@ export class TeamManager implements TeamManagerLike {
 			sessionManager,
 		});
 
-		const sessionId = session.sessionFile
-			? basename(session.sessionFile).replace(/\.jsonl$/, "")
-			: undefined;
+		const sessionId = session.sessionFile ? parseSessionIdFromUri(session.sessionFile) : undefined;
 
 		const state: MemberState = {
 			name: opts.name,
