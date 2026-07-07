@@ -72,7 +72,7 @@ export function App({
 	const [messages, setMessages] = useState<Message[]>(
 		initialMapped.length > 0 ? initialMapped : [WELCOME_MESSAGE],
 	);
-	const [commandHistory, setCommandHistory] = useState<string[]>(() => loadHistory());
+	const [commandHistory, setCommandHistory] = useState<string[]>([]);
 	const [pendingInput, setPendingInput] = useState<{ text: string; nonce: number } | null>(null);
 	const [isRunning, setIsRunning] = useState(false);
 	const [mode, setMode] = useState<Mode>("insert");
@@ -326,6 +326,11 @@ export function App({
 		if (commandRegistry.size === 0) {
 			registerBuiltinCommands();
 		}
+	}, []);
+
+	// Load history async to avoid blocking first paint
+	useEffect(() => {
+		setCommandHistory(loadHistory());
 	}, []);
 
 	useEffect(() => {

@@ -1,6 +1,9 @@
-import { execSync } from "node:child_process";
+import { execFile } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
+import { promisify } from "node:util";
+
+const execFileAsync = promisify(execFile);
 
 export function getGitBranch(cwd: string): string {
 	try {
@@ -14,10 +17,10 @@ export function getGitBranch(cwd: string): string {
 	}
 }
 
-export function getGitDirty(cwd: string): boolean {
+export async function getGitDirty(cwd: string): Promise<boolean> {
 	try {
-		const result = execSync("git status --porcelain", { cwd, encoding: "utf-8" });
-		return result.trim().length > 0;
+		const { stdout } = await execFileAsync("git", ["status", "--porcelain"], { cwd });
+		return stdout.trim().length > 0;
 	} catch {
 		return false;
 	}

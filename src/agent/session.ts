@@ -227,15 +227,16 @@ async function initServices(opts: {
 	const settingsManager = SettingsManager.inMemory(convertConfigToSettings(opts.config));
 
 	const skillManager = new SkillManager();
-	const resourceLoader = await skillManager.initialize(
-		opts.cwd,
-		opts.config ?? {},
-		settingsManager,
-		opts.appendSystemPrompt,
-	);
-
 	const lspClient = new LspClient(opts.cwd);
-	const lspReady = await lspClient.init();
+	const mcpManager = new McpManager();
+
+	// Parallel init: Skill/LSP/MCP have no data dependencies
+	const [resourceLoader, lspReady] = await Promise.all([
+		skillManager.initialize(opts.cwd, opts.config ?? {}, settingsManager, opts.appendSystemPrompt),
+		lspClient.init(),
+		mcpManager.initialize(opts.cwd),
+	]);
+
 	if (!lspReady) {
 		console.warn(
 			"LSP: typescript-language-server not available.",
@@ -243,9 +244,6 @@ async function initServices(opts: {
 			"LSP tools will report errors when called.",
 		);
 	}
-
-	const mcpManager = new McpManager();
-	await mcpManager.initialize(opts.cwd);
 
 	return {
 		authStorage,
