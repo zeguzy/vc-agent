@@ -19,6 +19,7 @@ import type { Config, ProviderConfig } from "../config.js";
 import { ORCHESTRATOR_SYSTEM_PROMPT, TEAM_ORCHESTRATOR_PROMPT } from "../context-files.js";
 import { createLspToolDefinitions, LspClient } from "../lsp/index.js";
 import { McpManager } from "../mcp/manager.js";
+import { installSqliteBackend } from "../session/install-sqlite-backend.js";
 import { listSessions, resolveSessionRef } from "../session/list.js";
 import { resolveSessionDir } from "../session/storage.js";
 import { SkillManager } from "../skills/manager.js";
@@ -315,6 +316,7 @@ export async function createSession(options: SessionOptions): Promise<SessionRes
  */
 export async function createRuntime(options: RuntimeOptions): Promise<RuntimeResult> {
 	const cwd = options.cwd;
+	await installSqliteBackend();
 	const sessionDir = resolveSessionDir();
 	const sessionManager = await buildSessionManager(options, sessionDir);
 	const agentDir = join(homedir(), ".config", "openagent");
