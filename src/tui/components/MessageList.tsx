@@ -581,7 +581,7 @@ const WorkerMessageView = memo(function WorkerMessageView({ message }: { message
 			{isResult ? (
 				<>
 					{metaParts.length > 0 && (
-						<box paddingLeft={3} paddingRight={1} flexDirection="row">
+						<box paddingLeft={2} flexDirection="row">
 							<text fg={colors.textMuted}>{metaParts.join(" · ")}</text>
 						</box>
 					)}
@@ -591,7 +591,6 @@ const WorkerMessageView = memo(function WorkerMessageView({ message }: { message
 							maxHeight={RESULT_BLOCK_MAX_HEIGHT}
 							scrollY
 							focused={false}
-							paddingLeft={3}
 							paddingRight={1}
 						>
 							<markdown
@@ -604,12 +603,12 @@ const WorkerMessageView = memo(function WorkerMessageView({ message }: { message
 						</scrollbox>
 					)}
 					{usageParts.length > 0 && (
-						<box paddingLeft={3} paddingRight={1} flexDirection="row">
+						<box paddingLeft={2} flexDirection="row">
 							<text fg={colors.textSubtle}>{usageParts.join(" · ")}</text>
 						</box>
 					)}
 					{message.workerError && (
-						<box paddingLeft={3} paddingRight={1} flexDirection="row">
+						<box paddingLeft={2} flexDirection="row">
 							<text fg={colors.error}>↳ {message.workerError}</text>
 						</box>
 					)}
@@ -623,7 +622,6 @@ const WorkerMessageView = memo(function WorkerMessageView({ message }: { message
 						stickyScroll
 						stickyStart="bottom"
 						focused={false}
-						paddingLeft={3}
 						paddingRight={1}
 					>
 						<markdown
