@@ -603,66 +603,99 @@ export class TeamManager implements TeamManagerLike {
 	}
 
 	private discussionRound = new Map<string, number>();
+	private discussionLock = new Map<string, Promise<void>>();
 
 	private static readonly DISCUSSION_MAX_ROUNDS = 10;
 
-	private async evaluateDiscussion(task: TaskState): Promise<void> {
-		const round = (this.discussionRound.get(task.id) ?? 0) + 1;
-		this.discussionRound.set(task.id, round);
+	private evaluateDiscussion(task: TaskState): void {
+		const taskId = task.id;
+		const prev = this.discussionLock.get(taskId) ?? Promise.resolve();
+		const next = prev.catch(() => {}).then(() => this.doEvaluateDiscussion(task));
+		this.discussionLock.set(taskId, next);
+	}
 
-		const teamMd = this.files.readTeamMd();
-		const recentMessages = collectRecentMessages(
-			this.files.paths.membersDir,
-			teamMd.members.map((m) => m.name),
-		);
+	private async doEvaluateDiscussion(task: TaskState): Promise<void> {
+		try {
+			const round = (this.discussionRound.get(task.id) ?? 0) + 1;
+			this.discussionRound.set(task.id, round);
 
-		const decision = await runCoordinator({
-			input: {
-				task,
-				members: teamMd.members.map((m) => ({
-					name: m.name,
-					role: m.role,
-					status: m.status,
-					currentTaskId: this.members.get(m.name)?.currentTaskId ?? null,
-				})),
-				recentMessages,
-				round,
-				maxRounds: TeamManager.DISCUSSION_MAX_ROUNDS,
-			},
-			cwd: this.files.paths.teamDir,
-			services: this.services,
-			parentModel: this.defaultParentModel,
-		});
+			if (round > TeamManager.DISCUSSION_MAX_ROUNDS) {
+				this.discussionRound.delete(task.id);
+				logTeamEvent("discussion_max_rounds_reached", { taskId: task.id, round });
+				if (task.id) this.completeTask(task.id);
+				return;
+			}
 
-		logTeamEvent("discussion_evaluated", {
-			taskId: task.id,
-			round,
-			action: decision.action,
-			reason: decision.reason,
-		});
+			const teamMd = this.files.readTeamMd();
+			const recentMessages = collectRecentMessages(
+				this.files.paths.membersDir,
+				teamMd.members.map((m) => m.name),
+			);
 
-		if (decision.action === "complete") {
-			this.discussionRound.delete(task.id);
-			if (task.id) this.completeTask(task.id);
-			return;
-		}
-
-		const targetState = this.members.get(decision.nextSpeaker);
-		if (!targetState || targetState.status === "done" || targetState.status === "cancelled") {
-			logTeamEvent("discussion_speaker_unavailable", {
-				taskId: task.id,
-				speaker: decision.nextSpeaker,
+			const decision = await runCoordinator({
+				input: {
+					task,
+					members: teamMd.members.map((m) => ({
+						name: m.name,
+						role: m.role,
+						status: m.status,
+						currentTaskId: this.members.get(m.name)?.currentTaskId ?? null,
+					})),
+					recentMessages,
+					round,
+					maxRounds: TeamManager.DISCUSSION_MAX_ROUNDS,
+				},
+				cwd: this.files.paths.teamDir,
+				services: this.services,
+				parentModel: this.defaultParentModel,
 			});
-			if (task.id) this.completeTask(task.id);
-			return;
-		}
 
-		const instruction = `[⚡ COORDINATOR] ${decision.instruction}`;
-		if (targetState.status === "active" && targetState.session.isStreaming) {
-			targetState.session.steer(instruction);
-		} else {
-			targetState.status = "active";
-			void targetState.session.prompt(instruction);
+			logTeamEvent("discussion_evaluated", {
+				taskId: task.id,
+				round,
+				action: decision.action,
+				reason: decision.reason,
+			});
+
+			if (decision.action === "complete") {
+				this.discussionRound.delete(task.id);
+				if (task.id) this.completeTask(task.id);
+				return;
+			}
+
+			const targetState = this.members.get(decision.nextSpeaker);
+			if (
+				!targetState ||
+				targetState.status === "done" ||
+				targetState.status === "cancelled" ||
+				targetState.status === "paused"
+			) {
+				logTeamEvent("discussion_speaker_unavailable", {
+					taskId: task.id,
+					speaker: decision.nextSpeaker,
+				});
+				this.discussionRound.delete(task.id);
+				if (task.id) this.completeTask(task.id);
+				return;
+			}
+
+			const instruction = `[⚡ COORDINATOR] ${decision.instruction}`;
+			targetState.currentTaskId = task.id;
+			if (targetState.status === "active" && targetState.session.isStreaming) {
+				targetState.session.steer(instruction);
+			} else {
+				targetState.status = "active";
+				void targetState.session.prompt(instruction);
+			}
+		} catch (err) {
+			logTeamEvent("discussion_error", {
+				taskId: task.id,
+				error: err instanceof Error ? err.message : String(err),
+			});
+			this.discussionRound.delete(task.id);
+			try {
+				if (task.id) this.completeTask(task.id);
+			} catch {}
 		}
 	}
 

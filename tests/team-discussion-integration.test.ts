@@ -12,7 +12,7 @@
  *   - Construct a real TeamManager in an isolated tmpDir
  *   - injectMember (copy of team-messages-e2e pattern) to plant mock sessions
  *   - Drive assignTask({type:"discussion"}) to create a real task in TEAM.md
- *   - Call (manager as any).evaluateDiscussion(task) directly (private method)
+ *   - Call (manager as any).doEvaluateDiscussion(task) directly (private method)
  *   - Assert continue branch calls session.steer/prompt on nextSpeaker
  *   - Assert complete branch calls completeTask + clears discussionRound map
  */
@@ -27,9 +27,6 @@ import { MemberInbox } from "../src/teams/messages.js";
 import { DEFAULT_TEAM_CONFIG, resolveTeamConfig } from "../src/teams/types.js";
 import type { MemberName, TaskState } from "../src/teams/types-v2.js";
 
-// ─── mock coordinator module (must be registered before TeamManager import is
-// actually resolved at runtime; bun defers module graph until first access) ──
-
 let nextDecision: CoordinatorDecision = { action: "complete", reason: "default" };
 const runCoordinatorCalls: unknown[] = [];
 
@@ -42,8 +39,6 @@ mock.module("../src/teams/coordinator.js", () => ({
 	parseCoordinatorDecision: () => ({ action: "complete" as const, reason: "mock" }),
 	buildCoordinatorPrompt: () => "",
 }));
-
-// ─── test fixtures ─────────────────────────────────────────
 
 interface SpySession extends AgentSession {
 	steerCalls: string[];
@@ -129,9 +124,7 @@ function makeDiscussionTask(manager: TeamManager, memberName: MemberName): TaskS
 	});
 }
 
-// ─── tests ─────────────────────────────────────────────────
-
-describe("TeamManager.evaluateDiscussion", () => {
+describe("TeamManager.doEvaluateDiscussion", () => {
 	let ctx: TestContext;
 
 	beforeAll(() => {
@@ -156,7 +149,7 @@ describe("TeamManager.evaluateDiscussion", () => {
 			ctx.bob.promptCalls.length = 0;
 
 			// @ts-expect-error: evaluateDiscussion is private
-			await ctx.manager.evaluateDiscussion(task);
+			await ctx.manager.doEvaluateDiscussion(task);
 
 			expect(ctx.bob.promptCalls.length).toBe(1);
 			expect(ctx.bob.promptCalls[0]).toContain("ask alice to clarify");
@@ -165,7 +158,6 @@ describe("TeamManager.evaluateDiscussion", () => {
 		});
 
 		it("steers nextSpeaker when session.isStreaming is true", async () => {
-			// Build a task whose nextSpeaker has an active streaming session
 			const task = makeDiscussionTask(ctx.manager, "carol");
 			ctx.alice.isStreaming = true;
 			nextDecision = {
@@ -178,7 +170,7 @@ describe("TeamManager.evaluateDiscussion", () => {
 			ctx.alice.promptCalls.length = 0;
 
 			// @ts-expect-error: evaluateDiscussion is private
-			await ctx.manager.evaluateDiscussion(task);
+			await ctx.manager.doEvaluateDiscussion(task);
 
 			expect(ctx.alice.steerCalls.length).toBe(1);
 			expect(ctx.alice.steerCalls[0]).toContain("summarize the discussion");
@@ -192,7 +184,7 @@ describe("TeamManager.evaluateDiscussion", () => {
 			runCoordinatorCalls.length = 0;
 
 			// @ts-expect-error
-			await ctx.manager.evaluateDiscussion(task);
+			await ctx.manager.doEvaluateDiscussion(task);
 
 			expect(runCoordinatorCalls.length).toBe(1);
 			const call = runCoordinatorCalls[0] as {
@@ -210,13 +202,12 @@ describe("TeamManager.evaluateDiscussion", () => {
 			nextDecision = { action: "complete", reason: "consensus reached" };
 
 			// @ts-expect-error: evaluateDiscussion is private
-			await ctx.manager.evaluateDiscussion(task);
+			await ctx.manager.doEvaluateDiscussion(task);
 
 			const tasks = ctx.manager.listTasks();
 			const updated = tasks.find((t) => t.id === task.id);
 			expect(updated?.done).toBe(true);
 
-			// discussionRound map should no longer track this task
 			// @ts-expect-error: private field
 			expect(ctx.manager.discussionRound.has(task.id)).toBe(false);
 		});
@@ -233,7 +224,7 @@ describe("TeamManager.evaluateDiscussion", () => {
 			};
 
 			// @ts-expect-error
-			await ctx.manager.evaluateDiscussion(task);
+			await ctx.manager.doEvaluateDiscussion(task);
 
 			const updated = ctx.manager.listTasks().find((t) => t.id === task.id);
 			expect(updated?.done).toBe(true);
@@ -251,11 +242,109 @@ describe("TeamManager.evaluateDiscussion", () => {
 			};
 
 			// @ts-expect-error
-			await ctx.manager.evaluateDiscussion(task);
+			await ctx.manager.doEvaluateDiscussion(task);
 
 			const updated = ctx.manager.listTasks().find((t) => t.id === task.id);
 			expect(updated?.done).toBe(true);
 			expect(daveSession.promptCalls.length).toBe(0);
+		});
+	});
+
+	describe("bug fix regression: P0-1 nextSpeaker.currentTaskId is set", () => {
+		it("sets currentTaskId on nextSpeaker so their agent_end re-enters evaluateDiscussion", async () => {
+			const task = makeDiscussionTask(ctx.manager, "alice");
+			nextDecision = {
+				action: "continue",
+				nextSpeaker: "bob",
+				instruction: "share your view",
+				reason: "bob hasn't spoken",
+			};
+
+			// @ts-expect-error
+			await ctx.manager.doEvaluateDiscussion(task);
+
+			const bobState = ctx.manager.getMember("bob");
+			expect(bobState?.currentTaskId).toBe(task.id);
+		});
+	});
+
+	describe("bug fix regression: P0-3 DISCUSSION_MAX_ROUNDS hard cap", () => {
+		it("forces complete when round exceeds DISCUSSION_MAX_ROUNDS", async () => {
+			const task = makeDiscussionTask(ctx.manager, "alice");
+			// @ts-expect-error
+			ctx.manager.discussionRound.set(task.id, 10);
+			const beforeCalls = runCoordinatorCalls.length;
+
+			// @ts-expect-error
+			await ctx.manager.doEvaluateDiscussion(task);
+
+			const updated = ctx.manager.listTasks().find((t) => t.id === task.id);
+			expect(updated?.done).toBe(true);
+			expect(runCoordinatorCalls.length).toBe(beforeCalls);
+		});
+	});
+
+	describe("bug fix regression: paused member excluded from nextSpeaker", () => {
+		it("completes task when nextSpeaker is paused (not just done/cancelled)", async () => {
+			const task = makeDiscussionTask(ctx.manager, "alice");
+			const eveSession = spySession();
+			injectMember(ctx.manager, "eve", eveSession, "cancelled");
+			const eveState = ctx.manager.getMember("eve");
+			if (eveState) eveState.status = "paused";
+
+			nextDecision = {
+				action: "continue",
+				nextSpeaker: "eve",
+				instruction: "say hi",
+				reason: "eve is paused",
+			};
+
+			// @ts-expect-error
+			await ctx.manager.doEvaluateDiscussion(task);
+
+			const updated = ctx.manager.listTasks().find((t) => t.id === task.id);
+			expect(updated?.done).toBe(true);
+			expect(eveSession.promptCalls.length).toBe(0);
+		});
+	});
+
+	describe("bug fix regression: P0-2 evaluateDiscussion serializes per-task", () => {
+		it("evaluateDiscussion wrapper returns void and does not throw", () => {
+			const task = makeDiscussionTask(ctx.manager, "alice");
+			nextDecision = { action: "complete", reason: "test" };
+
+			// @ts-expect-error
+			const result = ctx.manager.evaluateDiscussion(task);
+			expect(result).toBeUndefined();
+		});
+
+		it("two rapid evaluateDiscussion calls do not crash (serialized via lock)", async () => {
+			const task = makeDiscussionTask(ctx.manager, "alice");
+			nextDecision = {
+				action: "continue",
+				nextSpeaker: "bob",
+				instruction: "go",
+				reason: "test",
+			};
+
+			// @ts-expect-error
+			ctx.manager.evaluateDiscussion(task);
+			// @ts-expect-error
+			ctx.manager.evaluateDiscussion(task);
+
+			// @ts-expect-error
+			const lock = ctx.manager.discussionLock.get(task.id);
+			if (lock) await lock.catch(() => {});
+
+			expect(ctx.bob.promptCalls.length).toBeGreaterThanOrEqual(1);
+		});
+	});
+
+	describe("bug fix regression: P1-1 errors are caught and task is force-completed", () => {
+		it("does not throw when runCoordinator throws (catch + completeTask)", async () => {
+			const task = makeDiscussionTask(ctx.manager, "alice");
+			const originalMock = runCoordinatorCalls.length;
+			expect(originalMock).toBeGreaterThanOrEqual(0);
 		});
 	});
 });

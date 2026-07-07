@@ -1,7 +1,7 @@
 import { existsSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
-import type { AgentSessionEvent } from "@earendil-works/pi-coding-agent";
+import type { AgentSession, AgentSessionEvent } from "@earendil-works/pi-coding-agent";
 import { createAgentSession, DefaultResourceLoader } from "@earendil-works/pi-coding-agent";
 import { resolveModel } from "../agent/session.js";
 import type { SubagentServices } from "../agents/types.js";
@@ -153,6 +153,8 @@ export function parseCoordinatorDecision(raw: string): CoordinatorDecision {
 
 // ─── Run Coordinator Agent ─────────────────────────────────
 
+const COORDINATOR_TIMEOUT_MS = 90_000;
+
 export async function runCoordinator(opts: {
 	input: CoordinatorInput;
 	cwd: string;
@@ -177,36 +179,51 @@ export async function runCoordinator(opts: {
 
 	const model = parentModel ?? resolveModel(services.modelRegistry);
 
-	const { session } = await createAgentSession({
-		cwd,
-		agentDir: AGENT_DIR,
-		authStorage: services.authStorage,
-		modelRegistry: services.modelRegistry,
-		model,
-		settingsManager: services.settingsManager,
-		tools: [],
-		resourceLoader,
-	});
-
+	let session: AgentSession | null = null;
 	let lastText = "";
 
-	const unsub = session.subscribe((event: AgentSessionEvent) => {
-		if (event.type === "message_end" && event.message.role === "assistant") {
-			const text = extractAssistantText(event.message.content);
-			if (text) lastText = text;
-		}
-	});
-
 	try {
-		await session.prompt(prompt);
+		const created = await createAgentSession({
+			cwd,
+			agentDir: AGENT_DIR,
+			authStorage: services.authStorage,
+			modelRegistry: services.modelRegistry,
+			model,
+			settingsManager: services.settingsManager,
+			tools: [],
+			resourceLoader,
+		});
+		session = created.session;
+
+		const unsub = session.subscribe((event: AgentSessionEvent) => {
+			if (event.type === "message_end" && event.message.role === "assistant") {
+				const text = extractAssistantText(event.message.content);
+				if (text) lastText = text;
+			}
+		});
+
+		let timer: ReturnType<typeof setTimeout> | undefined;
+		try {
+			await Promise.race([
+				session.prompt(prompt),
+				new Promise<never>((_, reject) => {
+					timer = setTimeout(
+						() => reject(new Error("coordinator prompt timeout")),
+						COORDINATOR_TIMEOUT_MS,
+					);
+				}),
+			]);
+		} finally {
+			if (timer) clearTimeout(timer);
+			unsub();
+		}
 	} catch (err) {
 		return {
 			action: "complete",
 			reason: `coordinator error: ${err instanceof Error ? err.message : String(err)}`,
 		};
 	} finally {
-		unsub();
-		session.dispose();
+		session?.dispose();
 	}
 
 	return parseCoordinatorDecision(lastText);
