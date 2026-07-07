@@ -13,6 +13,10 @@
   bun -e "const s = await Bun.file('./src/server/http.ts').text(); console.log(s.includes('invalid type'))"
   ```
   应输出 `true`
+- 验证 P0-1 修复（discussion 不再死锁）：`src/teams/manager-v2.ts` 的 doEvaluateDiscussion 应含 `targetState.currentTaskId = task.id`
+- 验证 P0-2 修复（并发串行化）：`src/teams/manager-v2.ts` 应含 `discussionLock`
+- 验证 P0-3 修复（硬上限）：`src/teams/manager-v2.ts` 应含 `discussion_max_rounds_reached`
+- 验证 P1-2 修复（coordinator 超时）：`src/teams/coordinator.ts` 应含 `COORDINATOR_TIMEOUT_MS`
 
 ## Manual QA
 

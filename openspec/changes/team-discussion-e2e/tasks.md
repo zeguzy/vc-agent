@@ -43,6 +43,16 @@
 
 ## 6. 验证
 
-- [x]6.1 worktree 内 `bun install`（若网络允许；失败则在主目录跑测试）
-- [x]6.2 `bun run check` 全绿（typecheck + lint + test，含新单元测试）
+- [x] 6.1 worktree 内 node_modules 软链到主目录（`bun install` 网络失败，`ln -s` 软链解决）
+- [x] 6.2 `bun run check` 全绿：791 pass + 24 skip + 0 fail / 1929 expects / 56 files
 - [ ] 6.3 `RUN_LLM_TESTS=1 bun test tests/team-discussion-e2e.test.ts`（用户环境验证，需 LLM 配置）
+
+## 7. Discussion 实现 bug 修复（Oracle 深度审查发现）
+
+- [x] 7.1 P0-1 修复：evaluateDiscussion continue 分支设 `targetState.currentTaskId = task.id`（`src/teams/manager-v2.ts`）
+- [x] 7.2 P0-2 修复：新增 `discussionLock` per-task promise chain，evaluateDiscussion 改为 wrapper 串行化，实际逻辑移入 `doEvaluateDiscussion`（`src/teams/manager-v2.ts`）
+- [x] 7.3 P0-3 修复：doEvaluateDiscussion 开头加 `if (round > DISCUSSION_MAX_ROUNDS)` 硬上限短路（`src/teams/manager-v2.ts`）
+- [x] 7.4 P1-1 修复：doEvaluateDiscussion 整体 try/catch + logTeamEvent("discussion_error") + 兜底 completeTask（`src/teams/manager-v2.ts`）
+- [x] 7.5 P1-2/P1-3 修复：runCoordinator 加 90s Promise.race 超时 + createAgentSession 移入 try + session?.dispose() 在 finally（`src/teams/coordinator.ts`）
+- [x] 7.6 P2 修复：speaker_unavailable 分支补删 discussionRound + speaker 排除列表加 paused（`src/teams/manager-v2.ts`）
+- [x] 7.7 regression 测试：P0-1 currentTaskId 设置 / P0-3 硬上限 / P0-2 串行化 / paused 排除（`tests/team-discussion-integration.test.ts`）

@@ -117,9 +117,43 @@ TeamManager.assignTask      (src/teams/manager-v2.ts:447) ← 内部支持 type�
 |------|------------|
 | `assignTask` type 字段对老客户端零感知，但若老客户端误传 `type:"discussion"` 会被当 discussion 任务执行（member 不会进入 done，而是 idle + 触发 coordinator） | type 字段可选 + 默认 execution；现有调用方不传 type 即可。文档明确说明 discussion 任务的语义差异 |
 | E2E 真 LLM 调用有 flake 风险（coordinator 决策不确定、member 发言轮数不定） | 只做结构性断言（事件到达、状态转换、消息存在），不断言具体内容或轮数。设置 180s 超时 + `DISCUSSION_MAX_ROUNDS=10` 兜底 |
-| `evaluateDiscussion` 是 `TeamManager` 私有方法，单元测试无法直接调用 | 用 `@ts-expect-error` 直调 `(manager as any).evaluateDiscussion(task)` 最简单可控（参考 `team-messages-e2e.test.ts` L98 `injectMember` 已用此模式）。配合 `mock.module("../src/teams/coordinator.js", ...)` 在测试文件顶层（所有 import 之前）替换 `runCoordinator` 返回可控决策。若 bun mock.module 时序 flake，回退为手工构造 evaluateDiscussion 所需的 `this.files` / `this.members` / `this.services` 状态 |
+| `evaluateDiscussion` 是 `TeamManager` 私有方法，单元测试无法直接调用 | 用 `@ts-expect-error` 直调 `(manager as any).doEvaluateDiscussion(task)` 最简单可控（参考 `team-messages-e2e.test.ts` L98 `injectMember` 已用此模式）。配合 `mock.module("../src/teams/coordinator.js", ...)` 在测试文件顶层（所有 import 之前）替换 `runCoordinator` 返回可控决策。若 bun mock.module 时序 flake，回退为手工构造 evaluateDiscussion 所需的 `this.files` / `this.members` / `this.services` 状态 |
 | `coordinator.ts` 的 `collectRecentMessages` 直接读文件系统（inbox.jsonl），测试要在临时目录构造 fixture | 用 `mkdtempSync` 隔离 + 手工写 inbox.jsonl 文件，参考 `team-messages-e2e.test.ts` 模式 |
 | worktree `bun install` 网络失败（用户环境） | 测试代码可在主目录跑（共享 node_modules 软链或重试 install）。install 是 user-only 环境问题，不阻断提案 |
+
+## Bug Fixes During Implementation
+
+实施阶段 Oracle 深度审查发现 discussion 功能存在使其基本不可用的致命 bug，在本次 change 中一并修复：
+
+### P0-1: discussion 第二轮死锁（功能完全失效）
+
+- **位置**：`manager-v2.ts` evaluateDiscussion continue 分支
+- **根因**：prompt nextSpeaker 时不设 `targetState.currentTaskId`，导致 speaker 的 agent_end 走 else 分支（currentTaskId 为 null），永不重新触发 evaluateDiscussion
+- **修复**：prompt/steer 前设 `targetState.currentTaskId = task.id`
+
+### P0-2: evaluateDiscussion 并发 race（无互斥）
+
+- **位置**：`manager-v2.ts` evaluateDiscussion 跨 await runCoordinator
+- **根因**：多 agent_end 并发触发 evaluateDiscussion，无 per-task 互斥，导致 round 跳跃 / 双 coordinator / complete-continue 交叉
+- **修复**：新增 `discussionLock: Map<string, Promise<void>>`，evaluateDiscussion 改为 wrapper 通过 promise chain 串行化，实际逻辑移入 `doEvaluateDiscussion`
+
+### P0-3: 无 DISCUSSION_MAX_ROUNDS 硬上限
+
+- **位置**：`manager-v2.ts` evaluateDiscussion round 自增后
+- **根因**：MAX_ROUNDS=10 只是 coordinator prompt 建议，无代码级硬上限，coordinator 持续 continue 会无限循环
+- **修复**：doEvaluateDiscussion 开头 `if (round > MAX_ROUNDS) { completeTask; return; }`
+
+### P1-1: void evaluateDiscussion 吞异常
+
+- **位置**：`manager-v2.ts` handleMemberEvent agent_end discussion 分支
+- **根因**：`void this.evaluateDiscussion(task)` 不捕获 promise rejection
+- **修复**：evaluateDiscussion wrapper 内部 try/catch + logTeamEvent("discussion_error") + 兜底 completeTask
+
+### P1-2/P1-3: runCoordinator 无超时 + createAgentSession 未 try
+
+- **位置**：`coordinator.ts` runCoordinator
+- **根因**：session.prompt 无超时（LLM 挂起导致 evaluateDiscussion 永不返回）；createAgentSession 在 try 块外
+- **修复**：90s Promise.race 超时 + 整体 try/catch/finally + session?.dispose()
 
 ## Migration Plan
 

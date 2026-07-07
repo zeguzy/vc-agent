@@ -8,8 +8,14 @@ Team 模式有 `execution` 和 `discussion` 两种任务类型（`src/teams/type
 
 - 扩展 `assignTask` HTTP 链路支持 `type?: "execution" | "discussion"` 字段（默认 execution，向后兼容）
 - 新增 `tests/team-discussion-unit.test.ts`：coordinator 纯函数单元测试（`parseCoordinatorDecision` / `buildCoordinatorPrompt` / `collectRecentMessages`），无需 LLM，默认运行
+- 新增 `tests/team-discussion-integration.test.ts`：evaluateDiscussion continue/complete/串行化/硬上限/paused 排除的集成测试（mock session + mock.module），默认运行
 - 新增 `tests/team-discussion-e2e.test.ts`：真 LLM 端到端，3 member × `DISCUSSION_MAX_ROUNDS` 上限，复用 `createRealServer` + `HttpClient` 类 + JSONL 日志断言，默认 skip（`RUN_LLM_TESTS=1` 启用）
 - 新增 `acceptance.md`：三段结构（Smoke / Manual QA / Log Assertions），供 `/opsx-accept` 自动验收
+- **修复 discussion 实现的 4 个 P0/P1 bug**（Oracle 深度审查发现，详见 design.md "Bug Fixes During Implementation"）：
+  - **P0-1 死锁**：evaluateDiscussion 不设 nextSpeaker.currentTaskId → discussion 第二轮必死
+  - **P0-2 并发 race**：多 agent_end 并发触发 evaluateDiscussion 无互斥 → round 跳跃/双 steer/complete-continue 交叉
+  - **P0-3 无限循环**：DISCUSSION_MAX_ROUNDS 只是 prompt 建议无硬上限 → coordinator 持续 continue 导致无限 LLM 调用
+  - **P1-1/P1-2/P1-3 错误处理**：void evaluateDiscussion 吞异常 + runCoordinator 无超时 + createAgentSession 未 try/catch
 
 ## Capabilities
 
