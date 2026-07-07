@@ -305,10 +305,11 @@ const ToolMessageView = memo(function ToolMessageView({ message }: { message: Me
 			borderColor={borderColor}
 			backgroundColor={colors.backgroundInset}
 			marginTop={1}
+			paddingBottom={1}
 			flexShrink={0}
 			flexDirection="column"
 		>
-			<box flexDirection="row" paddingLeft={2} paddingRight={2} paddingTop={1} paddingBottom={0}>
+			<box flexDirection="row" paddingLeft={2} paddingRight={2} paddingTop={0} paddingBottom={0}>
 				<text fg={statusFg}>{icon} </text>
 				<text fg={colors.secondary}>{label}</text>
 				{editFilePath && <text fg={colors.textMuted}> {editFilePath}</text>}
@@ -380,10 +381,11 @@ const ReadGroupView = memo(function ReadGroupView({ reads }: { reads: Message[] 
 			borderColor={borderColor}
 			backgroundColor={colors.backgroundInset}
 			marginTop={1}
+			paddingBottom={1}
 			flexShrink={0}
 			flexDirection="column"
 		>
-			<box flexDirection="row" paddingLeft={2} paddingRight={2} paddingTop={1}>
+			<box flexDirection="row" paddingLeft={2} paddingRight={2} paddingTop={0}>
 				<text fg={headerFg}>{headerIcon} </text>
 				<text fg={colors.secondary}>read</text>
 				<text fg={colors.textSubtle}> · {reads.length} files · </text>
