@@ -10,6 +10,9 @@ type MemberInput = {
 	model?: string;
 	services: unknown;
 	parentModel?: unknown;
+	tools?: string[];
+	skills?: string[];
+	mcps?: string[];
 };
 
 type MockManager = TeamManagerLike & { createCalls: MemberInput[] };
@@ -110,5 +113,40 @@ describe("team tool constraints passthrough", () => {
 		expect(manager.createCalls[0].constraints).toBe("must pass lint");
 		expect(manager.createCalls[1].constraints).toBeUndefined();
 		expect(manager.createCalls[2].constraints).toBe("must run tests");
+	});
+
+	it("create passes tools/skills/mcps through to createMember", async () => {
+		const manager = createMockManager();
+		await runTool(manager, {
+			action: "create",
+			name: "marcus",
+			role: "backend",
+			goal: "API",
+			tools: ["read", "bash", "edit"],
+			skills: ["backend-conventions"],
+			mcps: ["postgres"],
+		});
+
+		expect(manager.createCalls.length).toBe(1);
+		expect(manager.createCalls[0].tools).toEqual(["read", "bash", "edit"]);
+		expect(manager.createCalls[0].skills).toEqual(["backend-conventions"]);
+		expect(manager.createCalls[0].mcps).toEqual(["postgres"]);
+	});
+
+	it("create-batch passes per-member tools/skills/mcps independently", async () => {
+		const manager = createMockManager();
+		await runTool(manager, {
+			action: "create-batch",
+			members: [
+				{ name: "a", role: "r", goal: "g", tools: ["read", "edit"] },
+				{ name: "b", role: "r", goal: "g", skills: ["x"] },
+				{ name: "c", role: "r", goal: "g", mcps: ["server1"] },
+			],
+		});
+
+		expect(manager.createCalls[0].tools).toEqual(["read", "edit"]);
+		expect(manager.createCalls[0].skills).toBeUndefined();
+		expect(manager.createCalls[1].skills).toEqual(["x"]);
+		expect(manager.createCalls[2].mcps).toEqual(["server1"]);
 	});
 });
