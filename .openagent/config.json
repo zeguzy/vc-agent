@@ -70,7 +70,7 @@
     }
   },
   "contextPruning": {
-    "enabled": false
+    "enabled": true
   },
   "model": "Astron:astron-code-latest"
 }
