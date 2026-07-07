@@ -2,30 +2,20 @@ import { afterAll, beforeAll, describe, expect, it } from "bun:test";
 import { existsSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
-import { createRuntime } from "../src/agent/session.js";
 import { createHttpServer } from "../src/server/http.js";
 import type { AgentServer } from "../src/server/index.js";
 import type { TeamMember, TeamTask } from "../src/teams/types.js";
-
-const LOG_DIR = join(homedir(), ".config", "openagent", "logs", "teams");
-const CWD = join(import.meta.dirname, "..");
+import { createRealServer } from "./helpers/real-server.js";
 
 const _RUN_LLM_TESTS = process.env.RUN_LLM_TESTS === "1";
 
-async function createRealServer() {
-	const { runtime, skillManager } = await createRuntime({
-		cwd: CWD,
-		mode: "new",
-	});
-
-	const { createServer } = await import("../src/server/index.js");
-	const server = createServer({ runtime, skillManager, cwd: CWD });
-	return { server, runtime, skillManager };
+function logDir(): string {
+	return join(homedir(), ".config", "openagent", "logs", "teams");
 }
 
 function todayLogPath(): string {
 	const date = new Date().toISOString().slice(0, 10);
-	return join(LOG_DIR, `${date}.jsonl`);
+	return join(logDir(), `${date}.jsonl`);
 }
 
 function readTodayLog(): string[] {
@@ -49,21 +39,28 @@ describe.skip("Team E2E with real LLM", () => {
 	let server: AgentServer;
 	let httpServer: ReturnType<typeof createHttpServer>;
 	let baseUrl: string;
+	let restoreHome: (() => void) | undefined;
 	const cleanupFns: (() => void)[] = [];
 
 	beforeAll(async () => {
 		const result = await createRealServer();
 		server = result.server;
-		httpServer = createHttpServer({ server, port: 0 });
+		restoreHome = result.restoreHome;
+		httpServer = createHttpServer({ server, port: 0, host: "127.0.0.1" });
 		const address = httpServer.address();
 		const port = typeof address === "object" && address ? address.port : 0;
-		baseUrl = `http://localhost:${port}`;
+		baseUrl = `http://127.0.0.1:${port}`;
 	}, 30000);
 
 	afterAll(async () => {
 		for (const fn of cleanupFns) fn();
+		for (const m of server.handleListMembers()) {
+			try {
+				server.handleCancelMember(m.name);
+			} catch {}
+		}
 		httpServer.close();
-		await server.handleCancelAllWorkers();
+		restoreHome?.();
 	}, 10000);
 
 	it("create member → assign single-turn task → member reaches done/error", async () => {
