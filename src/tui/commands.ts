@@ -1,6 +1,9 @@
+import { existsSync } from "node:fs";
+import { homedir } from "node:os";
+import { join } from "node:path";
 import { buildAgentModeCycle, getBaseMode } from "../agent/session.js";
 import { type CommandContext, commandRegistry } from "../commands/registry.js";
-import { writeConfig } from "../config.js";
+import { getDefaultConfigTemplate, writeConfig } from "../config.js";
 import {
 	type CompressNotificationSummary,
 	getDcpConfig,
@@ -593,6 +596,74 @@ export function registerBuiltinCommands(): void {
 					"/team list | /team remove <name> | /team pause <name> | /team resume <name> | /team cancel <name>",
 				),
 			]);
+		},
+	});
+
+	commandRegistry.register({
+		name: "config",
+		description: "生成配置文件模板",
+		usage: "/config init [project|global] [--force]",
+		handler: (args: string, ctx: CommandContext) => {
+			const tokens = args.trim().split(/\s+/).filter(Boolean);
+			const sub = (tokens[0] || "").toLowerCase();
+
+			if (sub !== "init") {
+				ctx.setMessages((prev) => [
+					...prev,
+					createAssistantMessage(
+						"当前仅支持 `init` 子命令\n\n用法: `/config init [project|global] [--force]`",
+					),
+				]);
+				return;
+			}
+
+			const rest = tokens.slice(1);
+			const scopeRaw = rest.find((t) => t !== "--force") || "project";
+			const scope = scopeRaw.toLowerCase();
+
+			if (scope !== "project" && scope !== "global") {
+				ctx.setMessages((prev) => [
+					...prev,
+					createAssistantMessage(
+						`无效的 scope \`${scopeRaw}\`，合法值: \`project\`、\`global\`\n\n用法: \`/config init [project|global] [--force]\``,
+					),
+				]);
+				return;
+			}
+
+			const force = rest.includes("--force");
+			const targetPath =
+				scope === "global"
+					? join(homedir(), ".config", "openagent", "config.json")
+					: join(ctx.cwd, ".openagent", "config.json");
+
+			if (existsSync(targetPath) && !force) {
+				ctx.setMessages((prev) => [
+					...prev,
+					createAssistantMessage(
+						`配置文件已存在: \`${targetPath}\`\n\n如需覆盖，请加 \`--force\` flag`,
+					),
+				]);
+				return;
+			}
+
+			try {
+				const existed = existsSync(targetPath);
+				const tmpl = getDefaultConfigTemplate();
+				writeConfig(ctx.cwd, tmpl, scope);
+				ctx.setConfig(tmpl);
+				const verb = existed ? "已覆盖" : "已生成";
+				let msg = `✓ ${verb} 配置文件: \`${targetPath}\`\n\n按需修改字段后，下次 readConfig 自动合并。`;
+				if (scope === "global" && force) {
+					msg += "\n\n⚠ 全局配置已被覆盖，建议用 git 或备份恢复。";
+				}
+				ctx.setMessages((prev) => [...prev, createAssistantMessage(msg)]);
+			} catch (e) {
+				ctx.setMessages((prev) => [
+					...prev,
+					createAssistantMessage(`写入配置文件失败:\n\n${formatError(e)}`),
+				]);
+			}
 		},
 	});
 
