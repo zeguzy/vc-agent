@@ -31,6 +31,9 @@ export interface MemberState {
 	sessionId?: string;
 	currentTaskId: string | null;
 	lastTaskPrompt: string | null;
+	assignedTools?: string[];
+	assignedSkills?: string[];
+	assignedMcps?: string[];
 }
 
 /** Task state derived from TEAM.md Active Tasks. */
@@ -59,6 +62,39 @@ export interface TeamMdStructure {
 	sharedMemoryIndex: Array<{ path: string; description: string }>;
 }
 
+// ─── Member-to-Member Messaging ─────────────────────────────
+
+/** Special "to" value for broadcasts. */
+export const BROADCAST_RECIPIENT = "broadcast";
+
+/** A single member-to-member message record. */
+export interface MemberMessage {
+	/** Unique id, format: `msg_<8char>`. */
+	id: string;
+	/** Sender member name, or `"leader"` when sender is the team leader. */
+	from: MemberName;
+	/** Recipient member name, or `"broadcast"` for fanout. */
+	to: MemberName | typeof BROADCAST_RECIPIENT;
+	content: string;
+	/** Unix epoch ms. */
+	timestamp: number;
+	/** Whether the recipient has marked the message read. */
+	read: boolean;
+}
+
+/** Options for reading a member inbox. */
+export interface ReadInboxOptions {
+	/** Filter by sender. */
+	from?: MemberName;
+	/** Only return unread messages. */
+	unreadOnly?: boolean;
+	/** Limit number of returned messages (default: 50). */
+	limit?: number;
+}
+
+/** Result of delivering a message; surfaces whether it was steered in real-time. */
+export type DeliveryMode = "steer" | "persist-only";
+
 // ─── Parsed Member .md Structure ────────────────────────────
 
 export interface MemberIndexStructure {
@@ -76,6 +112,9 @@ export interface MemberIndexStructure {
 	activeContext: string;
 	memoryIndex: Array<{ file: string; type: MemoryType; description: string }>;
 	recentActivity: Array<{ date: string; entry: string }>;
+	assignedTools?: string[];
+	assignedSkills?: string[];
+	assignedMcps?: string[];
 }
 
 // ─── Team Directory Paths ───────────────────────────────────
@@ -100,11 +139,13 @@ export interface TeamManagerLike {
 		name: MemberName;
 		role: string;
 		goal: string;
-		/** Optional role-specific constraints; injected into L1 Anti-Patterns. */
 		constraints?: string;
 		model?: string;
 		services: SubagentServices;
 		parentModel?: ResolvedModel;
+		tools?: string[];
+		skills?: string[];
+		mcps?: string[];
 	}): Promise<MemberState>;
 	removeMember(name: MemberName): Promise<void>;
 	getMember(name: MemberName): MemberState | undefined;
@@ -141,6 +182,18 @@ export interface TeamManagerLike {
 	cancelMember(name: MemberName): void;
 	directMember(name: MemberName, kind: "directive" | "context" | "redirect", payload: string): void;
 
+	// Member-to-member messaging
+	sendMessage(opts: { from: MemberName; to: MemberName; content: string }): {
+		message: MemberMessage;
+		delivery: DeliveryMode;
+	};
+	broadcastMessage(opts: {
+		from: MemberName;
+		content: string;
+	}): Array<{ message: MemberMessage; delivery: DeliveryMode }>;
+	readInbox(name: MemberName, opts?: ReadInboxOptions): MemberMessage[];
+	markInboxRead(name: MemberName, ids?: string[]): number;
+
 	getMaxWorkers(): number;
 
 	// Member identity (for tool permission checks)
@@ -166,7 +219,15 @@ export type TeamEvent =
 	| { type: "member_cancelled"; memberName: MemberName }
 	| { type: "team_md_updated"; section: string }
 	| { type: "memory_written"; memberName: MemberName; topic: string; memoryType: MemoryType }
-	| { type: "members_restored"; memberNames: MemberName[] };
+	| { type: "members_restored"; memberNames: MemberName[] }
+	| {
+			type: "member_message_sent";
+			from: MemberName;
+			to: MemberName | typeof BROADCAST_RECIPIENT;
+			messageId: string;
+			delivery: DeliveryMode;
+	  }
+	| { type: "member_message_read"; by: MemberName; count: number };
 
 /** Lazy reference to TeamManager — mirrors WorkerPoolRef pattern. */
 export interface TeamManagerRef {

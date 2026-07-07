@@ -357,12 +357,19 @@ function parseMemberIndex(raw: string): MemberIndexStructure {
 	const constraintsRaw = sections.get("Constraints") ?? "";
 	const constraints = constraintsRaw.trim() || undefined;
 
+	const assignedTools = parseListField(sections.get("Assigned Tools") ?? "");
+	const assignedSkills = parseListField(sections.get("Assigned Skills") ?? "");
+	const assignedMcps = parseListField(sections.get("Assigned MCPs") ?? "");
+
 	return {
 		profile: { role, goal, model: model || undefined },
 		constraints,
 		activeContext: sections.get("Active Context") ?? "",
 		memoryIndex: parseMemoryIndexLines(sections.get("Memory Index") ?? ""),
 		recentActivity: parseRecentActivityLines(sections.get("Recent Activity") ?? ""),
+		...(assignedTools.length > 0 ? { assignedTools } : {}),
+		...(assignedSkills.length > 0 ? { assignedSkills } : {}),
+		...(assignedMcps.length > 0 ? { assignedMcps } : {}),
 	};
 }
 
@@ -378,6 +385,15 @@ function serializeMemberIndex(data: MemberIndexStructure): string {
 	if (data.constraints) {
 		lines.push("", "## Constraints", data.constraints);
 	}
+	if (data.assignedTools && data.assignedTools.length > 0) {
+		lines.push("", "## Assigned Tools", `- ${data.assignedTools.join(", ")}`);
+	}
+	if (data.assignedSkills && data.assignedSkills.length > 0) {
+		lines.push("", "## Assigned Skills", `- ${data.assignedSkills.join(", ")}`);
+	}
+	if (data.assignedMcps && data.assignedMcps.length > 0) {
+		lines.push("", "## Assigned MCPs", `- ${data.assignedMcps.join(", ")}`);
+	}
 	lines.push("", "## Active Context", data.activeContext, "", "## Memory Index");
 	for (const m of data.memoryIndex) {
 		lines.push(`- \`${m.file}\` [${m.type}] — ${m.description}`);
@@ -387,6 +403,17 @@ function serializeMemberIndex(data: MemberIndexStructure): string {
 		lines.push(`- ${a.date}: ${a.entry}`);
 	}
 	return lines.join("\n");
+}
+
+function parseListField(raw: string): string[] {
+	const trimmed = raw.trim();
+	if (!trimmed) return [];
+	return trimmed
+		.split("\n")
+		.filter((l) => l.startsWith("- "))
+		.flatMap((l) => l.slice(2).split(","))
+		.map((s) => s.trim())
+		.filter(Boolean);
 }
 
 function parseMemoryIndexLines(raw: string): MemberIndexStructure["memoryIndex"] {
