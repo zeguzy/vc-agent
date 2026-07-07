@@ -7,6 +7,8 @@ interface TeamToolOptions {
 }
 
 export const CREATE_BATCH_SOFT_LIMIT = 20;
+export const ASSIGN_BATCH_SOFT_LIMIT = 20;
+export const DIRECT_BATCH_SOFT_LIMIT = 20;
 
 const ActionSchema = Type.Union(
 	[
@@ -14,7 +16,9 @@ const ActionSchema = Type.Union(
 		Type.Literal("create"),
 		Type.Literal("create-batch"),
 		Type.Literal("assign"),
+		Type.Literal("assign-batch"),
 		Type.Literal("direct"),
+		Type.Literal("direct-batch"),
 		Type.Literal("edit-member"),
 		Type.Literal("complete"),
 		Type.Literal("remove"),
@@ -96,11 +100,44 @@ const TeamParamsSchema = Type.Object({
 	priority: Type.Optional(
 		Type.Union([Type.Literal("high"), Type.Literal("medium"), Type.Literal("low")]),
 	),
+	tasks: Type.Optional(
+		Type.Array(
+			Type.Object({
+				name: Type.String({ description: "Member name to assign the task to" }),
+				title: Type.String({ description: "Task title" }),
+				description: Type.Optional(Type.String({ description: "Task description" })),
+				priority: Type.Optional(
+					Type.Union([Type.Literal("high"), Type.Literal("medium"), Type.Literal("low")]),
+				),
+			}),
+			{
+				description:
+					"Array of tasks to assign in one call (for assign-batch). Each item: {name, title, description?, priority?}. Soft limit: 20.",
+			},
+		),
+	),
 	taskId: Type.Optional(Type.String({ description: "Task ID (for complete)" })),
 	kind: Type.Optional(
 		Type.Union([Type.Literal("directive"), Type.Literal("context"), Type.Literal("redirect")]),
 	),
 	payload: Type.Optional(Type.String({ description: "Message content (for direct)" })),
+	messages: Type.Optional(
+		Type.Array(
+			Type.Object({
+				name: Type.String({ description: "Member name to send the message to" }),
+				kind: Type.Union([
+					Type.Literal("directive"),
+					Type.Literal("context"),
+					Type.Literal("redirect"),
+				]),
+				payload: Type.String({ description: "Message content" }),
+			}),
+			{
+				description:
+					"Array of messages to send in one call (for direct-batch). Each item: {name, kind, payload}. Applied in array order; multiple redirects to the same member are applied sequentially (last one wins). Soft limit: 20.",
+			},
+		),
+	),
 	section: Type.Optional(Type.Union([Type.Literal("goal"), Type.Literal("active-context")])),
 	content: Type.Optional(Type.String({ description: "New content (for edit-member)" })),
 });
@@ -120,8 +157,12 @@ export function createTeamTool(opts: TeamToolOptions): ToolDefinition {
 			'  Example: team(action="create-batch", members=[{name="alice",role="frontend",goal="UI",constraints="must pass lint",taskTitle="Login",taskDescription="..."},{name="bob",role="backend",goal="API",tools=["read","bash","edit"]])\n' +
 			"- assign: Give a task to an idle member. They'll start working on it.\n" +
 			'  Example: team(action="assign", name="sasha", title="Add validation", description="Validate email format before submit")\n' +
+			"- assign-batch: Assign tasks to multiple members in one call. Provide a `tasks` array; each item has {name, title} plus optional description/priority. Per-task failures (member not found, member not idle) are isolated and reported separately.\n" +
+			'  Example: team(action="assign-batch", tasks=[{name="sasha",title="Login validation"},{name="marcus",title="API schema",priority="high"}])\n' +
 			'- direct: Send a message to a member mid-task. kind="directive" (change approach), "context" (extra info), "redirect" (new priority).\n' +
 			'  Example: team(action="direct", name="sasha", kind="context", payload="The design file is at /docs/mockup.fig")\n' +
+			"- direct-batch: Send messages to multiple members in one call. Provide a `messages` array; each item has {name, kind, payload}. Messages are applied in array order; multiple redirects to the same member are applied sequentially (the last redirect wins). Per-message failures (member not found, member not active) are isolated.\n" +
+			'  Example: team(action="direct-batch", messages=[{name="sasha",kind="context",payload="design at /docs/m.fig"},{name="marcus",kind="directive",payload="use JWT auth"}])\n' +
 			"- edit-member: Update a member's goal or active-context.\n" +
 			"- complete: Mark a task as done by its ID.\n" +
 			"- remove: Remove a member from the team. Only use this when the user explicitly asks to remove someone — finished members stay idle and available for new tasks.",
@@ -153,9 +194,20 @@ export function createTeamTool(opts: TeamToolOptions): ToolDefinition {
 				title?: string;
 				description?: string;
 				priority?: string;
+				tasks?: Array<{
+					name: string;
+					title: string;
+					description?: string;
+					priority?: "high" | "medium" | "low";
+				}>;
 				taskId?: string;
 				kind?: string;
 				payload?: string;
+				messages?: Array<{
+					name: string;
+					kind: "directive" | "context" | "redirect";
+					payload: string;
+				}>;
 				section?: string;
 				content?: string;
 				tools?: string[];
@@ -172,8 +224,12 @@ export function createTeamTool(opts: TeamToolOptions): ToolDefinition {
 						return await handleCreateBatch(manager, args);
 					case "assign":
 						return handleAssign(manager, args);
+					case "assign-batch":
+						return handleAssignBatch(manager, args);
 					case "direct":
 						return handleDirect(manager, args);
+					case "direct-batch":
+						return handleDirectBatch(manager, args);
 					case "edit-member":
 						return handleEditMember(manager, args);
 					case "complete":
@@ -405,6 +461,63 @@ function handleAssign(manager: TeamManagerLike, args: Record<string, unknown>) {
 	return ok(`Task ${task.id} "${title}" assigned to @${name}. Member is now active.`);
 }
 
+function handleAssignBatch(manager: TeamManagerLike, args: Record<string, unknown>) {
+	const tasks = args.tasks as
+		| Array<{
+				name: string;
+				title: string;
+				description?: string;
+				priority?: "high" | "medium" | "low";
+		  }>
+		| undefined;
+	if (!tasks || tasks.length === 0) {
+		return err("tasks array is required and must not be empty");
+	}
+	if (tasks.length > ASSIGN_BATCH_SOFT_LIMIT) {
+		return err(
+			`tasks array length ${tasks.length} exceeds soft limit ${ASSIGN_BATCH_SOFT_LIMIT}; split into multiple calls`,
+		);
+	}
+
+	const succeeded: Array<{ name: string; taskId: string; title: string }> = [];
+	const failed: BatchFailure[] = [];
+
+	for (const t of tasks) {
+		try {
+			const task = manager.assignTask({
+				title: t.title,
+				description: t.description ?? "",
+				memberName: t.name,
+				priority: t.priority ?? "medium",
+			});
+			succeeded.push({ name: t.name, taskId: task.id, title: t.title });
+		} catch (e) {
+			failed.push({ name: t.name, error: e instanceof Error ? e.message : String(e) });
+		}
+	}
+
+	const lines: string[] = [];
+	lines.push(`Assigned ${succeeded.length} task(s):`);
+	for (const s of succeeded) {
+		lines.push(`  ✓ ${s.taskId} "${s.title}" → @${s.name}`);
+	}
+	if (failed.length > 0) {
+		lines.push("");
+		lines.push(`Failed ${failed.length} task(s):`);
+		for (const f of failed) {
+			lines.push(`  ✗ @${f.name}: ${f.error}`);
+		}
+	}
+
+	const isError = succeeded.length === 0;
+	const text = lines.join("\n");
+	return {
+		content: [{ type: "text" as const, text: isError ? `Error: ${text}` : text }],
+		details: {},
+		isError,
+	};
+}
+
 function handleDirect(manager: TeamManagerLike, args: Record<string, unknown>) {
 	const name = args.name as string | undefined;
 	const kind = args.kind as "directive" | "context" | "redirect" | undefined;
@@ -414,6 +527,58 @@ function handleDirect(manager: TeamManagerLike, args: Record<string, unknown>) {
 	if (!payload) return err("payload is required for direct");
 	manager.directMember(name, kind, payload);
 	return ok(`Message sent to ${name} [${kind}].`);
+}
+
+function handleDirectBatch(manager: TeamManagerLike, args: Record<string, unknown>) {
+	const messages = args.messages as
+		| Array<{
+				name: string;
+				kind: "directive" | "context" | "redirect";
+				payload: string;
+		  }>
+		| undefined;
+	if (!messages || messages.length === 0) {
+		return err("messages array is required and must not be empty");
+	}
+	if (messages.length > DIRECT_BATCH_SOFT_LIMIT) {
+		return err(
+			`messages array length ${messages.length} exceeds soft limit ${DIRECT_BATCH_SOFT_LIMIT}; split into multiple calls`,
+		);
+	}
+
+	const succeeded: Array<{ name: string; kind: string; payload: string }> = [];
+	const failed: BatchFailure[] = [];
+
+	for (const m of messages) {
+		try {
+			manager.directMember(m.name, m.kind, m.payload);
+			succeeded.push({ name: m.name, kind: m.kind, payload: m.payload });
+		} catch (e) {
+			failed.push({ name: m.name, error: e instanceof Error ? e.message : String(e) });
+		}
+	}
+
+	const lines: string[] = [];
+	lines.push(`Sent ${succeeded.length} message(s):`);
+	for (const s of succeeded) {
+		const truncated = s.payload.length > 60 ? `${s.payload.slice(0, 60)}…` : s.payload;
+		lines.push(`  ✓ @${s.name} [${s.kind}]: ${truncated}`);
+	}
+	if (failed.length > 0) {
+		lines.push("");
+		lines.push(`Failed ${failed.length} message(s):`);
+		for (const f of failed) {
+			lines.push(`  ✗ @${f.name}: ${f.error}`);
+		}
+	}
+
+	const isError = succeeded.length === 0;
+	const text = lines.join("\n");
+	return {
+		content: [{ type: "text" as const, text: isError ? `Error: ${text}` : text }],
+		details: {},
+		isError,
+	};
 }
 
 function handleEditMember(manager: TeamManagerLike, args: Record<string, unknown>) {

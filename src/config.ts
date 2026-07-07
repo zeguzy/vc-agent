@@ -84,6 +84,34 @@ function readJsonFile(filePath: string): Record<string, unknown> | null {
 	}
 }
 
+const ENV_REF = /^ENV\.([A-Z_][A-Z0-9_]*)$/;
+
+export function resolveEnvVars<T>(value: T): T {
+	if (typeof value === "string") {
+		const match = value.match(ENV_REF);
+		if (match) {
+			const envValue = process.env[match[1]];
+			if (envValue === undefined) {
+				console.warn(`[config] ENV var "${match[1]}" not set`);
+				return "" as unknown as T;
+			}
+			return envValue as unknown as T;
+		}
+		return value;
+	}
+	if (Array.isArray(value)) {
+		return value.map((v) => resolveEnvVars(v)) as unknown as T;
+	}
+	if (value !== null && typeof value === "object") {
+		const result: Record<string, unknown> = {};
+		for (const [k, v] of Object.entries(value as Record<string, unknown>)) {
+			result[k] = resolveEnvVars(v);
+		}
+		return result as unknown as T;
+	}
+	return value;
+}
+
 export function readConfig(cwd: string): Config {
 	const globalPath = join(homedir(), ".config", "openagent", "config.json");
 	const projectPath = join(cwd, ".openagent", "config.json");
@@ -92,10 +120,10 @@ export function readConfig(cwd: string): Config {
 	const projectRaw = readJsonFile(projectPath);
 
 	if (!globalRaw && !projectRaw) return {};
-	if (!globalRaw) return projectRaw as Config;
-	if (!projectRaw) return globalRaw as Config;
+	if (!globalRaw) return resolveEnvVars(projectRaw as Config);
+	if (!projectRaw) return resolveEnvVars(globalRaw as Config);
 
-	return deepMerge(globalRaw as Config, projectRaw as Config);
+	return resolveEnvVars(deepMerge(globalRaw as Config, projectRaw as Config));
 }
 
 export function deepMerge<T>(global: T, project: Partial<T>): T {
