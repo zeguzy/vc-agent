@@ -4,6 +4,13 @@ import type { MemoryType, TeamManagerLike, TeamManagerRef } from "../teams/types
 
 interface MemoryToolOptions {
 	teamRef: TeamManagerRef;
+	/**
+	 * Identity of the tool's owner, captured at member-session creation time.
+	 * Falls back to manager.getSelfMemberName() for legacy callers (the leader's
+	 * tool instance). Fixes the bug where a shared TeamManager returns the same
+	 * selfMemberName for every member.
+	 */
+	selfName?: string;
 }
 
 const ActionSchema = Type.Union(
@@ -68,6 +75,7 @@ export function createMemoryTool(opts: MemoryToolOptions): ToolDefinition {
 		async execute(_toolCallId, params, _signal, _onUpdate, _ctx) {
 			const manager = opts.teamRef.current;
 			if (!manager) return err("Team manager not available yet — try again in a moment.");
+			const selfName = opts.selfName ?? manager.getSelfMemberName();
 			const args = params as {
 				action: string;
 				type?: MemoryType;
@@ -80,11 +88,11 @@ export function createMemoryTool(opts: MemoryToolOptions): ToolDefinition {
 			try {
 				switch (args.action) {
 					case "write":
-						return handleWrite(manager, args);
+						return handleWrite(manager, selfName, args);
 					case "read":
-						return handleRead(manager, args);
+						return handleRead(manager, selfName, args);
 					case "update-self":
-						return handleUpdateSelf(manager, args);
+						return handleUpdateSelf(manager, selfName, args);
 					default:
 						return err(`Unknown action: ${args.action}`);
 				}
@@ -95,7 +103,11 @@ export function createMemoryTool(opts: MemoryToolOptions): ToolDefinition {
 	};
 }
 
-function handleWrite(manager: TeamManagerLike, args: Record<string, unknown>) {
+function handleWrite(
+	manager: TeamManagerLike,
+	selfName: string | undefined,
+	args: Record<string, unknown>,
+) {
 	const type = args.type as MemoryType | undefined;
 	const topic = args.topic as string | undefined;
 	const content = args.content as string | undefined;
@@ -103,10 +115,7 @@ function handleWrite(manager: TeamManagerLike, args: Record<string, unknown>) {
 	if (!topic) return err("topic is required for write");
 	if (!content) return err("content is required for write");
 
-	const selfName = manager.getSelfMemberName();
 	const isSharedWrite = args.shared === true && (type === "project" || type === "reference");
-	// Leader (no selfMemberName) can write shared memory without specifying a member name.
-	// For non-shared writes, a member name is required.
 	const targetMember = (args.name as string) || selfName || (isSharedWrite ? "leader" : undefined);
 	if (!targetMember) return err("no member specified and you are not a team member");
 
@@ -122,10 +131,13 @@ function handleWrite(manager: TeamManagerLike, args: Record<string, unknown>) {
 	return ok(`Memory written: ${location}${topic}.md [${type}]`);
 }
 
-function handleRead(manager: TeamManagerLike, args: Record<string, unknown>) {
-	const name = (args.name as string) || manager.getSelfMemberName();
+function handleRead(
+	manager: TeamManagerLike,
+	selfName: string | undefined,
+	args: Record<string, unknown>,
+) {
+	const name = (args.name as string) || selfName;
 	if (!name) {
-		// Leader (no selfMemberName) without a name arg: show shared memory index
 		const teamMd = manager.readTeamMd();
 		if (teamMd.sharedMemoryIndex.length === 0) {
 			return ok(
@@ -139,7 +151,6 @@ function handleRead(manager: TeamManagerLike, args: Record<string, unknown>) {
 		return ok(lines.join("\n"));
 	}
 
-	const selfName = manager.getSelfMemberName();
 	if (selfName && args.name && (args.name as string) !== selfName) {
 		if (manager.isSelfMember(selfName)) {
 			return err("cannot read other member's private memory.");
@@ -176,13 +187,16 @@ function handleRead(manager: TeamManagerLike, args: Record<string, unknown>) {
 	return ok(lines.join("\n"));
 }
 
-function handleUpdateSelf(manager: TeamManagerLike, args: Record<string, unknown>) {
+function handleUpdateSelf(
+	manager: TeamManagerLike,
+	selfName: string | undefined,
+	args: Record<string, unknown>,
+) {
 	const section = args.section as "active-context" | "goal" | undefined;
 	const content = args.content as string | undefined;
 	if (!section) return err("section is required for update-self");
 	if (!content) return err("content is required for update-self");
 
-	const selfName = manager.getSelfMemberName();
 	if (!selfName) return err("you are not a team member");
 
 	const index = manager.readMemberIndex(selfName);

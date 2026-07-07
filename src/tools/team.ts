@@ -32,6 +32,9 @@ const BatchMemberSchema = Type.Object({
 				'Role-specific behavioral constraints (max 800 chars, injected into Anti-Patterns). Example for reviewer: "must run tests, no rubber-stamping"',
 		}),
 	),
+	tools: Type.Optional(Type.Array(Type.String(), { description: "Tool whitelist" })),
+	skills: Type.Optional(Type.Array(Type.String(), { description: "Skill names to load" })),
+	mcps: Type.Optional(Type.Array(Type.String(), { description: "MCP server names allowed" })),
 	taskTitle: Type.Optional(
 		Type.String({ description: "Optional first task title — member starts working immediately" }),
 	),
@@ -52,6 +55,24 @@ const TeamParamsSchema = Type.Object({
 		Type.String({
 			description:
 				'Role-specific behavioral constraints for the member (max 800 chars). Injected into the member\'s Anti-Patterns section. Example for reviewer: "must run tests, no rubber-stamping"',
+		}),
+	),
+	tools: Type.Optional(
+		Type.Array(Type.String(), {
+			description:
+				'Tool whitelist for the member. Defaults to ["read","bash","grep","find","memory","message"]. Subagent/team/question are always stripped (recursive/privilege/blocking risk); memory and message are always included (coordination channel).',
+		}),
+	),
+	skills: Type.Optional(
+		Type.Array(Type.String(), {
+			description:
+				"Skill names to load for this member (must be discoverable skills). Empty = no skills.",
+		}),
+	),
+	mcps: Type.Optional(
+		Type.Array(Type.String(), {
+			description:
+				"MCP server names this member may call (must be connected servers). Empty = no MCP access.",
 		}),
 	),
 	members: Type.Optional(
@@ -92,9 +113,11 @@ export function createTeamTool(opts: TeamToolOptions): ToolDefinition {
 			"Manage your team. Actions:\n" +
 			"- read: See who's on the team, what they're working on, current tasks.\n" +
 			"- create: Add a member. Give them a name, role, and goal. Optionally include taskTitle + taskDescription to start them working right away.\n" +
+			"  Optionally specify tools, skills, mcps to control what the member can do (defaults to a baseline toolset).\n" +
 			'  Example: team(action="create", name="sasha", role="frontend dev", goal="Build the login page", constraints="must pass lint and biome checks", taskTitle="Login page", taskDescription="Create Login.tsx with email+password form")\n' +
-			"- create-batch: Add multiple members in one call. Provide a `members` array; each item has name/role/goal plus optional constraints/taskTitle/taskDescription/taskPriority. Capacity is checked up-front (current + batch size must fit maxWorkers); per-member failures are isolated (succeeded/failed reported separately).\n" +
-			'  Example: team(action="create-batch", members=[{name="alice",role="frontend",goal="UI",constraints="must pass lint",taskTitle="Login",taskDescription="..."},{name="bob",role="backend",goal="API"}])\n' +
+			'  Example with custom tools: team(action="create", name="marcus", role="backend", goal="Build the API", tools=["read","bash","edit","write","grep","find"], skills=["backend-conventions"], mcps=["postgres"])\n' +
+			"- create-batch: Add multiple members in one call. Provide a `members` array; each item has name/role/goal plus optional constraints/taskTitle/taskDescription/taskPriority/tools/skills/mcps. Capacity is checked up-front (current + batch size must fit maxWorkers); per-member failures are isolated (succeeded/failed reported separately).\n" +
+			'  Example: team(action="create-batch", members=[{name="alice",role="frontend",goal="UI",constraints="must pass lint",taskTitle="Login",taskDescription="..."},{name="bob",role="backend",goal="API",tools=["read","bash","edit"]])\n' +
 			"- assign: Give a task to an idle member. They'll start working on it.\n" +
 			'  Example: team(action="assign", name="sasha", title="Add validation", description="Validate email format before submit")\n' +
 			'- direct: Send a message to a member mid-task. kind="directive" (change approach), "context" (extra info), "redirect" (new priority).\n' +
@@ -117,6 +140,9 @@ export function createTeamTool(opts: TeamToolOptions): ToolDefinition {
 					role: string;
 					goal: string;
 					constraints?: string;
+					tools?: string[];
+					skills?: string[];
+					mcps?: string[];
 					taskTitle?: string;
 					taskDescription?: string;
 					taskPriority?: "high" | "medium" | "low";
@@ -132,6 +158,9 @@ export function createTeamTool(opts: TeamToolOptions): ToolDefinition {
 				payload?: string;
 				section?: string;
 				content?: string;
+				tools?: string[];
+				skills?: string[];
+				mcps?: string[];
 			};
 			try {
 				switch (args.action) {
@@ -203,6 +232,10 @@ async function handleCreate(manager: TeamManagerLike, args: Record<string, unkno
 	if (!role) return err("role is required for create");
 	if (!goal) return err("goal is required for create");
 
+	const tools = args.tools as string[] | undefined;
+	const skills = args.skills as string[] | undefined;
+	const mcps = args.mcps as string[] | undefined;
+
 	const state = await manager.createMember({
 		name,
 		role,
@@ -211,6 +244,9 @@ async function handleCreate(manager: TeamManagerLike, args: Record<string, unkno
 		model: undefined,
 		services: {} as never,
 		parentModel: undefined,
+		...(tools ? { tools } : {}),
+		...(skills ? { skills } : {}),
+		...(mcps ? { mcps } : {}),
 	});
 
 	const taskTitle = args.taskTitle as string | undefined;
@@ -226,7 +262,16 @@ async function handleCreate(manager: TeamManagerLike, args: Record<string, unkno
 		);
 	}
 
-	return ok(`Member "${name}" (${role}) created. Status: ${state.status}`);
+	const toolSummary = [
+		tools && `tools=[${tools.join(",")}`,
+		skills && `skills=[${skills.join(",")}`,
+		mcps && `mcps=[${mcps.join(",")}`,
+	]
+		.filter(Boolean)
+		.join(" | ");
+	return ok(
+		`Member "${name}" (${role}) created. Status: ${state.status}${toolSummary ? `. ${toolSummary}` : ""}`,
+	);
 }
 
 type BatchMember = {
@@ -237,6 +282,9 @@ type BatchMember = {
 	taskTitle?: string;
 	taskDescription?: string;
 	taskPriority?: "high" | "medium" | "low";
+	tools?: string[];
+	skills?: string[];
+	mcps?: string[];
 };
 
 type BatchSuccess = {
@@ -274,9 +322,8 @@ async function handleCreateBatch(manager: TeamManagerLike, args: Record<string, 
 	const failed: BatchFailure[] = [];
 
 	for (const m of members) {
-		let state: { name: string; role: string } | null = null;
 		try {
-			state = await manager.createMember({
+			await manager.createMember({
 				name: m.name,
 				role: m.role,
 				goal: m.goal,
@@ -284,6 +331,9 @@ async function handleCreateBatch(manager: TeamManagerLike, args: Record<string, 
 				model: undefined,
 				services: {} as never,
 				parentModel: undefined,
+				tools: m.tools,
+				skills: m.skills,
+				mcps: m.mcps,
 			});
 		} catch (e) {
 			failed.push({ name: m.name, error: e instanceof Error ? e.message : String(e) });
