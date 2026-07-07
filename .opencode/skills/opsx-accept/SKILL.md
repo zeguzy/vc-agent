@@ -131,16 +131,27 @@ agent 逐段执行，缺失段落记 SKIP。`Log Assertions` 段对非 team chan
 
 ## API 参考
 
-### 烟测会用到的 HTTP 端点
+### 烟测通过 HttpClient 类驱动（`src/client/http.ts`）
 
-| 方法 | 路径 | 烟测验证点 |
-|------|------|------------|
-| GET | `/session/id` | 返回 200，body 含 `{id: string}` |
-| GET | `/model` | 返回 200，body 含 model 信息 |
-| GET | `/messages` | 返回 200，body 含 `{messages: []}` |
-| GET | `/sessions` | 返回 200，body 含 `{sessions: []}` |
-| GET | `/events` | SSE 流建立（`Accept: text/event-stream`），不强制要求收到事件 |
-| POST | `/abort` | 返回 200（验证路由存在，不实际触发 abort） |
+烟测不使用裸 `fetch`，而是用项目的 `HttpClient` 类验证完整客户端集成：
+
+```typescript
+const client = new HttpClient(baseUrl);
+await client.init();  // 并行 GET /session/id, /session/name, /session/file,
+                      // /model, /context, /messages 填充缓存
+```
+
+| HttpClient 方法 | 验证点 | 对应端点 |
+|-----------------|--------|----------|
+| `init()` | 6 个 GET 端点并行返回有效 JSON | `/session/id` `/session/name` `/session/file` `/model` `/context` `/messages` |
+| `getSessionId()` | 缓存填充，返回非空 string | `/session/id` |
+| `getModel()` | 缓存填充，返回 ModelInfo | `/model` |
+| `getMappedMessages()` | 缓存填充，返回数组 | `/messages` |
+| `listSessions()` | async GET 返回数组 | `/sessions` |
+| `subscribe(handler)` | 返回 Unsubscribe fn，内部建立 SSE 连接不抛错 | `/events` |
+| `abort()` | async POST 不抛错（不触发 agent turn） | `/abort` |
+
+**不调 `client.prompt()`**：该方法的 handler `await server.handlePrompt()` 阻塞至完整 agent turn（LLM 调用 + 工具循环），会消耗 token。
 
 ### 共享 helper
 
@@ -155,7 +166,7 @@ createRealServer(opts?: { cwd?: string }): Promise<{
 }>
 ```
 
-强制三项隔离：① 临时 HOME ② 返回后由调用方绑定 127.0.0.1 ③ 不调 `/prompt`。
+强制三项隔离：① 临时 HOME ② 返回后由调用方绑定 127.0.0.1 ③ 不调 `client.prompt()`。
 
 ---
 
