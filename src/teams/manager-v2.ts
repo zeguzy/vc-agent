@@ -25,6 +25,7 @@ import { createMemoryTool } from "../tools/memory.js";
 import { createMessageTool } from "../tools/message.js";
 import { handleCompactionEnd } from "./auto-memory.js";
 import { buildCompactionReinject, buildMemberSystemPrompt, buildTaskLayer } from "./context.js";
+import { collectRecentMessages, runCoordinator } from "./coordinator.js";
 import { TeamFiles } from "./files.js";
 import { logTeamEvent } from "./logger.js";
 import { validateName } from "./memory-types.js";
@@ -39,6 +40,7 @@ import type {
 	MemoryType,
 	ReadInboxOptions,
 	TaskState,
+	TaskType,
 	TeamDirectoryPaths,
 	TeamEvent,
 	TeamManagerLike,
@@ -131,15 +133,15 @@ export class TeamManager implements TeamManagerLike {
 	}
 
 	/** Maximum concurrent steers per recipient before degrading to persist-only. */
-	private static readonly MAX_IN_FLIGHT_STEER = 3;
+	private static readonly MAX_IN_FLIGHT_STEER = 5;
 	/** Per-pair exchange cooldown window (ms). */
-	private static readonly PAIR_COOLDOWN_MS = 30_000;
+	private static readonly PAIR_COOLDOWN_MS = 60_000;
 	/** Max pair exchanges within the cooldown window. */
-	private static readonly PAIR_MAX_EXCHANGES = 2;
+	private static readonly PAIR_MAX_EXCHANGES = 4;
 	/** Broadcast rate window (ms). */
-	private static readonly BROADCAST_WINDOW_MS = 60_000;
+	private static readonly BROADCAST_WINDOW_MS = 120_000;
 	/** Broadcast max sends within the window. */
-	private static readonly BROADCAST_MAX_PER_WINDOW = 1;
+	private static readonly BROADCAST_MAX_PER_WINDOW = 2;
 
 	get paths(): TeamDirectoryPaths {
 		return this.files.paths;
@@ -438,6 +440,7 @@ export class TeamManager implements TeamManagerLike {
 		description: string;
 		memberName: MemberName;
 		priority?: "high" | "medium" | "low";
+		type?: TaskType;
 	}): TaskState {
 		const state = this.members.get(opts.memberName);
 		if (!state) throw new Error(`member "${opts.memberName}" not found`);
@@ -453,6 +456,7 @@ export class TeamManager implements TeamManagerLike {
 			description: opts.description,
 			memberName: opts.memberName,
 			priority: opts.priority ?? "medium",
+			type: opts.type ?? "execution",
 			done: false,
 		};
 
@@ -544,6 +548,9 @@ export class TeamManager implements TeamManagerLike {
 		if (!memberIndex) return;
 		const teamMd = this.files.readTeamMd();
 		const reinject = buildCompactionReinject({
+			name,
+			role: state.role,
+			goal: state.goal,
 			memberIndex,
 			teamMd,
 			selfName: name,
@@ -586,6 +593,70 @@ export class TeamManager implements TeamManagerLike {
 		logTeamEvent("member_cancelled", { memberName: name });
 	}
 
+	private discussionRound = new Map<string, number>();
+
+	private static readonly DISCUSSION_MAX_ROUNDS = 10;
+
+	private async evaluateDiscussion(task: TaskState): Promise<void> {
+		const round = (this.discussionRound.get(task.id) ?? 0) + 1;
+		this.discussionRound.set(task.id, round);
+
+		const teamMd = this.files.readTeamMd();
+		const recentMessages = collectRecentMessages(
+			this.files.paths.membersDir,
+			teamMd.members.map((m) => m.name),
+		);
+
+		const decision = await runCoordinator({
+			input: {
+				task,
+				members: teamMd.members.map((m) => ({
+					name: m.name,
+					role: m.role,
+					status: m.status,
+					currentTaskId: this.members.get(m.name)?.currentTaskId ?? null,
+				})),
+				recentMessages,
+				round,
+				maxRounds: TeamManager.DISCUSSION_MAX_ROUNDS,
+			},
+			cwd: this.files.paths.teamDir,
+			services: this.services,
+			parentModel: this.defaultParentModel,
+		});
+
+		logTeamEvent("discussion_evaluated", {
+			taskId: task.id,
+			round,
+			action: decision.action,
+			reason: decision.reason,
+		});
+
+		if (decision.action === "complete") {
+			this.discussionRound.delete(task.id);
+			if (task.id) this.completeTask(task.id);
+			return;
+		}
+
+		const targetState = this.members.get(decision.nextSpeaker);
+		if (!targetState || targetState.status === "done" || targetState.status === "cancelled") {
+			logTeamEvent("discussion_speaker_unavailable", {
+				taskId: task.id,
+				speaker: decision.nextSpeaker,
+			});
+			if (task.id) this.completeTask(task.id);
+			return;
+		}
+
+		const instruction = `[⚡ COORDINATOR] ${decision.instruction}`;
+		if (targetState.status === "active" && targetState.session.isStreaming) {
+			targetState.session.steer(instruction);
+		} else {
+			targetState.status = "active";
+			void targetState.session.prompt(instruction);
+		}
+	}
+
 	directMember(
 		name: MemberName,
 		kind: "directive" | "context" | "redirect",
@@ -598,10 +669,10 @@ export class TeamManager implements TeamManagerLike {
 
 		const prefix =
 			kind === "directive"
-				? "[Leader Directive]"
+				? "[⚡ LEADER DIRECTIVE]"
 				: kind === "context"
-					? "[Leader Context]"
-					: "[Leader Redirect]";
+					? "[⚡ LEADER CONTEXT]"
+					: "[⚡ LEADER REDIRECT]";
 		const message = `${prefix} ${payload}`;
 
 		if (state.session.isStreaming) {
@@ -737,6 +808,15 @@ export class TeamManager implements TeamManagerLike {
 		if (recipient.status === "cancelled") {
 			throw new Error(`recipient "${recipient.name}" is cancelled`);
 		}
+		if (recipient.status === "done" || recipient.status === "idle") {
+			const reason = `recipient "${recipient.name}" is ${recipient.status} and will not see your message`;
+			logTeamEvent("member_message_rejected", {
+				to: recipient.name,
+				messageId: message.id,
+				reason: `status=${recipient.status}`,
+			});
+			throw new Error(reason);
+		}
 		if (recipient.status !== "active") {
 			logTeamEvent("member_message_delivered", {
 				to: recipient.name,
@@ -760,7 +840,7 @@ export class TeamManager implements TeamManagerLike {
 
 		this.inFlightSteer.set(recipient.name, inFlight + 1);
 		const prefix = message.from === "leader" ? "Leader" : `@${message.from}`;
-		const note = `[Message from ${prefix}] ${message.content}`;
+		const note = `[📣 ${prefix}] ${message.content}`;
 		const session = recipient.session;
 		const decrement = () => {
 			const current = this.inFlightSteer.get(recipient.name) ?? 0;
@@ -1046,18 +1126,29 @@ export class TeamManager implements TeamManagerLike {
 		if (!state) return;
 
 		if (event.type === "agent_end") {
-			// Member completed a turn
 			const summary = extractLastAssistantText(state.session);
-			const cost = 0; // TODO: extract from session usage
+			const cost = 0;
 
-			// Complete current task if any
 			if (state.currentTaskId) {
-				this.completeTask(state.currentTaskId);
-			}
+				const teamMd = this.files.readTeamMd();
+				const task = teamMd.activeTasks.find((t) => t.id === state.currentTaskId);
 
-			state.status = "idle";
-			this.emit({ type: "member_done", memberName, summary: summary ?? "(no output)", cost });
-			logTeamEvent("member_done", { memberName, status: "idle" });
+				if (task?.type === "discussion") {
+					state.status = "idle";
+					this.emit({ type: "member_done", memberName, summary: summary ?? "(no output)", cost });
+					logTeamEvent("member_done", { memberName, status: "idle" });
+					void this.evaluateDiscussion(task);
+				} else {
+					this.completeTask(state.currentTaskId);
+					state.status = "idle";
+					this.emit({ type: "member_done", memberName, summary: summary ?? "(no output)", cost });
+					logTeamEvent("member_done", { memberName, status: "idle" });
+				}
+			} else {
+				state.status = "idle";
+				this.emit({ type: "member_done", memberName, summary: summary ?? "(no output)", cost });
+				logTeamEvent("member_done", { memberName, status: "idle" });
+			}
 		}
 
 		if (event.type === "compaction_end") {
@@ -1069,9 +1160,11 @@ export class TeamManager implements TeamManagerLike {
 				compactionSummary: summary,
 			});
 
-			// Re-inject L2 + L3 after compaction
 			const teamMd = this.files.readTeamMd();
 			const reinject = buildCompactionReinject({
+				name: memberName,
+				role: state.role,
+				goal: state.goal,
 				memberIndex: updatedIndex,
 				teamMd,
 				selfName: memberName,

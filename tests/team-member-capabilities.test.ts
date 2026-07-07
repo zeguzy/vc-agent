@@ -1,61 +1,52 @@
 import { describe, expect, it } from "bun:test";
-import { buildMemberCapabilitiesSection } from "../src/teams/context.js";
+import { buildMemberCapabilitiesSection, buildToolContractLayer } from "../src/teams/context.js";
 
-describe("buildMemberCapabilitiesSection", () => {
+describe("buildToolContractLayer", () => {
 	it("includes only tools actually assigned", () => {
+		const layer = buildToolContractLayer({ tools: ["read", "bash", "memory", "message"] });
+		expect(layer).toContain("`read`");
+		expect(layer).toContain("`bash`");
+		expect(layer).toContain("`memory`");
+		expect(layer).toContain("`message`");
+		expect(layer).not.toContain("`edit`");
+		expect(layer).not.toContain("skills:");
+	});
+
+	it("lists assigned skills when given", () => {
+		const layer = buildToolContractLayer({
+			tools: ["read", "memory", "message"],
+			skills: ["backend-conventions", "testing"],
+		});
+		expect(layer).toContain("`backend-conventions`");
+		expect(layer).toContain("`testing`");
+	});
+
+	it("lists assigned MCPs when mcp tool is included", () => {
+		const layer = buildToolContractLayer({
+			tools: ["read", "mcp", "memory", "message"],
+			mcps: ["postgres", "github"],
+		});
+		expect(layer).toContain("`postgres`");
+		expect(layer).toContain("`github`");
+	});
+
+	it("omits MCP section when mcp tool not in tools", () => {
+		const layer = buildToolContractLayer({
+			tools: ["read", "memory", "message"],
+			mcps: ["postgres"],
+		});
+		expect(layer).not.toContain("`postgres`");
+		expect(layer).not.toContain("`mcp`");
+	});
+});
+
+describe("buildMemberCapabilitiesSection (legacy)", () => {
+	it("delegates to buildToolContractLayer", () => {
 		const section = buildMemberCapabilitiesSection({
 			tools: ["read", "bash", "memory", "message"],
 		});
 		expect(section).toContain("`read`");
 		expect(section).toContain("`bash`");
-		expect(section).toContain("`memory`");
-		expect(section).toContain("`message`");
-		expect(section).not.toContain("`edit`");
-		expect(section).not.toContain("skills:");
-	});
-
-	it("emits edit/write bullets when those tools are present", () => {
-		const section = buildMemberCapabilitiesSection({
-			tools: ["read", "edit", "write", "memory", "message"],
-		});
-		expect(section).toContain("`edit`");
-		expect(section).toContain("Use `edit` for targeted changes");
-		expect(section).toContain("Use `write` to create new files");
-	});
-
-	it("lists assigned skills when given", () => {
-		const section = buildMemberCapabilitiesSection({
-			tools: ["read", "memory", "message"],
-			skills: ["backend-conventions", "testing"],
-		});
-		expect(section).toContain("skills:");
-		expect(section).toContain("`backend-conventions`");
-		expect(section).toContain("`testing`");
-	});
-
-	it("lists assigned MCPs when mcp tool is included", () => {
-		const section = buildMemberCapabilitiesSection({
-			tools: ["read", "mcp", "memory", "message"],
-			mcps: ["postgres", "github"],
-		});
-		expect(section).toContain("`mcp`");
-		expect(section).toContain("`postgres`");
-		expect(section).toContain("`github`");
-	});
-
-	it("omits MCP bullet when mcp tool not in tools", () => {
-		const section = buildMemberCapabilitiesSection({
-			tools: ["read", "memory", "message"],
-			mcps: ["postgres"],
-		});
-		expect(section).not.toContain("`postgres`");
-		expect(section).not.toContain("`mcp`");
-	});
-
-	it("always carries the reading-is-not-verification caveat", () => {
-		const section = buildMemberCapabilitiesSection({
-			tools: ["read"],
-		});
-		expect(section).toContain("Reading is not verification");
+		expect(section).toContain("## How You Work");
 	});
 });

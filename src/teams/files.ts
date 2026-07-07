@@ -328,7 +328,15 @@ function parseActiveTasks(raw: string): TaskState[] {
 			const title = assigneeMatch
 				? afterId.slice(0, -assigneeMatch[0].length).trim()
 				: afterId.trim();
-			return { id, title, description: "", memberName, priority: "medium" as const, done };
+			return {
+				id,
+				title,
+				description: "",
+				memberName,
+				priority: "medium" as const,
+				type: "execution" as const,
+				done,
+			};
 		});
 }
 

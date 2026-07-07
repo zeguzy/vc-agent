@@ -36,6 +36,9 @@ export interface MemberState {
 	assignedMcps?: string[];
 }
 
+/** Task type determines how the team manager handles completion. */
+export type TaskType = "execution" | "discussion";
+
 /** Task state derived from TEAM.md Active Tasks. */
 export interface TaskState {
 	id: string; // "T1", "T2", ...
@@ -43,6 +46,7 @@ export interface TaskState {
 	description: string;
 	memberName: MemberName | null;
 	priority: "high" | "medium" | "low";
+	type: TaskType;
 	done: boolean;
 }
 
@@ -232,4 +236,5 @@ export type TeamEvent =
 /** Lazy reference to TeamManager — mirrors WorkerPoolRef pattern. */
 export interface TeamManagerRef {
 	current: TeamManagerLike | null;
+	wakeUp?: (msg: string) => void;
 }

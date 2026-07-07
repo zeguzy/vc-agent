@@ -99,12 +99,13 @@ describe("TeamManager messaging", () => {
 		expect(events.some((e) => e.type === "member_message_sent")).toBe(true);
 	});
 
-	it("sendMessage degrades to persist-only when recipient is idle", () => {
+	it("sendMessage rejects when recipient is idle", () => {
 		const { manager, inject } = rig();
 		inject("carol", "idle");
 		inject("dave", "active");
-		const result = manager.sendMessage({ from: "dave", to: "carol", content: "ping" });
-		expect(result.delivery).toBe("persist-only");
+		expect(() => manager.sendMessage({ from: "dave", to: "carol", content: "ping" })).toThrow(
+			/will not see/,
+		);
 	});
 
 	it("sendMessage rejects self-send", () => {
@@ -130,13 +131,15 @@ describe("TeamManager messaging", () => {
 		);
 	});
 
-	it("pair cooldown prevents A↔B ping-pong beyond PAIR_MAX_EXCHANGES (2)", () => {
+	it("pair cooldown prevents A↔B ping-pong beyond PAIR_MAX_EXCHANGES (4)", () => {
 		const { manager, inject } = rig();
 		inject("kim", "active");
 		inject("leo", "active");
 		manager.sendMessage({ from: "kim", to: "leo", content: "1" });
 		manager.sendMessage({ from: "leo", to: "kim", content: "2" });
-		expect(() => manager.sendMessage({ from: "kim", to: "leo", content: "3" })).toThrow(
+		manager.sendMessage({ from: "kim", to: "leo", content: "3" });
+		manager.sendMessage({ from: "leo", to: "kim", content: "4" });
+		expect(() => manager.sendMessage({ from: "kim", to: "leo", content: "5" })).toThrow(
 			/pair cooldown/,
 		);
 	});
@@ -154,14 +157,16 @@ describe("TeamManager messaging", () => {
 		).toThrow(/rate limit/);
 	});
 
-	it("broadcastMessage respects 1-per-minute limit", () => {
+	it("broadcastMessage respects per-window limit (2)", () => {
 		const { manager, inject } = rig();
 		inject("mallory", "active");
 		inject("nina", "active");
 		inject("oscar", "active");
 		const r1 = manager.broadcastMessage({ from: "mallory", content: "first" });
 		expect(r1.length).toBeGreaterThan(0);
-		expect(() => manager.broadcastMessage({ from: "mallory", content: "second" })).toThrow(
+		const r2 = manager.broadcastMessage({ from: "mallory", content: "second" });
+		expect(r2.length).toBeGreaterThan(0);
+		expect(() => manager.broadcastMessage({ from: "mallory", content: "third" })).toThrow(
 			/broadcast rate limit/,
 		);
 	});
@@ -208,8 +213,8 @@ describe("TeamManager messaging", () => {
 		);
 		const steerCount = results.filter((r) => r.delivery === "steer").length;
 		const persistCount = results.filter((r) => r.delivery === "persist-only").length;
-		expect(steerCount).toBe(3);
-		expect(persistCount).toBe(3);
+		expect(steerCount).toBe(5);
+		expect(persistCount).toBe(1);
 	});
 
 	it("readInbox on member without inbox throws", () => {

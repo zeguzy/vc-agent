@@ -1,15 +1,23 @@
 import type { MemberIndexStructure, MemberName, TaskState, TeamMdStructure } from "./types-v2.js";
 
-// ─── L1: Identity Layer (seven sections) ─────────────────────
+// ─── Context Layer Architecture ──────────────────────────────
 //
-// The member's L1 is a structured behavioral contract, not a role label.
-// Seven sections cover the full member lifecycle:
-//   Identity → Capabilities → Work Discipline → Anti-Patterns →
-//   Escalation → Output Protocol → Memory Discipline
+// Context is organized into five layers by information type and lifecycle,
+// not by data source. This ensures:
+//   - Same-type info is co-located (no scatter)
+//   - Single layer doesn't mix lifecycle categories (no conflation)
+//   - Compaction reinject knows which layers are mandatory contracts
 //
-// `constraints` (leader-provided, role-specific) is injected ONLY into the
-// Anti-Patterns section — never duplicated into Identity. Identity gets a
-// one-line pointer when constraints exist.
+// Layer A: Contract      — behavioral contract, MUST always be present
+// Layer B: Tool Contract — tool list + work method, can degrade after compaction
+// Layer C: Team Static   — mission + members (low-frequency change)
+// Layer D: Runtime       — current task + active context + recent activity (per-task change)
+// Layer E: Index         — memory index + task overview + notes (medium-frequency change)
+//
+// System prompt = [A, B, C, D, E]
+// Compaction reinject = [A, C, D]  (fixes the previous bug where L1 was lost)
+
+// ─── Layer A: Contract ──────────────────────────────────────
 
 /** Build the Identity section: who you are + goal + optional constraints pointer. */
 function buildMemberIdentitySection(
@@ -34,75 +42,6 @@ function buildMemberIdentitySection(
 	return lines.join("\n");
 }
 
-export function buildMemberCapabilitiesSection(opts: {
-	tools: string[];
-	skills?: string[];
-	mcps?: string[];
-}): string {
-	const { tools, skills, mcps } = opts;
-	const lines: string[] = [];
-	lines.push("## Your Capabilities");
-	lines.push("");
-	lines.push(`You have these tools: ${tools.map((t) => `\`${t}\``).join(", ")}.`);
-	lines.push("");
-	const bullets: string[] = [];
-	if (tools.includes("read")) bullets.push("- Use `read` to understand code before changing it.");
-	if (tools.includes("bash"))
-		bullets.push("- Use `bash` to run commands — including tests, type checks, and builds.");
-	if (tools.includes("grep") || tools.includes("find"))
-		bullets.push("- Use `grep` and `find` to locate code, not `read` for browsing.");
-	if (tools.includes("edit"))
-		bullets.push(
-			"- Use `edit` for targeted changes. Read the file first to anchor the oldString precisely.",
-		);
-	if (tools.includes("write"))
-		bullets.push("- Use `write` to create new files; prefer `edit` for changes to existing ones.");
-	if (tools.includes("memory"))
-		bullets.push("- Use `memory` to read what you've learned before and record new insights.");
-	if (tools.includes("message"))
-		bullets.push(
-			"- Use `message` to talk to your teammates directly (send / broadcast / read inbox).",
-		);
-	if (tools.includes("todo"))
-		bullets.push(
-			"- Use `todo` to track multi-step work. Mark items complete the moment each finishes.",
-		);
-	if (tools.includes("webfetch"))
-		bullets.push("- Use `webfetch` to fetch external URLs when research requires it.");
-	if (tools.includes("lsp_diagnostics") || tools.includes("lsp"))
-		bullets.push("- Use `lsp_*` tools to inspect types, definitions, and references precisely.");
-	if (tools.includes("mcp") && mcps && mcps.length > 0)
-		bullets.push(
-			`- Use \`mcp\` to call external tools via the MCP servers you've been granted: ${mcps.map((m) => `\`${m}\``).join(", ")}.`,
-		);
-	if (bullets.length > 0) {
-		lines.push(...bullets);
-		lines.push("");
-	}
-	lines.push(
-		'**Reading is not verification.** Looking at code and thinking "this looks right" is not the same as running it. Verify by executing: run the test, run the build, reproduce the bug. Claims without evidence are speculation.',
-	);
-	if (skills && skills.length > 0) {
-		lines.push("");
-		lines.push(
-			`You've been assigned these skills: ${skills.map((s) => `\`${s}\``).join(", ")}. Invoke them with \`/skill-name\` when relevant.`,
-		);
-	}
-	return lines.join("\n");
-}
-
-export const MEMBER_WORK_DISCIPLINE_SECTION = [
-	"## How You Work",
-	"",
-	"1. **Read the task fully** before starting. If the description is ambiguous, escalate via NEEDS_CONTEXT (see Escalation) rather than guessing.",
-	"2. **Understand the scope** — what's in scope, what's out. Don't expand the task.",
-	"3. **Execute** methodically. Read relevant code first, then change the smallest thing that satisfies the task.",
-	"4. **Verify** your work actually does what the task asked. Run the relevant check (test / build / typecheck).",
-	"5. **Report** what you did, what you verified, and anything that didn't go as expected. See Output Protocol.",
-	"",
-	"Don't skip steps. A task isn't done because you wrote code — it's done because you verified the code works.",
-].join("\n");
-
 /**
  * Build the Anti-Patterns section: universal fallback constraints always
  * present, plus optional leader-provided role-specific constraints appended.
@@ -125,6 +64,9 @@ export function buildMemberAntiPatternsSection(customConstraints?: string): stri
 	lines.push(
 		"- **Touching team files directly**: `.openagent/team/` files (TEAM.md, member indexes, shared memory) are managed through the `memory` tool and the leader's coordination. Don't read/write them with `read`/`bash`.",
 	);
+	lines.push(
+		'**Reading is not verification.** Looking at code and thinking "this looks right" is not the same as running it. Verify by executing: run the test, run the build, reproduce the bug. Claims without evidence are speculation.',
+	);
 	const trimmed = customConstraints?.trim();
 	if (trimmed) {
 		lines.push("");
@@ -144,6 +86,8 @@ export const MEMBER_ESCALATION_SECTION = [
 	"- **BLOCKED**: You cannot make progress. The approach isn't working, you've tried 2-3 materially different things and all failed, or you lack a capability (tool, access, information). Stop spinning — report BLOCKED with what you tried.",
 	"- **NEEDS_CONTEXT**: The task is ambiguous and you can't proceed without clarification. Don't guess — ask. But ask precisely: state what you understand so far and what specifically is unclear.",
 	"",
+	"Before escalating BLOCKED or NEEDS_CONTEXT to the leader, consider messaging a teammate — they may already know the answer. Proactive communication beats silent spinning.",
+	"",
 	"Spinning on a blocked task wastes tokens and time. Escalating early is correct, not failure.",
 ].join("\n");
 
@@ -160,41 +104,165 @@ export const MEMBER_OUTPUT_PROTOCOL_SECTION = [
 	'Vague reports ("done!", "fixed it") without evidence get sent back. Be specific.',
 ].join("\n");
 
-export const MEMBER_MEMORY_DISCIPLINE_SECTION = [
-	"## When to Write Memory",
+/** Build Layer A (Contract) — the behavioral contract that MUST always be present. */
+export function buildContractLayer(opts: {
+	name: MemberName;
+	role: string;
+	goal: string;
+	constraints?: string;
+}): string {
+	const hasConstraints = Boolean(opts.constraints?.trim());
+	const sections: string[] = [
+		buildMemberIdentitySection(opts.name, opts.role, opts.goal, hasConstraints),
+		buildMemberAntiPatternsSection(opts.constraints),
+		MEMBER_ESCALATION_SECTION,
+		MEMBER_OUTPUT_PROTOCOL_SECTION,
+	];
+	return sections.join("\n\n");
+}
+
+// ─── Layer B: Tool Contract ──────────────────────────────────
+
+export const MEMBER_WORK_DISCIPLINE_SECTION = [
+	"## How You Work",
 	"",
-	'Use `memory(action="write")` to record things worth remembering:',
+	"1. **Read the task fully** before starting. If the description is ambiguous, escalate via NEEDS_CONTEXT (see Escalation) rather than guessing.",
+	"2. **Understand the scope** — what's in scope, what's out. Don't expand the task.",
+	"3. **Execute** methodically. Read relevant code first, then change the smallest thing that satisfies the task.",
+	"4. **Verify** your work actually does what the task asked. Run the relevant check (test / build / typecheck).",
+	"5. **Report** what you did, what you verified, and anything that didn't go as expected. See Output Protocol.",
 	"",
-	'- **Patterns you discovered**: "This codebase uses effect for async, not promises."',
-	'- **Pitfalls you hit**: "The build cache at .cache/ must be cleared after changing tsconfig."',
-	'- **User preferences**: "The user prefers tabs over spaces, even in markdown."',
-	"",
-	"Don't write memory for task-specific details (those go in your report). Write memory for things that'll help you or a teammate on the next task.",
-	"",
-	"Read your memory index at the start of each task — you may have already learned something relevant.",
+	"Don't skip steps. A task isn't done because you wrote code — it's done because you verified the code works.",
 ].join("\n");
 
-export const MEMBER_COMMUNICATION_SECTION = [
-	"## When to Message a Teammate",
-	"",
-	'Use `message(action="send", to="...", content="...")` for quick peer coordination:',
-	"",
-	'- **Ask a direct question**: "@alice what auth library are you using?"',
-	"- **Flag a conflict**: \"I'm editing utils.ts, hold off until I'm done.\"",
-	'- **Share a finding**: "The bug is in the parser, not the lexer — heads up."',
-	"",
-	'Use `message(action="broadcast")` only for things everyone needs to know. It\'s rate-limited to 1/minute.',
-	"",
-	'Use `message(action="read")` to check your inbox when you start a task and after you finish one — a teammate may have asked you something.',
-	"",
-	"**Don't** spam messages: you're capped at 5/minute per recipient pair. If a conversation needs more than 2 exchanges, escalate to the leader instead.",
-	"",
-	"For deep context (architecture, conventions, history), write shared memory instead of a message — messages are ephemeral, memory is persistent.",
-].join("\n");
+/** Build Layer B (Tool Contract) — tools + work method. Can degrade after compaction. */
+export function buildToolContractLayer(opts: {
+	tools: string[];
+	skills?: string[];
+	mcps?: string[];
+}): string {
+	const { tools, skills, mcps } = opts;
+	const lines: string[] = [];
+	lines.push("## Your Tools");
+	lines.push("");
+	lines.push(`You have these tools: ${tools.map((t) => `\`${t}\``).join(", ")}.`);
+	if (tools.includes("mcp") && mcps && mcps.length > 0) {
+		lines.push("");
+		lines.push(`MCP servers available: ${mcps.map((m) => `\`${m}\``).join(", ")}.`);
+	}
+	if (skills && skills.length > 0) {
+		lines.push("");
+		lines.push(
+			`You've been assigned these skills: ${skills.map((s) => `\`${s}\``).join(", ")}. Invoke them with \`/skill-name\` when relevant.`,
+		);
+	}
+	lines.push("");
+	lines.push(MEMBER_WORK_DISCIPLINE_SECTION);
+	return lines.join("\n");
+}
+
+// ─── Layer C: Team Static ────────────────────────────────────
+
+/** Build Layer C (Team Static) — mission + members table (low-frequency change). */
+export function buildTeamStaticLayer(teamMd: TeamMdStructure, selfName?: MemberName): string {
+	const lines: string[] = ["[Team Overview]"];
+	lines.push(`Mission: ${teamMd.mission}`);
+	lines.push("");
+	lines.push("Members:");
+	for (const m of teamMd.members) {
+		const isSelf = m.name === selfName;
+		const marker = isSelf ? "→ " : "  ";
+		const taskInfo = m.currentTask ? ` — ${m.currentTask}` : "";
+		lines.push(`${marker}${m.name} (${m.role}) — ${m.status}${taskInfo}`);
+	}
+	return lines.join("\n");
+}
+
+// ─── Layer D: Runtime ────────────────────────────────────────
+
+/** Build Layer D (Runtime) — current task + active context + recent activity. */
+export function buildRuntimeLayer(opts: {
+	activeContext?: string;
+	recentActivity?: Array<{ date: string; entry: string }>;
+	currentTask?: TaskState;
+}): string {
+	const lines: string[] = ["[Your Current State]"];
+
+	if (opts.currentTask) {
+		lines.push(`Task: ${opts.currentTask.id}: ${opts.currentTask.title}`);
+		if (opts.currentTask.description) lines.push(`  ${opts.currentTask.description}`);
+		lines.push(`  Priority: ${opts.currentTask.priority}`);
+	} else if (opts.activeContext) {
+		lines.push(`Focus: ${opts.activeContext}`);
+	}
+
+	if (opts.recentActivity && opts.recentActivity.length > 0) {
+		lines.push("");
+		lines.push("Recent:");
+		for (const a of opts.recentActivity.slice(-5)) {
+			lines.push(`  - ${a.date}: ${a.entry}`);
+		}
+	}
+
+	return lines.join("\n");
+}
+
+// ─── Layer E: Index ──────────────────────────────────────────
+
+/** Build Layer E (Index) — memory index + task overview + important notes. */
+export function buildIndexLayer(opts: {
+	memoryIndex: Array<{ file: string; type: string; description: string }>;
+	activeTasks: TaskState[];
+	importantNotes?: string;
+}): string {
+	const lines: string[] = ["[Indexes]"];
+
+	if (opts.activeTasks.length > 0) {
+		lines.push("Active Tasks:");
+		for (const t of opts.activeTasks) {
+			const check = t.done ? "✓" : "○";
+			const assignee = t.memberName ? `@${t.memberName}` : "unassigned";
+			lines.push(`  ${check} ${t.id}: ${t.title} → ${assignee}`);
+		}
+	}
+
+	if (opts.importantNotes) {
+		lines.push("");
+		lines.push(`Important: ${opts.importantNotes}`);
+	}
+
+	if (opts.memoryIndex.length > 0) {
+		lines.push("");
+		lines.push("Memories:");
+		for (const m of opts.memoryIndex) {
+			lines.push(`  - ${m.file} [${m.type}] — ${m.description}`);
+		}
+	}
+
+	return lines.join("\n");
+}
+
+// ─── Topic (on-demand, not part of system prompt) ───────────
+
+/** Build topic content (returned by memory tool, not part of system prompt). */
+export function buildTopicLayer(topic: string, type: string, content: string): string {
+	return `[Memory: ${topic} (${type})]\n${content}`;
+}
+
+// ─── Legacy exports (deprecated, for backward compat) ───────
+
+/** @deprecated Use buildContractLayer + buildToolContractLayer instead. */
+export function buildMemberCapabilitiesSection(opts: {
+	tools: string[];
+	skills?: string[];
+	mcps?: string[];
+}): string {
+	return buildToolContractLayer(opts);
+}
 
 /**
- * Build L1 (Identity layer) — the seven-section behavioral contract.
- * Removes the legacy `agentSystemPrompt` dead parameter.
+ * @deprecated Use buildContractLayer instead.
+ * Build L1 (Identity layer) — the behavioral contract.
  */
 export function buildIdentityLayer(opts: {
 	name: MemberName;
@@ -205,31 +273,24 @@ export function buildIdentityLayer(opts: {
 	assignedSkills?: string[];
 	assignedMcps?: string[];
 }): string {
-	const hasConstraints = Boolean(opts.constraints?.trim());
-	const sections: string[] = [
-		buildMemberIdentitySection(opts.name, opts.role, opts.goal, hasConstraints),
-		buildMemberCapabilitiesSection({
-			tools: opts.assignedTools ?? ["read", "bash", "grep", "find", "memory", "message"],
-			skills: opts.assignedSkills,
-			mcps: opts.assignedMcps,
-		}),
-		MEMBER_WORK_DISCIPLINE_SECTION,
-		buildMemberAntiPatternsSection(opts.constraints),
-		MEMBER_ESCALATION_SECTION,
-		MEMBER_OUTPUT_PROTOCOL_SECTION,
-		MEMBER_MEMORY_DISCIPLINE_SECTION,
-		MEMBER_COMMUNICATION_SECTION,
-	];
-	return sections.join("\n\n");
+	const contractPart = buildContractLayer({
+		name: opts.name,
+		role: opts.role,
+		goal: opts.goal,
+		constraints: opts.constraints,
+	});
+	const toolPart = buildToolContractLayer({
+		tools: opts.assignedTools ?? ["read", "bash", "grep", "find", "memory", "message"],
+		skills: opts.assignedSkills,
+		mcps: opts.assignedMcps,
+	});
+	return `${contractPart}\n\n${toolPart}`;
 }
 
-// ─── L2: Memory Index ────────────────────────────────────────
-
-/** Build L2 (Memory Index) — member .md index file content, always loaded. */
+/** @deprecated Use buildTeamStaticLayer + buildIndexLayer instead. */
 export function buildMemoryIndexLayer(index: MemberIndexStructure | null): string {
 	if (!index) return "[No memory index available — starting fresh]";
 	const lines: string[] = ["[Memory Index — your persistent context, always visible to you]"];
-	lines.push(`Role: ${index.profile.role} | Goal: ${index.profile.goal}`);
 	if (index.activeContext) lines.push(`Active Context: ${index.activeContext}`);
 	if (index.memoryIndex.length > 0) {
 		lines.push("Memories:");
@@ -246,54 +307,25 @@ export function buildMemoryIndexLayer(index: MemberIndexStructure | null): strin
 	return lines.join("\n");
 }
 
-// ─── L3: TEAM.md Summary ────────────────────────────────────
-
-/** Build L3 (TEAM.md Summary) — Members table + Active Tasks, ~50 lines max. */
+/** @deprecated Use buildTeamStaticLayer + buildIndexLayer instead. */
 export function buildTeamSummaryLayer(teamMd: TeamMdStructure, selfName?: MemberName): string {
-	const lines: string[] = ["[Team Summary — your team's current state]"];
-	lines.push(`Mission: ${teamMd.mission}`);
-	lines.push("");
-	lines.push("Members:");
-	for (const m of teamMd.members) {
-		const isSelf = m.name === selfName;
-		lines.push(`  ${isSelf ? "→ " : "  "}${m.name} (${m.role}) — ${m.status} — ${m.currentTask}`);
-	}
-	lines.push("");
-	lines.push("Active Tasks:");
-	for (const t of teamMd.activeTasks) {
-		const check = t.done ? "✓" : "○";
-		const assignee = t.memberName ? `@${t.memberName}` : "unassigned";
-		lines.push(`  ${check} ${t.id}: ${t.title} → ${assignee}`);
-	}
-	if (teamMd.importantNotes) {
-		lines.push("");
-		lines.push(`Important: ${teamMd.importantNotes}`);
-	}
-	return lines.join("\n");
+	const staticPart = buildTeamStaticLayer(teamMd, selfName);
+	const indexPart = buildIndexLayer({
+		memoryIndex: [],
+		activeTasks: teamMd.activeTasks,
+		importantNotes: teamMd.importantNotes,
+	});
+	return `${staticPart}\n\n${indexPart}`;
 }
 
-// ─── L4: Tasks ──────────────────────────────────────────────
-
-/** Build L4 (Tasks) — current task description for per-turn injection. */
+/** @deprecated Use buildRuntimeLayer instead. */
 export function buildTaskLayer(task: TaskState): string {
-	const lines: string[] = ["[Your Current Task]"];
-	lines.push(`ID: ${task.id}`);
-	lines.push(`Title: ${task.title}`);
-	if (task.description) lines.push(`Description: ${task.description}`);
-	lines.push(`Priority: ${task.priority}`);
-	return lines.join("\n");
-}
-
-// ─── L5: Topic Files ────────────────────────────────────────
-
-/** Build L5 (Topic Files) — full content of a topic .md file (returned by memory tool). */
-export function buildTopicLayer(topic: string, type: string, content: string): string {
-	return `[Memory: ${topic} (${type})]\n${content}`;
+	return buildRuntimeLayer({ currentTask: task });
 }
 
 // ─── Full System Prompt Builder ──────────────────────────────
 
-/** Build the full system prompt for a member session (L1 + L2 + L3). */
+/** Build the full system prompt for a member session [A, B, C, D, E]. */
 export function buildMemberSystemPrompt(opts: {
 	name: MemberName;
 	role: string;
@@ -307,27 +339,68 @@ export function buildMemberSystemPrompt(opts: {
 	assignedMcps?: string[];
 }): string[] {
 	const assignedTools = opts.assignedTools ?? ["read", "bash", "grep", "find", "memory", "message"];
-	const l1 = buildIdentityLayer({
+
+	const a = buildContractLayer({
 		name: opts.name,
 		role: opts.role,
 		goal: opts.goal,
 		constraints: opts.constraints,
-		assignedTools,
-		assignedSkills: opts.assignedSkills,
-		assignedMcps: opts.assignedMcps,
 	});
-	const l2 = buildMemoryIndexLayer(opts.memberIndex);
-	const l3 = buildTeamSummaryLayer(opts.teamMd, opts.selfName);
-	return [l1, l2, l3];
+
+	const b = buildToolContractLayer({
+		tools: assignedTools,
+		skills: opts.assignedSkills,
+		mcps: opts.assignedMcps,
+	});
+
+	const c = buildTeamStaticLayer(opts.teamMd, opts.selfName);
+
+	const memberIndex = opts.memberIndex;
+	const currentTask = opts.teamMd.activeTasks.find(
+		(t) => t.memberName === opts.selfName && !t.done,
+	);
+	const d = buildRuntimeLayer({
+		activeContext: memberIndex?.activeContext,
+		recentActivity: memberIndex?.recentActivity,
+		currentTask,
+	});
+
+	const e = buildIndexLayer({
+		memoryIndex: memberIndex?.memoryIndex ?? [],
+		activeTasks: opts.teamMd.activeTasks,
+		importantNotes: opts.teamMd.importantNotes || undefined,
+	});
+
+	return [a, b, c, d, e];
 }
 
-/** Build re-injection content after compaction (L2 + L3). */
+/** Build re-injection content after compaction: [A, C, D]. */
 export function buildCompactionReinject(opts: {
+	name: MemberName;
+	role: string;
+	goal: string;
+	constraints?: string;
 	memberIndex: MemberIndexStructure;
 	teamMd: TeamMdStructure;
 	selfName: MemberName;
 }): string {
-	const l2 = `[Memory Index Re-injected]\n${buildMemoryIndexLayer(opts.memberIndex)}`;
-	const l3 = `[TEAM Summary Re-injected]\n${buildTeamSummaryLayer(opts.teamMd, opts.selfName)}`;
-	return `${l2}\n\n${l3}`;
+	const a = `[Contract Re-injected]\n${buildContractLayer({
+		name: opts.name,
+		role: opts.role,
+		goal: opts.goal,
+		constraints: opts.memberIndex.constraints,
+	})}`;
+
+	const c = `[Team Overview Re-injected]\n${buildTeamStaticLayer(opts.teamMd, opts.selfName)}`;
+
+	const currentTask = opts.teamMd.activeTasks.find(
+		(t) => t.memberName === opts.selfName && !t.done,
+	);
+	const d = `[Your Current State Re-injected]\n${buildRuntimeLayer({
+		activeContext: opts.memberIndex.activeContext,
+		recentActivity: opts.memberIndex.recentActivity,
+		currentTask,
+	})}`;
+
+	return `${a}\n\n${c}\n\n${d}`;
 }

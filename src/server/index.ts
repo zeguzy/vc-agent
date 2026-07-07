@@ -76,6 +76,13 @@ export class AgentServer {
 		);
 		if (opts.teamRef) {
 			opts.teamRef.current = this.teamManager;
+			opts.teamRef.wakeUp = (msg: string) => {
+				if (this.session.isStreaming) {
+					this.session.steer(msg);
+				} else {
+					void this.session.prompt(msg);
+				}
+			};
 		}
 		this.teamRef = opts.teamRef ?? { current: this.teamManager };
 

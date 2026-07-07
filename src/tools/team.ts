@@ -22,6 +22,7 @@ const ActionSchema = Type.Union(
 		Type.Literal("edit-member"),
 		Type.Literal("complete"),
 		Type.Literal("remove"),
+		Type.Literal("wait"),
 	],
 	{ description: "Action to perform on the team" },
 );
@@ -140,6 +141,13 @@ const TeamParamsSchema = Type.Object({
 	),
 	section: Type.Optional(Type.Union([Type.Literal("goal"), Type.Literal("active-context")])),
 	content: Type.Optional(Type.String({ description: "New content (for edit-member)" })),
+	duration: Type.Optional(
+		Type.Integer({
+			description: "Wait duration in seconds (for wait). Default 30, max 300.",
+			minimum: 5,
+			maximum: 300,
+		}),
+	),
 });
 
 export function createTeamTool(opts: TeamToolOptions): ToolDefinition {
@@ -165,7 +173,9 @@ export function createTeamTool(opts: TeamToolOptions): ToolDefinition {
 			'  Example: team(action="direct-batch", messages=[{name="sasha",kind="context",payload="design at /docs/m.fig"},{name="marcus",kind="directive",payload="use JWT auth"}])\n' +
 			"- edit-member: Update a member's goal or active-context.\n" +
 			"- complete: Mark a task as done by its ID.\n" +
-			"- remove: Remove a member from the team. Only use this when the user explicitly asks to remove someone — finished members stay idle and available for new tasks.",
+			"- remove: Remove a member from the team. Only use this when the user explicitly asks to remove someone — finished members stay idle and available for new tasks.\n" +
+			"- wait: Pause for N seconds (default 30, max 300), then wake up to check team status. Use this instead of repeatedly calling read while members work.\n" +
+			'  Example: team(action="wait", duration=60)',
 		parameters: TeamParamsSchema,
 		async execute(_toolCallId, params, _signal, _onUpdate, _ctx) {
 			const manager = opts.teamRef.current;
@@ -213,6 +223,7 @@ export function createTeamTool(opts: TeamToolOptions): ToolDefinition {
 				tools?: string[];
 				skills?: string[];
 				mcps?: string[];
+				duration?: number;
 			};
 			try {
 				switch (args.action) {
@@ -236,6 +247,8 @@ export function createTeamTool(opts: TeamToolOptions): ToolDefinition {
 						return handleComplete(manager, args);
 					case "remove":
 						return await handleRemove(manager, args);
+					case "wait":
+						return handleWait(opts.teamRef, args);
 					default:
 						return err(`Unknown action: ${args.action}`);
 				}
@@ -613,6 +626,18 @@ async function handleRemove(manager: TeamManagerLike, args: Record<string, unkno
 	if (!name) return err("name is required for remove");
 	await manager.removeMember(name);
 	return ok(`Member "${name}" removed and archived.`);
+}
+
+function handleWait(teamRef: TeamManagerRef, args: { duration?: number }) {
+	const seconds = Math.max(5, Math.min(300, args.duration ?? 30));
+	const wakeUp = teamRef.wakeUp;
+	if (!wakeUp) {
+		return err("Wake-up callback not available. Use read to poll manually.");
+	}
+	setTimeout(() => {
+		wakeUp(`[Team Wake-up] ${seconds}s elapsed. Check team status now.`);
+	}, seconds * 1000);
+	return ok(`Waiting ${seconds}s. I'll check back then.`);
 }
 
 function ok(text: string) {
