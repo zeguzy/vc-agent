@@ -4,7 +4,7 @@ description: OpenSpec 驱动的开发流水线。当用户提出非平凡的开�
 license: MIT
 metadata:
   author: openagent
-  version: "1.2"
+  version: "1.4"
 ---
 
 # Harness：OpenSpec 驱动开发流水线
@@ -201,31 +201,52 @@ Oracle 读取 proposal.md + design.md + tasks.md，从以下维度审查：
 
 ### 步骤 6：验收（accept）— ★ 用户参与
 
-向用户展示变更全貌，请求确认。
+调用 `/opsx-accept` skill 跑三层自动验收，收集报告后向用户展示，请求最终确认。
+
+**做什么**：
+
+1. 调用 `/opsx-accept` 执行三层验收：
+   - **Layer 0**（必跑）：`bun run check`（typecheck + lint + test）
+   - **Layer 1**（显式启用）：`ACCEPTANCE_SMOKE=1 bun test tests/acceptance-smoke.test.ts`——端点可达性烟测（隔离 HOME + 127.0.0.1，不调 `/prompt`）
+   - **Layer 2**（可选）：读取 `openspec/changes/<active>/acceptance.md` 执行 change 级定制断言
+2. 收集三层报告，按下方模板展示给用户
+3. 调用 `AskUserQuestion` 请求用户最终拍板
 
 **展示内容**：
 
 ```
 ## 验收：<change-name>
 
-**变更摘要**：<一句话描述做了什么>
+**变更摘要**：<proposal.md 第一段 Why 浓缩>
+
+**自动验收结果**：
+| Layer | 内容 | 状态 | 详情 |
+|-------|------|------|------|
+| Layer 0 | bun run check | ✅ PASS / ❌ FAIL | <失败步骤 + 错误摘要> |
+| Layer 1 | 端点可达性烟测 | ✅ PASS / ⚠️ SKIP / ❌ FAIL | <失败用例 + 详情> |
+| Layer 2 | change 级定制 | ✅ PASS / ⚠️ SKIP / ❌ FAIL | <失败段落 + 详情> |
 
 **完成任务**：
 - [x] Task 1: ...
 - [x] Task 2: ...
 - ...
 
-**验证结果**：
-- bun run check：✓ typecheck + lint + test 全通过
-- 变更文件：<git diff --stat 摘要>
+**变更文件（git diff --stat main...HEAD）**：
+<diff --stat 输出>
 
 **当前 worktree**：<pwd 输出>
 
 请确认是否通过验收。
 ```
 
-**用户确认通过** → 进入合并清理。
-**用户要求修改** → 回到步骤 4 实施修正。
+**流转规则**：
+- **Layer 0 必过**：Layer 0 FAIL → 展示失败详情，回到步骤 4 实施修复，不请求用户确认
+- **Layer 1/2 看情况**：PASS 或 SKIP 都可继续；FAIL 视 change 范围——若 change 改了 server 相关代码则必过，否则降级为 WARN 继续
+- **全 PASS（或 Layer 1/2 SKIP）**：展示报告，调用 `AskUserQuestion` 请求用户确认
+- **用户确认通过** → 进入合并清理
+- **用户要求修改** → 回到步骤 4 实施修正
+
+**关键**：自动验收减少人工核对劳动（从逐项核对降为看报告拍板），**不取消人工把关**——用户仍需最终确认才合并到 main。详见 `/opsx-accept` skill。
 
 ---
 
@@ -272,7 +293,7 @@ Oracle 读取 proposal.md + design.md + tasks.md，从以下维度审查：
 | 审核 3b → 实施 | Oracle 技术评审通过 | 否 |
 | 实施 → 归档 | task 全完 + check 全绿 | 否 |
 | 归档 → 验收 | 归档完成 | 否 |
-| 验收 → 合并清理 | **用户确认** | ★ 是 |
+| 验收 → 合并清理 | 自动验收通过 + **用户确认** | ★ 是 |
 | 合并清理 → 结束 | merge + push + 清理完成 | 否 |
 
 ---
@@ -302,6 +323,7 @@ Oracle 读取 proposal.md + design.md + tasks.md，从以下维度审查：
 - **不跳过审核**——即使变更很小，格式门禁 + 技术评审必过
 - **不跳过技术评审**——Oracle 必须对 design.md 给出通过判定才能进入实施
 - **不跳过验收**——必须用户确认才合并代码
+- **自动验收不替代用户确认**——验收通过仅减少核对劳动（从逐项核对降为看报告拍板），不取消人工把关；详见 `/opsx-accept` skill
 - **不在验收前提交到 main**——代码在验收通过后才 merge
 - **check 失败必须修复**——不得 `--no-verify` 绕过钩子
 - **探索和提案阶段不写业务代码**——只读代码库、生成 artifact

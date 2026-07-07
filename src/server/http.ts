@@ -5,10 +5,12 @@ import type { AgentServer } from "./index.js";
 export interface HttpServerOptions {
 	server: AgentServer;
 	port: number;
+	/** Optional host to bind (e.g. "127.0.0.1"). When omitted, Node binds to all interfaces (::/0.0.0.0). */
+	host?: string;
 }
 
 export function createHttpServer(opts: HttpServerOptions) {
-	const { server, port } = opts;
+	const { server, port, host } = opts;
 
 	const httpServer = createServer(async (req, res) => {
 		try {
@@ -18,7 +20,11 @@ export function createHttpServer(opts: HttpServerOptions) {
 		}
 	});
 
-	httpServer.listen(port);
+	if (host) {
+		httpServer.listen(port, host);
+	} else {
+		httpServer.listen(port);
+	}
 	return httpServer;
 }
 
