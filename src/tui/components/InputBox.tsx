@@ -8,7 +8,7 @@ import type { MemberState, TaskState } from "../../teams/types-v2.js";
 import { matchSuggestions, type SuggestionItem } from "../commands.js";
 import type { Mode } from "../keymap.js";
 import { colors, icons } from "../utils/theme.js";
-import { MemberCard } from "./MemberCard.js";
+import { TeamTopology } from "./TeamTopology.js";
 
 interface InputBoxProps {
 	disabled: boolean;
@@ -274,13 +274,7 @@ export function InputBox({
 					</>
 				)}
 			</box>
-			{activeMemberName &&
-				members.length > 0 &&
-				(() => {
-					const member = members.find((m) => m.name === activeMemberName);
-					if (!member) return null;
-					return <MemberCard member={member} tasks={tasks} />;
-				})()}
+			<TeamTopology members={members} tasks={tasks} activeMemberName={activeMemberName} />
 			<box height={1} flexDirection="row" paddingLeft={2} paddingRight={2}>
 				<text fg={modeColor}>{modeLabel}</text>
 				<text fg={colors.textSubtle}>{" · "}</text>

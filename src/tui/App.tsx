@@ -25,7 +25,6 @@ import { QuestionBox } from "./components/QuestionBox.js";
 import { SessionPicker } from "./components/SessionPicker.js";
 import { SettingsPanel } from "./components/SettingsPanel.js";
 import { StatusBar } from "./components/StatusBar.js";
-import { TeamTopology } from "./components/TeamTopology.js";
 import { Toast } from "./components/Toast.js";
 import { WelcomeBanner } from "./components/WelcomeBanner.js";
 import { WorkersView } from "./components/WorkersView.js";
@@ -651,13 +650,6 @@ export function App({
 						onSubmit={handlePrompt}
 						sentMessages={commandHistory}
 						pendingInput={pendingInput}
-						members={members}
-						tasks={client.listTasks()}
-						activeMemberName={activeMemberName}
-					/>
-				)}
-				{agentMode === "team" && (
-					<TeamTopology
 						members={members}
 						tasks={client.listTasks()}
 						activeMemberName={activeMemberName}
