@@ -1,0 +1,76 @@
+{
+  "thinking": {
+    "level": "medium",
+    "collapsed": false
+  },
+  "compaction": {
+    "enabled": true,
+    "reserveTokens": 4096,
+    "keepRecentTokens": 8192
+  },
+  "skills": {
+    "paths": [],
+    "autoLoad": true,
+    "disabled": []
+  },
+  "instructions": [],
+  "providers": {
+    "Astron∞": {
+      "apiKey": "ENV.ASTRON_INFINITY_API_KEY",
+      "baseUrl": "https://maas-coding-api.cn-huabei-1.xf-yun.com/v2",
+      "api": "openai-completions",
+      "models": [
+        {
+          "id": "astron-code-latest",
+          "name": "Astron ∞"
+        }
+      ]
+    },
+    "Astron": {
+      "apiKey": "ENV.ASTRON_API_KEY",
+      "baseUrl": "https://maas-coding-api.cn-huabei-1.xf-yun.com/v2",
+      "api": "openai-completions",
+      "models": [
+        {
+          "id": "astron-code-latest",
+          "name": "Astron"
+        }
+      ]
+    }
+  },
+  "display": {},
+  "teams": {
+    "enabled": true,
+    "maxWorkers": 4,
+    "defaultMaxTurns": 8,
+    "isolation": "none",
+    "cancelOrphansOnAgentEnd": true,
+    "cancelOrphansOnSessionChange": true,
+    "maxIdleMembers": 8,
+    "messageHistoryLimit": 100,
+    "messageRateLimitPerMinute": 5
+  },
+  "notifications": {
+    "enabled": true,
+    "sound": true,
+    "bashThresholdMs": 10000,
+    "toastDismissMs": 4000,
+    "events": {
+      "agentEnd": true,
+      "toolError": true,
+      "longBash": true,
+      "needsInput": true,
+      "compactionEnd": true,
+      "yank": true
+    },
+    "channels": {
+      "toast": true,
+      "osc": true,
+      "os": true
+    }
+  },
+  "contextPruning": {
+    "enabled": false
+  },
+  "model": "Astron:astron-code-latest"
+}
