@@ -668,6 +668,84 @@ export function registerBuiltinCommands(): void {
 	});
 
 	commandRegistry.register({
+		name: "mcp",
+		description: "MCP server management: refresh / status",
+		usage: "/mcp [refresh [server] | status]",
+		handler: (args: string, ctx: CommandContext) => {
+			const parts = args.trim().split(/\s+/);
+			const sub = parts[0]?.toLowerCase();
+
+			if (!sub) {
+				ctx.setShowSettings(true);
+				return;
+			}
+
+			if (sub === "refresh") {
+				const serverName = parts[1];
+				const manager = ctx.mcpManager;
+				if (!manager) {
+					ctx.setMessages((prev) => [
+						...prev,
+						createAssistantMessage("MCP manager not available."),
+					]);
+					return;
+				}
+				manager
+					.refreshTools(serverName || undefined)
+					.then(({ success, failed }) => {
+						const target = serverName ? ` "${serverName}"` : "";
+						const parts: string[] = [`✓ MCP refresh${target}: ${success} succeeded`];
+						if (failed > 0) parts.push(`${failed} failed`);
+						ctx.setMessages((prev) => [...prev, createAssistantMessage(parts.join(", "))]);
+					})
+					.catch((err: Error) => {
+						ctx.setMessages((prev) => [
+							...prev,
+							createAssistantMessage(`MCP refresh failed: ${formatError(err)}`),
+						]);
+					});
+				return;
+			}
+
+			if (sub === "status") {
+				const manager = ctx.mcpManager;
+				if (!manager) {
+					ctx.setMessages((prev) => [
+						...prev,
+						createAssistantMessage("MCP manager not available."),
+					]);
+					return;
+				}
+				const info = manager.getCacheInfo();
+				const statuses = manager.getConnectionStatus();
+				const lines: string[] = ["MCP Status:"];
+				if (info.hash) {
+					lines.push(`  Cache hash: ${info.hash.slice(0, 12)}...`);
+					lines.push(`  Cache path: ${info.path}`);
+					lines.push(`  Updated: ${info.updatedAt ?? "never"}`);
+				} else {
+					lines.push("  Cache: none (cold start)");
+				}
+				lines.push("");
+				for (const s of statuses) {
+					const stale = s.status !== "connected" ? " ⚠" : "";
+					const errSuffix = s.error ? ` — ${s.error}` : "";
+					lines.push(`  [${s.status}] ${s.name} (${s.toolCount} tools)${stale}${errSuffix}`);
+				}
+				ctx.setMessages((prev) => [...prev, createAssistantMessage(lines.join("\n"))]);
+				return;
+			}
+
+			ctx.setMessages((prev) => [
+				...prev,
+				createAssistantMessage(
+					"/mcp [refresh [server] | status]\n\n  refresh [server]  — Reconnect and refresh MCP tool cache\n  status           — Show cache and connection status",
+				),
+			]);
+		},
+	});
+
+	commandRegistry.register({
 		name: "workers",
 		description: "Show team members panel",
 		usage: "/workers",

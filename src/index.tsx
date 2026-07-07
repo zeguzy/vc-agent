@@ -215,6 +215,7 @@ async function runTui(argv: string[]): Promise<void> {
 			editBridge={editBridge}
 			initialResumeList={args.resumeList}
 			initialAgentMode={agentMode}
+			mcpManager={mcpManager}
 		/>,
 	);
 }

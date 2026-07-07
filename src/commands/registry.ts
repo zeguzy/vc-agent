@@ -1,6 +1,7 @@
 import type { AgentMode } from "../agent/session.js";
 import type { AgentClient } from "../client/index.js";
 import type { Config } from "../config.js";
+import type { McpManager } from "../mcp/manager.js";
 import type { Message } from "../message.js";
 import type { SessionInfo } from "../session/list.js";
 
@@ -25,6 +26,7 @@ export interface CommandContext {
 	setAgentMode: (updater: AgentMode | ((prev: AgentMode) => AgentMode)) => void;
 	setInputText: (text: string) => void;
 	isRunning: boolean;
+	mcpManager?: McpManager;
 }
 
 /**

@@ -7,6 +7,7 @@ import type { AgentClient, AgentMode } from "../client/index.js";
 import { commandRegistry } from "../commands/registry.js";
 import type { Config } from "../config.js";
 import { readConfig } from "../config.js";
+import type { McpManager } from "../mcp/manager.js";
 import { createAssistantMessage, createUserMessage, type Message } from "../message.js";
 import { resolveNotificationsConfig } from "../notifications/config.js";
 import { getGlobalRouter } from "../notifications/notifier.js";
@@ -52,6 +53,7 @@ interface AppProps {
 	editBridge?: EditConfirmBridge;
 	initialResumeList?: boolean;
 	initialAgentMode?: AgentMode;
+	mcpManager?: McpManager;
 }
 
 export function App({
@@ -63,6 +65,7 @@ export function App({
 	editBridge,
 	initialResumeList,
 	initialAgentMode,
+	mcpManager,
 }: AppProps) {
 	const renderer = useRenderer();
 	const initialMapped = client.getMappedMessages();
@@ -388,6 +391,7 @@ export function App({
 			setAgentMode,
 			setInputText: (text: string) => setPendingInput({ text, nonce: Date.now() }),
 			isRunning: isRunningRef.current,
+			mcpManager,
 		};
 	}, [client, cwd, picker.openSessionPicker]);
 
