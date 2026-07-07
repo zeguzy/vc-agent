@@ -66,7 +66,12 @@ export function DiffConfirmBox({ bridge, onDecision }: DiffConfirmBoxProps) {
 				<text fg={colors.secondary}>确认 edit · </text>
 				<text fg={colors.textMuted}>{pending.filePath}</text>
 			</box>
-			<scrollbox maxHeight={20} focused={false} backgroundColor={colors.backgroundInset}>
+			<scrollbox
+				maxHeight={20}
+				minHeight={3}
+				focused={false}
+				backgroundColor={colors.backgroundInset}
+			>
 				<diff
 					diff={pending.patch}
 					filetype={filetype}
@@ -85,6 +90,7 @@ export function DiffConfirmBox({ bridge, onDecision }: DiffConfirmBoxProps) {
 					lineNumberBg={colors.diffContextBg}
 					addedLineNumberBg={colors.diffAddedLineNumberBg}
 					removedLineNumberBg={colors.diffRemovedLineNumberBg}
+					flexShrink={0}
 				/>
 			</scrollbox>
 			{phase === "reject-feedback" ? (

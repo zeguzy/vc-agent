@@ -316,17 +316,20 @@ const ToolMessageView = memo(function ToolMessageView({ message }: { message: Me
 			borderColor={borderColor}
 			backgroundColor={colors.backgroundInset}
 			marginTop={1}
+			paddingTop={1}
 			paddingBottom={1}
+			paddingLeft={2}
+			paddingRight={2}
 			flexShrink={0}
 			flexDirection="column"
 		>
-			<box flexDirection="row" paddingLeft={2} paddingRight={2} paddingTop={0} paddingBottom={0}>
+			<box flexDirection="row">
 				<text fg={statusFg}>{icon} </text>
 				<text fg={colors.secondary}>{label}</text>
 				{editFilePath && <text fg={colors.textMuted}> {editFilePath}</text>}
 			</box>
 			{lines.length > 0 && (
-				<box flexDirection="column" paddingLeft={4} paddingRight={2} paddingBottom={0}>
+				<box flexDirection="column" paddingLeft={2}>
 					{
 						// biome-ignore lint/suspicious/noArrayIndexKey: diff lines have no stable IDs
 						lines.map((line, i) => (
@@ -347,18 +350,12 @@ const ToolMessageView = memo(function ToolMessageView({ message }: { message: Me
 				</box>
 			)}
 			{editPatch && (
-				<box paddingLeft={2} paddingRight={2} paddingTop={1} paddingBottom={1}>
+				<box paddingTop={1} paddingBottom={1}>
 					<EditDiffView patch={editPatch} filePath={editFilePath} />
 				</box>
 			)}
 			{resultLines.length > 0 && (
-				<box
-					flexDirection="column"
-					paddingLeft={4}
-					paddingRight={2}
-					paddingBottom={1}
-					marginTop={0}
-				>
+				<box flexDirection="column" paddingLeft={2} paddingBottom={1}>
 					{
 						// biome-ignore lint/suspicious/noArrayIndexKey: tool result lines have no stable IDs
 						resultLines.map((line, i) => (
@@ -378,9 +375,6 @@ const ToolMessageView = memo(function ToolMessageView({ message }: { message: Me
 					maxHeight={RESULT_BLOCK_MAX_HEIGHT}
 					scrollY
 					focused={false}
-					paddingLeft={2}
-					paddingRight={2}
-					marginTop={0}
 				>
 					<markdown
 						id={`md-subagent-${message.id}`}
@@ -411,11 +405,14 @@ const ReadGroupView = memo(function ReadGroupView({ reads }: { reads: Message[] 
 			borderColor={borderColor}
 			backgroundColor={colors.backgroundInset}
 			marginTop={1}
+			paddingTop={1}
 			paddingBottom={1}
+			paddingLeft={2}
+			paddingRight={2}
 			flexShrink={0}
 			flexDirection="column"
 		>
-			<box flexDirection="row" paddingLeft={2} paddingRight={2} paddingTop={0}>
+			<box flexDirection="row">
 				<text fg={headerFg}>{headerIcon} </text>
 				<text fg={colors.secondary}>read</text>
 				<text fg={colors.textSubtle}> · {reads.length} files · </text>
@@ -432,7 +429,7 @@ const ReadGroupView = memo(function ReadGroupView({ reads }: { reads: Message[] 
 							? colors.error
 							: colors.success;
 				return (
-					<box key={msg.id} flexDirection="row" paddingLeft={3} paddingRight={2}>
+					<box key={msg.id} flexDirection="row" paddingLeft={2} paddingRight={0}>
 						<text fg={colors.textSubtle}>[{i + 1}] </text>
 						<text fg={statusFg}>{statusIcon} </text>
 						<text fg={colors.textSubtle}>
@@ -467,6 +464,7 @@ const TodoMessageView = memo(function TodoMessageView({ message }: { message: Me
 			paddingTop={1}
 			paddingBottom={1}
 			paddingLeft={2}
+			paddingRight={2}
 			flexShrink={0}
 			flexDirection="column"
 		>
@@ -566,16 +564,15 @@ const WorkerMessageView = memo(function WorkerMessageView({ message }: { message
 			borderStyle="rounded"
 			border={["top", "right", "bottom", "left"]}
 			borderColor={borderColor}
-			marginTop={1}
+			margin={1}
+			paddingTop={1}
+			paddingBottom={1}
+			paddingLeft={2}
+			paddingRight={2}
 			flexShrink={0}
 			flexDirection="column"
 		>
-			<box
-				backgroundColor={colors.backgroundPanel}
-				paddingLeft={1}
-				paddingRight={1}
-				flexDirection="row"
-			>
+			<box backgroundColor={colors.backgroundPanel} flexDirection="row">
 				<text fg={statusColor}>{statusIcon} </text>
 				<text fg={colors.textMuted}>{message.workerId?.slice(0, 10)}</text>
 				<text fg={colors.textSubtle}>/{message.workerAgent} </text>
