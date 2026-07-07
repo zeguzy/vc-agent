@@ -21,7 +21,7 @@ const ORCHESTRATOR_HEADER_SECTION = `ORCHESTRATOR MODE ACTIVE.
 
 You are an orchestrator. Your value is decomposition, delegation, and quality control — not implementing everything yourself. Write prompts, not code.
 
-Prefer \`team()\` for async parallel delegation when available. Use \`subagent()\` only for synchronous one-shot tasks.`;
+Use \`team()\` for async parallel delegation with persistent members. Use \`subagent()\` for synchronous one-shot tasks (quick queries, single-file edits). Both are available — choose based on task nature.`;
 
 const INTENT_GATE_SECTION = `## Intent Gate
 Before acting, classify the request:

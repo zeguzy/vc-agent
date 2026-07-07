@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, describe, expect, it } from "bun:test";
 import { mkdirSync, rmSync, unlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { appendSystemPromptFor } from "../src/agent/session.js";
+import { appendSystemPromptFor, TEAM_ACTIVE_TOOLS } from "../src/agent/session.js";
 import { BUILTIN_AGENTS } from "../src/agents/defaults.js";
 import { buildAvailableAgentsPrompt, discoverAgents } from "../src/agents/discover.js";
 
@@ -57,9 +57,13 @@ describe("appendSystemPromptFor agent list injection", () => {
 		expect(result?.some((p) => p.includes("Available subagents"))).toBeFalsy();
 	});
 
-	it("team mode does not inject agent list (uses team tool, not subagent)", () => {
+	it("team mode injects agent list (subagent available alongside team tool)", () => {
 		const result = appendSystemPromptFor("team", { teams: { enabled: true } }, tmpBase);
-		expect(result?.some((p) => p.includes("Available subagents"))).toBeFalsy();
+		expect(result?.some((p) => p.includes("Available subagents"))).toBe(true);
+	});
+
+	it("TEAM_ACTIVE_TOOLS includes subagent", () => {
+		expect(TEAM_ACTIVE_TOOLS).toContain("subagent");
 	});
 
 	it("standard mode without cwd does not inject agent list (backward compat)", () => {

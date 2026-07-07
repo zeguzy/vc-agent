@@ -69,6 +69,7 @@ export const TEAM_ACTIVE_TOOLS = [
 	"team",
 	"memory",
 	"message",
+	"subagent",
 ];
 
 export function activeToolsFor(agentMode: AgentMode): string[] {
@@ -118,13 +119,14 @@ export function appendSystemPromptFor(
 ): string[] | undefined {
 	const injectAgentList = (prompts: string[]): string[] => {
 		if (!cwd) return prompts;
-		if (agentMode !== "standard" && agentMode !== "orchestrator") return prompts;
+		if (agentMode !== "standard" && agentMode !== "orchestrator" && agentMode !== "team")
+			return prompts;
 		const { agents } = discoverAgents(cwd);
 		const agentList = buildAvailableAgentsPrompt(agents);
 		return agentList ? [...prompts, agentList] : prompts;
 	};
 
-	if (agentMode === "team") return [TEAM_ORCHESTRATOR_PROMPT];
+	if (agentMode === "team") return injectAgentList([TEAM_ORCHESTRATOR_PROMPT]);
 	if (agentMode === "orchestrator") {
 		const prompts = [ORCHESTRATOR_SYSTEM_PROMPT];
 		if (config?.teams?.enabled !== false) prompts.push(TEAM_ORCHESTRATOR_PROMPT);
@@ -349,15 +351,14 @@ export async function createRuntime(options: RuntimeOptions): Promise<RuntimeRes
 		];
 		if (isTeamMode) {
 			customTools.push(createTeamGuardedBashTool(fCwd), createTeamGuardedWriteTool(fCwd));
-		} else {
-			customTools.push(
-				createSubagentTool({
-					cwd: fCwd,
-					services: svc,
-					parentModel: svc.model,
-				}),
-			);
 		}
+		customTools.push(
+			createSubagentTool({
+				cwd: fCwd,
+				services: svc,
+				parentModel: svc.model,
+			}),
+		);
 		customTools.push(...teamTools);
 		const mcpToolDefs = svc.mcpManager.getToolDefinitions();
 		const result = await createAgentSession({
