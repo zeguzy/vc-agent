@@ -172,50 +172,53 @@ TBD - created by archiving change add-teams-mode. Update Purpose after archive.
 
 ### Requirement: Team member L1 身份层行为契约
 
-系统 SHALL 在 `src/teams/context.ts` 的 `buildIdentityLayer` 函数中，将 team member 的 L1 身份层从单段字符串升级为七个结构化分区，按以下顺序拼装：
+系统 SHALL 在 `src/teams/context.ts` 中通过 `buildContractLayer`（Layer A 身份契约）与 `buildToolContractLayer`（Layer B 工具契约）函数，将 team member 的身份层组织为结构化分区。`buildContractLayer` 的 opts 为 `{ name, role, goal, constraints? }`，`buildToolContractLayer` 的 opts 为 `{ tools, skills?, mcps? }`。分区按以下顺序拼装：
 
-1. **Identity** — `You are {name}, a {role} on this team. Your goal: {goal}.` 若 leader 提供了 constraints，SHALL 在 Identity 段末尾追加一行指引"你的行为约束见下方 Anti-Patterns 段"（不重复 constraints 内容）。
-2. **Capabilities** — 列出 member 可用工具（`read` / `bash` / `grep` / `find` / `memory`）及使用原则，MUST 包含"验证优先于声称（reading is not verification）"原则。
-3. **Work Discipline** — 描述工作流程：接 task → 理解 scope → 执行 → 验证 → 报告，MUST 强调执行前先读 task description、执行后必须验证。
-4. **Anti-Patterns** — MUST 包含通用兜底约束（至少覆盖：scope creep / 不验证就报告 / 重复 leader 已做的事 / 擅自改 team 文件 四类）。**constraints 文本 SHALL 只注入此分区一次**（不重复出现在 Identity）。若 leader 通过 `constraints` 参数提供了 role-specific 约束，SHALL 在通用约束后追加定制约束。
-5. **Escalation** — MUST 定义四种状态码（`DONE` / `DONE_WITH_CONCERNS` / `BLOCKED` / `NEEDS_CONTEXT`）及各自的触发条件。
-6. **Output Protocol** — MUST 要求完成时返回结构化报告：Status（四种状态码之一）+ Summary（简洁摘要）+ Key files（触及的文件路径）+ Evidence（验证证据，如运行的命令及结果）。
+1. **Identity**（`buildContractLayer` 内部，由 `buildMemberIdentitySection` 生成）— `You are {name}, a {role} on this team. Your goal: {goal}.` 若 leader 提供了 constraints，SHALL 在 Identity 段末尾追加一行指引"你的行为约束见下方 Anti-Patterns 段"（不重复 constraints 内容）。
+2. **Capabilities**（`buildToolContractLayer` 中 "Your Tools" 段）— 列出 member 可用工具（`read` / `bash` / `grep` / `find` / `memory`）。"验证优先于声称（reading is not verification）"原则 SHALL 出现在 Anti-Patterns 段（由 `buildMemberAntiPatternsSection` 输出）。
+3. **Work Discipline**（`buildToolContractLayer` 中 `MEMBER_WORK_DISCIPLINE_SECTION`）— 描述工作流程：接 task → 理解 scope → 执行 → 验证 → 报告，MUST 强调执行前先读 task description、执行后必须验证。
+4. **Anti-Patterns**（`buildContractLayer` 内部，由 `buildMemberAntiPatternsSection(customConstraints?)` 生成）— MUST 包含通用兜底约束（至少覆盖：scope creep / 不验证就报告 / 重复 leader 已做的事 / 擅自改 team 文件 四类）。**constraints 文本 SHALL 只注入此分区一次**（不重复出现在 Identity）。若 leader 通过 `constraints` 参数提供了 role-specific 约束，SHALL 在通用约束后追加定制约束。
+5. **Escalation**（`buildContractLayer` 中 `MEMBER_ESCALATION_SECTION`）— MUST 定义四种状态码（`DONE` / `DONE_WITH_CONCERNS` / `BLOCKED` / `NEEDS_CONTEXT`）及各自的触发条件。
+6. **Output Protocol**（`buildContractLayer` 中 `MEMBER_OUTPUT_PROTOCOL_SECTION`）— MUST 要求完成时返回结构化报告：Status（四种状态码之一）+ Summary（简洁摘要）+ Key files（触及的文件路径）+ Evidence（验证证据，如运行的命令及结果）。
 7. **Memory Discipline** — MUST 指导 member 何时使用 `memory(action="write")`（学到新模式 / 踩过的坑 / 用户偏好）。
 
-`buildIdentityLayer` SHALL 移除 `agentSystemPrompt` 形参（dead parameter，无调用方传入）。每个分区 SHALL 作为独立 string export 常量定义（Anti-Patterns 为函数，因接受 customConstraints），便于单元测试和未来维护。
+`buildContractLayer` 的签名为 `{ name: MemberName, role: string, goal: string, constraints?: string }`（无 `agentSystemPrompt` 形参）。`buildToolContractLayer` 的签名为 `{ tools: string[], skills?: string[], mcps?: string[] }`。各分区 SHALL 作为独立 string export 常量定义（`MEMBER_ESCALATION_SECTION`、`MEMBER_OUTPUT_PROTOCOL_SECTION`、`MEMBER_WORK_DISCIPLINE_SECTION`），Anti-Patterns 为 export 函数 `buildMemberAntiPatternsSection`（因接受 customConstraints），便于单元测试和未来维护。
 
 #### Scenario: L1 包含全部七个分区
 
-- **WHEN** 调用 `buildIdentityLayer({ name: "alice", role: "reviewer", goal: "审查代码" })` 且未提供 constraints
+- **WHEN** 调用 `buildContractLayer({ name: "alice", role: "reviewer", goal: "审查代码" })` 且未提供 constraints
 - **THEN** 返回的字符串 SHALL 包含全部七个分区标题或关键词（Identity / Capabilities / Work Discipline / Anti-Patterns / Escalation / Output Protocol / Memory Discipline）
 - **AND** Anti-Patterns 段 SHALL 包含通用兜底约束（含 scope creep / 不验证就报告 / 重复 leader 工作 / 擅自改 team 文件）
 - **AND** 字符串 SHALL NOT 包含 `agentSystemPrompt` 相关内容（该 dead parameter 已移除）
 
 #### Scenario: leader 提供 constraints 时只拼入 Anti-Patterns 段
 
-- **WHEN** 调用 `buildIdentityLayer({ name: "bob", role: "implementer", goal: "...", constraints: "不许跳过测试；每个改动必须跑 bun test" })`
+- **WHEN** 调用 `buildContractLayer({ name: "bob", role: "implementer", goal: "...", constraints: "不许跳过测试；每个改动必须跑 bun test" })`
 - **THEN** Anti-Patterns 段 SHALL 在通用兜底约束之后追加 leader 提供的 constraints 文本
 - **AND** Identity 段 SHALL 仅追加一行"行为约束见下方 Anti-Patterns 段"指引（不重复 constraints 文本）
 - **AND** constraints 文本 SHALL 在整个 L1 中只出现一次（仅在 Anti-Patterns 段）
 - **AND** 其他六个分区内容与未提供 constraints 时一致
 
-#### Scenario: buildMemberSystemPrompt 返回 L1+L2+L3 三元素数组
+#### Scenario: buildMemberSystemPrompt 返回 [A, B, C, D, E] 五元素数组
 
-- **WHEN** 调用 `buildMemberSystemPrompt({ role, goal, name, constraints, memberIndex, teamMd, selfName })`
-- **THEN** 返回值 SHALL 为三元素 string 数组：`[L1, L2, L3]`
-- **AND** L1（首元素）SHALL 为 `buildIdentityLayer` 的输出（含七分区）
-- **AND** L2/L3 与当前实现一致（buildMemoryIndexLayer / buildTeamSummaryLayer 输出不变）
+- **WHEN** 调用 `buildMemberSystemPrompt({ role, goal, name, constraints, memberIndex, teamMd, selfName, assignedTools?, assignedSkills?, assignedMcps? })`
+- **THEN** 返回值 SHALL 为五元素 string 数组：`[A, B, C, D, E]`
+- **AND** A（首元素）SHALL 为 `buildContractLayer` 的输出（含 Identity / Anti-Patterns / Escalation / Output Protocol 分区）
+- **AND** B SHALL 为 `buildToolContractLayer` 的输出（含 Your Tools / Work Discipline）
+- **AND** C SHALL 为 `buildTeamStaticLayer` 的输出
+- **AND** D SHALL 为 `buildRuntimeLayer` 的输出
+- **AND** E SHALL 为 `buildIndexLayer` 的输出
 
 #### Scenario: 不传 constraints 时退化通用兜底
 
 - **WHEN** `createMember` 调用时未提供 `constraints` 参数（或提供空字符串）
-- **THEN** `buildIdentityLayer` SHALL 仅使用通用兜底 Anti-Patterns，不追加定制约束
+- **THEN** `buildContractLayer`（经 `buildMemberAntiPatternsSection`）SHALL 仅使用通用兜底 Anti-Patterns，不追加定制约束
 - **AND** Identity 段 SHALL NOT 包含"行为约束见下方"指引（因无定制约束）
 - **AND** 行为 SHALL 与本 change 引入前的调用方完全兼容（现有 team 工具不传 constraints 时仍正常工作）
 
 ### Requirement: createMember 接口接受可选 constraints 参数
 
-`TeamManager.createMember`（含接口 `TeamManagerLike.createMember`）的 opts 参数 SHALL 新增可选字段 `constraints?: string`。该字段 SHALL 透传给 `buildMemberSystemPrompt` → `buildIdentityLayer`，用于在 Anti-Patterns 分区注入 role-specific 行为约束。
+`TeamManager.createMember`（含接口 `TeamManagerLike.createMember`）的 opts 参数 SHALL 新增可选字段 `constraints?: string`。该字段 SHALL 透传给 `buildMemberSystemPrompt` → `buildContractLayer`，用于在 Anti-Patterns 分区注入 role-specific 行为约束。
 
 `MemberIndexStructure` SHALL 在顶层（不放 profile）新增可选字段 `constraints?: string` 用于持久化。`MemberState` SHALL NOT 持有 constraints（constraints 是创建时数据，runtime 通过 member index 访问）。
 
