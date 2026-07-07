@@ -25,6 +25,12 @@
 
 系统 SHALL 通过 `action` 枚举参数支持 14 种操作：`diagnostics`、`definition`、`type_definition`、`implementation`、`references`、`hover`、`document_symbols`、`workspace_symbols`、`code_actions`、`rename`、`prepare_rename`、`status`、`reload`、`request`。
 
+#### Scenario: action 枚举值分发
+- **WHEN** Agent 调用 lsp 工具并传入 `action` 参数
+- **THEN** `action` SHALL 为上述 14 种枚举值之一
+- **AND** 系统 SHALL 根据 `action` 值分发到对应的 LSP 操作处理器（其余 requirement 定义各 action 的具体行为）
+- **AND** 若 `action` 不在枚举内，SHALL 返回错误结果
+
 ### Requirement: symbol 列号解析
 
 系统 SHALL 支持 `symbol` 参数作为 `character` 的替代方案。当提供 `symbol` 时，系统 SHALL 读取文件对应行，查找 symbol 文本的首次出现位置作为 character 列号。当 `character` 和 `symbol` 同时提供时，SHALL 优先使用 `character`。
