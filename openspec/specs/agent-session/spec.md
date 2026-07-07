@@ -344,7 +344,7 @@
 #### Scenario: git-dirty 异步获取不阻塞事件循环
 
 - **WHEN** App.tsx `useEffect` 注册 `pollManager.register("git-dirty", () => getGitDirty(cwd), 3000)`
-- **THEN** `getGitDirty` SHALL 使用 `Bun.spawn`（非阻塞）替代 `execSync`（阻塞）
+- **THEN** `getGitDirty` SHALL 使用 `execFile`+`promisify`（非阻塞）替代 `execSync`（阻塞）
 - **AND** 首次 `run()` SHALL 立即返回（不等待 git 进程），事件循环保持响应
 - **AND** git 进程完成后 SHALL 通过 subscriber 回调更新状态栏
 - **AND** `getGitBranch`（读 `.git/HEAD`）SHALL 保持同步（<1ms，无需异步化）
@@ -356,4 +356,19 @@
 - **AND** `loadHistory` SHALL 在 `useEffect` 中异步执行，完成后 `setHistory` 触发重渲染
 - **AND** 首帧渲染 SHALL 不等待历史文件读取
 - **AND** 历史加载完成前用户按上键调历史 SHALL 无操作（不崩溃），加载完后自动可用
+
+### Requirement: question 工具注册
+系统 SHALL 在创建 Agent 会话时，将 `createQuestionTool(bridge)` 注册到 `customTools` 数组中，与 LSP 工具和 todo 工具并列。bridge 对象 SHALL 通过 `createRuntime` 的参数传入，传递到 runtime factory 内部。
+
+#### Scenario: createRuntime 接收 bridge
+- **WHEN** 调用 `createRuntime({cwd, model, config, mode, agentMode, sessionRef, name, bridge})`
+- **THEN** runtime factory SHALL 调用 `createQuestionTool(bridge)` 并将返回的 ToolDefinition 加入 `customTools` 数组
+
+#### Scenario: createSession（legacy）接收 bridge
+- **WHEN** 调用 `createSession({...bridge})`（in-memory 模式）
+- **THEN** SHALL 同样注册 `createQuestionTool(bridge)` 到 customTools
+
+#### Scenario: bridge 未传入时降级
+- **WHEN** bridge 参数为 undefined（如 headless/HTTP 模式）
+- **THEN** `createQuestionTool(undefined)` SHALL 返回一个工具定义，其 execute() 检测到 bridge 不可用时立即返回错误结果，不阻塞
 
