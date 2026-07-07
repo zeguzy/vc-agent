@@ -1,18 +1,19 @@
 type Subscriber<T> = (value: T) => void;
 
 interface PollTask<T> {
-	fetch: () => T;
+	fetch: () => T | Promise<T>;
 	intervalMs: number;
 	timer: ReturnType<typeof setInterval> | null;
 	lastValue: T | undefined;
 	subscribers: Set<Subscriber<T>>;
+	running: boolean;
 }
 
 export class PollManager {
 	private tasks = new Map<string, PollTask<unknown>>();
 	private pendingSubscribers = new Map<string, Set<Subscriber<unknown>>>();
 
-	register<T>(key: string, fetch: () => T, intervalMs: number): void {
+	register<T>(key: string, fetch: () => T | Promise<T>, intervalMs: number): void {
 		const pending = this.pendingSubscribers.get(key);
 		this.unregister(key);
 
@@ -22,6 +23,7 @@ export class PollManager {
 			timer: null,
 			lastValue: undefined,
 			subscribers: new Set(),
+			running: false,
 		};
 
 		if (pending) {
@@ -31,22 +33,38 @@ export class PollManager {
 			this.pendingSubscribers.delete(key);
 		}
 
-		const run = () => {
-			try {
-				const value = fetch();
+		const doFetch = () => {
+			if (task.running) return;
+			task.running = true;
+			const onDone = (value: T) => {
+				task.running = false;
 				if (value !== task.lastValue) {
 					task.lastValue = value;
 					for (const fn of task.subscribers) {
 						fn(value);
 					}
 				}
+			};
+			try {
+				const result = fetch();
+				if (result instanceof Promise) {
+					result.then(
+						(value: T) => onDone(value),
+						() => {
+							task.running = false;
+						},
+					);
+				} else {
+					onDone(result);
+				}
 			} catch {
 				// keep lastValue unchanged on error
+				task.running = false;
 			}
 		};
 
-		run();
-		task.timer = setInterval(run, intervalMs);
+		doFetch();
+		task.timer = setInterval(doFetch, intervalMs);
 		this.tasks.set(key, task as PollTask<unknown>);
 	}
 

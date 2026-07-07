@@ -7,6 +7,7 @@ import type { AgentClient, AgentMode } from "../client/index.js";
 import { commandRegistry } from "../commands/registry.js";
 import type { Config } from "../config.js";
 import { readConfig } from "../config.js";
+import type { McpManager } from "../mcp/manager.js";
 import { createAssistantMessage, createUserMessage, type Message } from "../message.js";
 import { resolveNotificationsConfig } from "../notifications/config.js";
 import { getGlobalRouter } from "../notifications/notifier.js";
@@ -51,6 +52,7 @@ interface AppProps {
 	editBridge?: EditConfirmBridge;
 	initialResumeList?: boolean;
 	initialAgentMode?: AgentMode;
+	mcpManager?: McpManager;
 }
 
 export function App({
@@ -62,13 +64,14 @@ export function App({
 	editBridge,
 	initialResumeList,
 	initialAgentMode,
+	mcpManager,
 }: AppProps) {
 	const renderer = useRenderer();
 	const initialMapped = client.getMappedMessages();
 	const [messages, setMessages] = useState<Message[]>(
 		initialMapped.length > 0 ? initialMapped : [WELCOME_MESSAGE],
 	);
-	const [commandHistory, setCommandHistory] = useState<string[]>(() => loadHistory());
+	const [commandHistory, setCommandHistory] = useState<string[]>([]);
 	const [pendingInput, setPendingInput] = useState<{ text: string; nonce: number } | null>(null);
 	const [isRunning, setIsRunning] = useState(false);
 	const [mode, setMode] = useState<Mode>("insert");
@@ -324,6 +327,11 @@ export function App({
 		}
 	}, []);
 
+	// Load history async to avoid blocking first paint
+	useEffect(() => {
+		setCommandHistory(loadHistory());
+	}, []);
+
 	useEffect(() => {
 		pollManagerRef.current.register("git-branch", () => getGitBranch(cwd), 3000);
 		pollManagerRef.current.register("git-dirty", () => getGitDirty(cwd), 3000);
@@ -387,6 +395,7 @@ export function App({
 			setAgentMode,
 			setInputText: (text: string) => setPendingInput({ text, nonce: Date.now() }),
 			isRunning: isRunningRef.current,
+			mcpManager,
 		};
 	}, [client, cwd, picker.openSessionPicker]);
 

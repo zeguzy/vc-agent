@@ -1,6 +1,6 @@
 import type { ToolDefinition } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
-import type { McpServerConnection } from "./types.js";
+import type { ConnectionStatus, McpServerConnection } from "./types.js";
 
 interface McpToolResult {
 	content: Array<{ type: "text"; text: string }>;
@@ -59,22 +59,25 @@ export function createMcpToolDefinition(
 
 interface ToolCatalogEntry {
 	serverName: string;
+	status: ConnectionStatus;
 	tools: Array<{ name: string; description?: string }>;
 }
 
 function buildToolCatalog(connections: McpServerConnection[]): ToolCatalogEntry[] {
 	return connections.map((conn) => ({
 		serverName: conn.name,
+		status: conn.status,
 		tools: conn.tools.map((t) => ({ name: t.name, description: t.description })),
 	}));
 }
 
 function formatToolDescription(catalog: ToolCatalogEntry[]): string {
 	const serverLines = catalog.map((s) => {
+		const staleTag = s.status !== "connected" ? " (stale, refreshing)" : "";
 		const toolLines = s.tools
 			.map((t) => `  - ${t.name}${t.description ? `: ${t.description}` : ""}`)
 			.join("\n");
-		return `${s.serverName}:\n${toolLines}`;
+		return `${s.serverName}${staleTag}:\n${toolLines}`;
 	});
 	return [
 		"Call a tool on a connected MCP server.",

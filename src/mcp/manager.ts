@@ -4,6 +4,13 @@ import { SSEClientTransport } from "@modelcontextprotocol/sdk/client/sse.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import { convertMcpResultToAgentResult, createMcpToolDefinition } from "./bridge.js";
+import {
+	type CacheData,
+	computeConfigHash,
+	readCache,
+	resolveCachePath,
+	writeCache,
+} from "./cache.js";
 import { readMcpConfig } from "./config.js";
 import type {
 	McpLocalServerConfig,
@@ -18,11 +25,15 @@ interface McpToolResult {
 }
 
 const CONNECT_TIMEOUT_MS = 5_000;
+const EXECUTE_WAIT_TIMEOUT_MS = 10_000;
 
 export class McpManager {
 	private connections: McpServerConnection[] = [];
 	private _toolDefinition: ToolDefinition | null = null;
 	private _disposed = false;
+	private _refreshTask: Promise<void> | null = null;
+	private _cacheData: CacheData | null = null;
+	private _configHash: string | null = null;
 
 	async initialize(cwd: string): Promise<void> {
 		const config = readMcpConfig(cwd);
@@ -32,6 +43,211 @@ export class McpManager {
 			return;
 		}
 
+		const configHash = computeConfigHash(config);
+		this._configHash = configHash;
+		const cached = readCache();
+
+		if (cached && cached.configHash === configHash) {
+			this.applyCacheHit(cached, entries);
+			return;
+		}
+
+		await this.fullConnect(entries, configHash);
+	}
+
+	getToolDefinitions(): ToolDefinition[] {
+		return this._toolDefinition ? [this._toolDefinition] : [];
+	}
+
+	getAuthorizedToolDefinition(serverNames: string[]): ToolDefinition | null {
+		const allowed = this.connections.filter((c) => serverNames.includes(c.name));
+		if (allowed.length === 0) return null;
+		return createMcpToolDefinition(allowed, this.executeTool.bind(this));
+	}
+
+	listServerNames(): string[] {
+		return this.connections.map((c) => c.name);
+	}
+
+	getConnectionStatus(): Array<{
+		name: string;
+		status: string;
+		toolCount: number;
+		error?: string;
+	}> {
+		return this.connections.map((c) => ({
+			name: c.name,
+			status: c.status,
+			toolCount: c.tools.length,
+			error: c.error,
+		}));
+	}
+
+	getCacheInfo(): { hash: string | null; path: string; updatedAt: string | null } {
+		return {
+			hash: this._configHash,
+			path: resolveCachePath(),
+			updatedAt: this._cacheData?.updatedAt ?? null,
+		};
+	}
+
+	async refreshTools(serverName?: string): Promise<{ success: number; failed: number }> {
+		if (serverName) {
+			const conn = this.connections.find((c) => c.name === serverName);
+			if (!conn) {
+				throw new Error(
+					`MCP server "${serverName}" not found. Available: ${this.listServerNames().join(", ")}`,
+				);
+			}
+			try {
+				await this.refreshServer(conn);
+				return { success: 1, failed: 0 };
+			} catch {
+				return { success: 0, failed: 1 };
+			}
+		}
+
+		if (this._refreshTask) {
+			await this._refreshTask;
+		}
+
+		return this.refreshAll();
+	}
+
+	async executeTool(
+		serverName: string,
+		toolName: string,
+		args: Record<string, unknown>,
+	): Promise<McpToolResult> {
+		const conn = this.connections.find((c) => c.name === serverName);
+		if (!conn) {
+			return {
+				content: [{ type: "text", text: `MCP server "${serverName}" is not connected` }],
+				details: {},
+			};
+		}
+
+		if (conn.status !== "connected") {
+			if (conn.connectionPromise) {
+				try {
+					await Promise.race([conn.connectionPromise, timeout(EXECUTE_WAIT_TIMEOUT_MS)]);
+				} catch {
+					return {
+						content: [
+							{
+								type: "text",
+								text: `MCP server "${serverName}" connection timed out. Run /mcp refresh ${serverName}`,
+							},
+						],
+						details: {},
+					};
+				}
+			}
+		}
+
+		if (conn.status !== "connected" || !conn.client) {
+			return {
+				content: [
+					{
+						type: "text",
+						text: `MCP server "${serverName}" is not connected (status: ${conn.status}). Run /mcp refresh ${serverName}`,
+					},
+				],
+				details: {},
+			};
+		}
+
+		const toolExists = conn.tools.some((t) => t.name === toolName);
+		if (!toolExists) {
+			return {
+				content: [
+					{
+						type: "text",
+						text: `MCP tool "${toolName}" not found on server "${serverName}". Run /mcp refresh ${serverName}`,
+					},
+				],
+				details: {},
+			};
+		}
+
+		const client = conn.client;
+		if (!client) {
+			return {
+				content: [
+					{
+						type: "text",
+						text: `MCP server "${serverName}" has no client. Run /mcp refresh ${serverName}`,
+					},
+				],
+				details: {},
+			};
+		}
+
+		try {
+			const result = await client.callTool({ name: toolName, arguments: args });
+			return convertMcpResultToAgentResult(
+				result as Parameters<typeof convertMcpResultToAgentResult>[0],
+			);
+		} catch (err) {
+			const msg = err instanceof Error ? err.message : String(err);
+			return {
+				content: [{ type: "text", text: `MCP tool error (${serverName}_${toolName}): ${msg}` }],
+				details: {},
+			};
+		}
+	}
+
+	async dispose(): Promise<void> {
+		if (this._disposed) return;
+		this._disposed = true;
+
+		for (const conn of this.connections) {
+			try {
+				if (conn.transport) {
+					await conn.transport.close();
+				}
+			} catch {
+				// Best-effort cleanup
+			}
+		}
+		this.connections = [];
+		this._toolDefinition = null;
+	}
+
+	private applyCacheHit(cached: CacheData, entries: [string, McpServerConfig][]): void {
+		this._cacheData = cached;
+
+		const entryMap = new Map(entries);
+		for (const server of cached.servers) {
+			if (!entryMap.has(server.name)) continue;
+			this.connections.push({
+				name: server.name,
+				client: null,
+				transport: null,
+				tools: server.tools as import("@modelcontextprotocol/sdk/types.js").Tool[],
+				status: "cached",
+			});
+		}
+
+		if (this.connections.length > 0) {
+			this._toolDefinition = createMcpToolDefinition(this.connections, this.executeTool.bind(this));
+			const totalTools = this.connections.reduce((sum, c) => sum + c.tools.length, 0);
+			console.error(
+				`[mcp] Cache hit (${cached.configHash.slice(0, 8)}): ${this.connections.length} servers, ${totalTools} tools — refreshing in background`,
+			);
+		}
+
+		this._refreshTask = this.refreshAll()
+			.then(() => {})
+			.catch((err) => {
+				console.error("[mcp] Background refresh failed:", err);
+			});
+	}
+
+	private async fullConnect(
+		entries: [string, McpServerConfig][],
+		configHash: string,
+	): Promise<void> {
 		const results = await Promise.allSettled(
 			entries.map(async ([name, serverConfig]) => {
 				return this.connectServer(name, serverConfig);
@@ -54,6 +270,8 @@ export class McpManager {
 				.map((c) => `${c.name}(${c.tools.length} tools)`)
 				.join(", ");
 			console.error(`[mcp] Connected: ${serverList} — ${totalTools} tools total`);
+
+			this.persistCache(configHash);
 		}
 		const failedCount = results.filter((r) => r.status === "rejected").length;
 		if (failedCount > 0) {
@@ -61,60 +279,104 @@ export class McpManager {
 		}
 	}
 
-	getToolDefinitions(): ToolDefinition[] {
-		return this._toolDefinition ? [this._toolDefinition] : [];
-	}
+	private async refreshAll(): Promise<{ success: number; failed: number }> {
+		let success = 0;
+		let failed = 0;
 
-	getAuthorizedToolDefinition(serverNames: string[]): ToolDefinition | null {
-		const allowed = this.connections.filter((c) => serverNames.includes(c.name));
-		if (allowed.length === 0) return null;
-		return createMcpToolDefinition(allowed, this.executeTool.bind(this));
-	}
-
-	listServerNames(): string[] {
-		return this.connections.map((c) => c.name);
-	}
-
-	async executeTool(
-		serverName: string,
-		toolName: string,
-		args: Record<string, unknown>,
-	): Promise<McpToolResult> {
-		const conn = this.connections.find((c) => c.name === serverName);
-		if (!conn) {
-			return {
-				content: [{ type: "text", text: `MCP server "${serverName}" is not connected` }],
-				details: {},
-			};
-		}
-
-		try {
-			const result = await conn.client.callTool({ name: toolName, arguments: args });
-			return convertMcpResultToAgentResult(
-				result as Parameters<typeof convertMcpResultToAgentResult>[0],
-			);
-		} catch (err) {
-			const msg = err instanceof Error ? err.message : String(err);
-			return {
-				content: [{ type: "text", text: `MCP tool error (${serverName}_${toolName}): ${msg}` }],
-				details: {},
-			};
-		}
-	}
-
-	async dispose(): Promise<void> {
-		if (this._disposed) return;
-		this._disposed = true;
-
-		for (const conn of this.connections) {
+		const promises = this.connections.map(async (conn) => {
+			if (this._disposed) return;
 			try {
-				await conn.transport.close();
+				await this.refreshServer(conn);
+				success++;
 			} catch {
-				// Best-effort cleanup
+				failed++;
+			}
+		});
+
+		await Promise.all(promises);
+		return { success, failed };
+	}
+
+	private async refreshServer(conn: McpServerConnection): Promise<void> {
+		if (conn.status === "connecting") {
+			if (conn.connectionPromise) {
+				await conn.connectionPromise;
+			}
+			return;
+		}
+
+		if (conn.status === "connected") {
+			if (conn.transport) {
+				await conn.transport.close();
 			}
 		}
-		this.connections = [];
-		this._toolDefinition = null;
+
+		const config = readMcpConfig(process.cwd());
+		const serverConfig = config[conn.name];
+		if (!serverConfig) {
+			throw new Error(`No config for MCP server "${conn.name}"`);
+		}
+
+		let resolve!: () => void;
+		let reject!: (err: unknown) => void;
+		const promise = new Promise<void>((res, rej) => {
+			resolve = res;
+			reject = rej;
+		});
+
+		conn.status = "connecting";
+		conn.connectionPromise = promise;
+		conn.error = undefined;
+
+		try {
+			const result = await this.connectServer(conn.name, serverConfig);
+
+			conn.client = result.client;
+			conn.transport = result.transport;
+			conn.tools = result.tools;
+			conn.status = "connected";
+
+			this.rebuildToolDefinition();
+			this.persistCache(this._configHash ?? computeConfigHash(config));
+
+			resolve();
+		} catch (err) {
+			conn.status = "failed";
+			conn.error = err instanceof Error ? err.message : String(err);
+			conn.client = null;
+			conn.transport = null;
+
+			reject(err);
+		}
+	}
+
+	private rebuildToolDefinition(): void {
+		if (this._disposed) return;
+		if (this.connections.length > 0) {
+			this._toolDefinition = createMcpToolDefinition(this.connections, this.executeTool.bind(this));
+		}
+	}
+
+	private persistCache(configHash: string): void {
+		const connectedServers = this.connections.filter(
+			(c) => c.status === "connected" || c.status === "cached",
+		);
+		if (connectedServers.length === 0) return;
+
+		const data: CacheData = {
+			configHash,
+			updatedAt: new Date().toISOString(),
+			servers: connectedServers.map((c) => ({
+				name: c.name,
+				tools: c.tools.map((t) => ({
+					name: t.name,
+					description: t.description ?? "",
+					inputSchema: (t.inputSchema ?? {}) as object,
+				})),
+			})),
+		};
+		this._cacheData = data;
+		writeCache(data);
 	}
 
 	private async connectServer(name: string, config: McpServerConfig): Promise<McpServerConnection> {
@@ -131,7 +393,6 @@ export class McpManager {
 		const url = new URL(config.url);
 		const requestInit: RequestInit = config.headers ? { headers: config.headers } : {};
 
-		// Try StreamableHTTP first, then fallback to SSE for older servers
 		try {
 			return await this.connectWithTransport(
 				name,
@@ -139,8 +400,6 @@ export class McpManager {
 			);
 		} catch (httpErr) {
 			console.error(`[mcp] StreamableHTTP failed for "${name}", trying SSE fallback...`);
-			// EventSourceInit doesn't have a headers field;
-			// inject headers via a custom fetch wrapper instead.
 			const sseOpts: import("@modelcontextprotocol/sdk/client/sse.js").SSEClientTransportOptions =
 				{};
 			if (config.headers) {
@@ -198,6 +457,12 @@ export class McpManager {
 
 		const { tools } = await client.listTools();
 
-		return { name, client, transport, tools };
+		return { name, client, transport, tools, status: "connected" };
 	}
+}
+
+function timeout(ms: number): Promise<never> {
+	return new Promise((_, reject) =>
+		setTimeout(() => reject(new Error(`Timeout after ${ms}ms`)), ms),
+	);
 }
