@@ -397,7 +397,7 @@ export function App({
 			isRunning: isRunningRef.current,
 			mcpManager,
 		};
-	}, [client, cwd, picker.openSessionPicker]);
+	}, [client, cwd, picker.openSessionPicker, mcpManager]);
 
 	useEffect(() => {
 		if (!initialResumeList || resumeListDoneRef.current) return;
