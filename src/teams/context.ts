@@ -34,18 +34,62 @@ function buildMemberIdentitySection(
 	return lines.join("\n");
 }
 
-export const MEMBER_CAPABILITIES_SECTION = [
-	"## Your Capabilities",
-	"",
-	"You have these tools: `read`, `bash`, `grep`, `find`, `memory`.",
-	"",
-	"- Use `read` to understand code before changing it.",
-	"- Use `bash` to run commands — including tests, type checks, and builds.",
-	"- Use `grep` and `find` to locate code, not `read` for browsing.",
-	"- Use `memory` to read what you've learned before and record new insights.",
-	"",
-	'**Reading is not verification.** Looking at code and thinking "this looks right" is not the same as running it. Verify by executing: run the test, run the build, reproduce the bug. Claims without evidence are speculation.',
-].join("\n");
+export function buildMemberCapabilitiesSection(opts: {
+	tools: string[];
+	skills?: string[];
+	mcps?: string[];
+}): string {
+	const { tools, skills, mcps } = opts;
+	const lines: string[] = [];
+	lines.push("## Your Capabilities");
+	lines.push("");
+	lines.push(`You have these tools: ${tools.map((t) => `\`${t}\``).join(", ")}.`);
+	lines.push("");
+	const bullets: string[] = [];
+	if (tools.includes("read")) bullets.push("- Use `read` to understand code before changing it.");
+	if (tools.includes("bash"))
+		bullets.push("- Use `bash` to run commands — including tests, type checks, and builds.");
+	if (tools.includes("grep") || tools.includes("find"))
+		bullets.push("- Use `grep` and `find` to locate code, not `read` for browsing.");
+	if (tools.includes("edit"))
+		bullets.push(
+			"- Use `edit` for targeted changes. Read the file first to anchor the oldString precisely.",
+		);
+	if (tools.includes("write"))
+		bullets.push("- Use `write` to create new files; prefer `edit` for changes to existing ones.");
+	if (tools.includes("memory"))
+		bullets.push("- Use `memory` to read what you've learned before and record new insights.");
+	if (tools.includes("message"))
+		bullets.push(
+			"- Use `message` to talk to your teammates directly (send / broadcast / read inbox).",
+		);
+	if (tools.includes("todo"))
+		bullets.push(
+			"- Use `todo` to track multi-step work. Mark items complete the moment each finishes.",
+		);
+	if (tools.includes("webfetch"))
+		bullets.push("- Use `webfetch` to fetch external URLs when research requires it.");
+	if (tools.includes("lsp_diagnostics") || tools.includes("lsp"))
+		bullets.push("- Use `lsp_*` tools to inspect types, definitions, and references precisely.");
+	if (tools.includes("mcp") && mcps && mcps.length > 0)
+		bullets.push(
+			`- Use \`mcp\` to call external tools via the MCP servers you've been granted: ${mcps.map((m) => `\`${m}\``).join(", ")}.`,
+		);
+	if (bullets.length > 0) {
+		lines.push(...bullets);
+		lines.push("");
+	}
+	lines.push(
+		'**Reading is not verification.** Looking at code and thinking "this looks right" is not the same as running it. Verify by executing: run the test, run the build, reproduce the bug. Claims without evidence are speculation.',
+	);
+	if (skills && skills.length > 0) {
+		lines.push("");
+		lines.push(
+			`You've been assigned these skills: ${skills.map((s) => `\`${s}\``).join(", ")}. Invoke them with \`/skill-name\` when relevant.`,
+		);
+	}
+	return lines.join("\n");
+}
 
 export const MEMBER_WORK_DISCIPLINE_SECTION = [
 	"## How You Work",
@@ -130,6 +174,24 @@ export const MEMBER_MEMORY_DISCIPLINE_SECTION = [
 	"Read your memory index at the start of each task — you may have already learned something relevant.",
 ].join("\n");
 
+export const MEMBER_COMMUNICATION_SECTION = [
+	"## When to Message a Teammate",
+	"",
+	'Use `message(action="send", to="...", content="...")` for quick peer coordination:',
+	"",
+	'- **Ask a direct question**: "@alice what auth library are you using?"',
+	"- **Flag a conflict**: \"I'm editing utils.ts, hold off until I'm done.\"",
+	'- **Share a finding**: "The bug is in the parser, not the lexer — heads up."',
+	"",
+	'Use `message(action="broadcast")` only for things everyone needs to know. It\'s rate-limited to 1/minute.',
+	"",
+	'Use `message(action="read")` to check your inbox when you start a task and after you finish one — a teammate may have asked you something.',
+	"",
+	"**Don't** spam messages: you're capped at 5/minute per recipient pair. If a conversation needs more than 2 exchanges, escalate to the leader instead.",
+	"",
+	"For deep context (architecture, conventions, history), write shared memory instead of a message — messages are ephemeral, memory is persistent.",
+].join("\n");
+
 /**
  * Build L1 (Identity layer) — the seven-section behavioral contract.
  * Removes the legacy `agentSystemPrompt` dead parameter.
@@ -139,16 +201,24 @@ export function buildIdentityLayer(opts: {
 	role: string;
 	goal: string;
 	constraints?: string;
+	assignedTools?: string[];
+	assignedSkills?: string[];
+	assignedMcps?: string[];
 }): string {
 	const hasConstraints = Boolean(opts.constraints?.trim());
 	const sections: string[] = [
 		buildMemberIdentitySection(opts.name, opts.role, opts.goal, hasConstraints),
-		MEMBER_CAPABILITIES_SECTION,
+		buildMemberCapabilitiesSection({
+			tools: opts.assignedTools ?? ["read", "bash", "grep", "find", "memory", "message"],
+			skills: opts.assignedSkills,
+			mcps: opts.assignedMcps,
+		}),
 		MEMBER_WORK_DISCIPLINE_SECTION,
 		buildMemberAntiPatternsSection(opts.constraints),
 		MEMBER_ESCALATION_SECTION,
 		MEMBER_OUTPUT_PROTOCOL_SECTION,
 		MEMBER_MEMORY_DISCIPLINE_SECTION,
+		MEMBER_COMMUNICATION_SECTION,
 	];
 	return sections.join("\n\n");
 }
@@ -232,12 +302,19 @@ export function buildMemberSystemPrompt(opts: {
 	memberIndex: MemberIndexStructure | null;
 	teamMd: TeamMdStructure;
 	selfName: MemberName;
+	assignedTools?: string[];
+	assignedSkills?: string[];
+	assignedMcps?: string[];
 }): string[] {
+	const assignedTools = opts.assignedTools ?? ["read", "bash", "grep", "find", "memory", "message"];
 	const l1 = buildIdentityLayer({
 		name: opts.name,
 		role: opts.role,
 		goal: opts.goal,
 		constraints: opts.constraints,
+		assignedTools,
+		assignedSkills: opts.assignedSkills,
+		assignedMcps: opts.assignedMcps,
 	});
 	const l2 = buildMemoryIndexLayer(opts.memberIndex);
 	const l3 = buildTeamSummaryLayer(opts.teamMd, opts.selfName);

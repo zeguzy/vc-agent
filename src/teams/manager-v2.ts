@@ -1,30 +1,43 @@
-import { basename } from "node:path";
-import type { AgentSession, AgentSessionEvent } from "@earendil-works/pi-coding-agent";
+import { basename, join } from "node:path";
+import type {
+	AgentSession,
+	AgentSessionEvent,
+	ToolDefinition,
+} from "@earendil-works/pi-coding-agent";
 import {
 	createAgentSession,
 	DefaultResourceLoader,
+	type ResourceDiagnostic,
 	SessionManager,
+	type Skill,
 } from "@earendil-works/pi-coding-agent";
 import type { SubagentServices } from "../agents/types.js";
+import type { McpManager } from "../mcp/manager.js";
 import {
 	resolveMemberSessionPath,
 	resolveSessionDir,
 	validateMemberSessionPath,
 	validateSessionId,
 } from "../session/storage.js";
+import type { SkillManager } from "../skills/manager.js";
 import { AGENT_DIR } from "../teams/worker.js";
 import { createMemoryTool } from "../tools/memory.js";
+import { createMessageTool } from "../tools/message.js";
 import { handleCompactionEnd } from "./auto-memory.js";
 import { buildCompactionReinject, buildMemberSystemPrompt, buildTaskLayer } from "./context.js";
 import { TeamFiles } from "./files.js";
 import { logTeamEvent } from "./logger.js";
 import { validateName } from "./memory-types.js";
+import { generateMessageId, MemberInbox } from "./messages.js";
 import type { ResolvedModel, ResolvedTeamConfig } from "./types.js";
 import type {
+	DeliveryMode,
 	MemberIndexStructure,
+	MemberMessage,
 	MemberName,
 	MemberState,
 	MemoryType,
+	ReadInboxOptions,
 	TaskState,
 	TeamDirectoryPaths,
 	TeamEvent,
@@ -32,6 +45,35 @@ import type {
 	TeamMdStructure,
 	TopicFileFrontmatter,
 } from "./types-v2.js";
+import { BROADCAST_RECIPIENT } from "./types-v2.js";
+
+export const LEADER_NAME = "leader";
+
+export const DEFAULT_MEMBER_TOOLS = ["read", "bash", "grep", "find", "memory", "message"];
+
+/**
+ * Tools a member must NEVER receive, even if leader explicitly requests them.
+ * - subagent: causes recursive member spawning (infinite loop risk)
+ * - team:     members cannot manage the team (privilege escalation)
+ * - question: members are non-interactive; would block on user input
+ */
+const NEVER_MEMBER_TOOLS = new Set(["subagent", "team", "question"]);
+
+export function filterMemberTools(requested?: string[]): string[] {
+	const source = requested && requested.length > 0 ? requested : DEFAULT_MEMBER_TOOLS;
+	const seen = new Set<string>();
+	const out: string[] = [];
+	for (const t of source) {
+		if (NEVER_MEMBER_TOOLS.has(t)) continue;
+		if (seen.has(t)) continue;
+		seen.add(t);
+		out.push(t);
+	}
+	// Always include memory and message — they're the member's coordination channel.
+	if (!out.includes("memory")) out.push("memory");
+	if (!out.includes("message")) out.push("message");
+	return out;
+}
 
 export class TeamManager implements TeamManagerLike {
 	private readonly config: ResolvedTeamConfig;
@@ -41,6 +83,11 @@ export class TeamManager implements TeamManagerLike {
 	private readonly members = new Map<MemberName, MemberState>();
 	private readonly listeners = new Set<(event: TeamEvent) => void>();
 	private readonly sessionUnsubs = new Map<MemberName, () => void>();
+	private readonly inboxes = new Map<MemberName, MemberInbox>();
+	private readonly sendWindow = new Map<MemberName, number[]>();
+	private readonly broadcastWindow = new Map<MemberName, number[]>();
+	private readonly pairLastExchange = new Map<string, number[]>();
+	private readonly inFlightSteer = new Map<MemberName, number>();
 	private disposed = false;
 	private isRestoring = false;
 
@@ -52,13 +99,32 @@ export class TeamManager implements TeamManagerLike {
 		private readonly selfMemberName?: MemberName,
 		/** Fallback model for members without an explicit model (leader session's model). */
 		private readonly defaultParentModel?: ResolvedModel,
+		private readonly skillManager?: SkillManager,
+		private readonly mcpManager?: McpManager,
 	) {
 		this.config = config;
 		this.services = services;
 		this.cwd = cwd;
 		this.files = new TeamFiles(teamDir);
 		this.files.initTeamDir();
+		if (!this.selfMemberName) {
+			this.inboxes.set(
+				LEADER_NAME,
+				new MemberInbox(join(teamDir, "leader"), this.config.messageHistoryLimit),
+			);
+		}
 	}
+
+	/** Maximum concurrent steers per recipient before degrading to persist-only. */
+	private static readonly MAX_IN_FLIGHT_STEER = 3;
+	/** Per-pair exchange cooldown window (ms). */
+	private static readonly PAIR_COOLDOWN_MS = 30_000;
+	/** Max pair exchanges within the cooldown window. */
+	private static readonly PAIR_MAX_EXCHANGES = 2;
+	/** Broadcast rate window (ms). */
+	private static readonly BROADCAST_WINDOW_MS = 60_000;
+	/** Broadcast max sends within the window. */
+	private static readonly BROADCAST_MAX_PER_WINDOW = 1;
 
 	get paths(): TeamDirectoryPaths {
 		return this.files.paths;
@@ -70,28 +136,40 @@ export class TeamManager implements TeamManagerLike {
 		name: MemberName;
 		role: string;
 		goal: string;
-		/** Optional role-specific constraints; sanitized then injected into L1 Anti-Patterns. */
 		constraints?: string;
 		model?: string;
 		services: SubagentServices;
 		parentModel?: import("./types.js").ResolvedModel;
+		tools?: string[];
+		skills?: string[];
+		mcps?: string[];
 	}): Promise<MemberState> {
 		validateName(opts.name, "member name");
+		if (opts.name === LEADER_NAME) {
+			throw new Error(`member name "${LEADER_NAME}" is reserved for the leader`);
+		}
 		if (this.members.has(opts.name)) throw new Error(`member "${opts.name}" already exists`);
 		if (this.members.size >= this.config.maxWorkers) {
 			throw new Error(`team capacity exhausted: maxWorkers=${this.config.maxWorkers} reached`);
 		}
 
 		const constraints = sanitizeConstraints(opts.constraints);
+		const assignedTools = filterMemberTools(opts.tools);
+		const assignedSkills = (opts.skills ?? []).filter((s) => Boolean(s.trim()));
+		const assignedMcps = this.resolveMcps(opts.mcps);
 
-		// Create member directory + index
 		this.files.initMemberDir(opts.name, opts.role, opts.goal, opts.model, constraints);
+		const existingIndex = this.files.readMemberIndex(opts.name);
+		if (existingIndex) {
+			existingIndex.assignedTools = assignedTools;
+			existingIndex.assignedSkills = assignedSkills;
+			existingIndex.assignedMcps = assignedMcps;
+			this.files.writeMemberIndex(opts.name, existingIndex);
+		}
 
-		// Read current state for context injection
 		const memberIndex = this.files.readMemberIndex(opts.name);
 		const teamMd = this.files.readTeamMd();
 
-		// Build L1 + L2 + L3 system prompts
 		const systemPrompts = buildMemberSystemPrompt({
 			name: opts.name,
 			role: opts.role,
@@ -100,21 +178,15 @@ export class TeamManager implements TeamManagerLike {
 			memberIndex,
 			teamMd,
 			selfName: opts.name,
+			assignedTools,
+			assignedSkills,
+			assignedMcps,
 		});
 
-		// Create Agent Session
-		const resourceLoader = new DefaultResourceLoader({
-			cwd: this.cwd,
-			agentDir: AGENT_DIR,
-			settingsManager: this.services.settingsManager,
-			appendSystemPrompt: systemPrompts,
-			noExtensions: true,
-			noSkills: true,
-			noContextFiles: true,
-		});
+		const resourceLoader = this.buildMemberLoader(systemPrompts, assignedSkills);
+		const memberCustomTools = this.buildMemberCustomTools(opts.name, assignedMcps);
 
 		const resolvedModel = opts.parentModel ?? this.defaultParentModel;
-		const memberToolNames = ["read", "bash", "grep", "find"];
 		const sessionDir = resolveSessionDir();
 		const sessionManager = await SessionManager.create(this.cwd, sessionDir);
 		const { session } = await createAgentSession({
@@ -124,8 +196,8 @@ export class TeamManager implements TeamManagerLike {
 			modelRegistry: this.services.modelRegistry,
 			model: resolvedModel,
 			settingsManager: this.services.settingsManager,
-			tools: memberToolNames,
-			customTools: [createMemoryTool({ teamRef: { current: this } })],
+			tools: assignedTools,
+			customTools: memberCustomTools,
 			resourceLoader,
 			sessionManager,
 		});
@@ -134,19 +206,25 @@ export class TeamManager implements TeamManagerLike {
 			? basename(session.sessionFile).replace(/\.jsonl$/, "")
 			: undefined;
 
-		// Build member state — starts idle until assignTask is called
 		const state: MemberState = {
 			name: opts.name,
 			role: opts.role,
 			goal: opts.goal,
 			model: opts.model,
-			status: "idle",
+			status: "active",
 			session,
 			sessionId,
 			currentTaskId: null,
 			lastTaskPrompt: null,
+			assignedTools,
+			assignedSkills,
+			assignedMcps,
 		};
 		this.members.set(opts.name, state);
+		this.inboxes.set(
+			opts.name,
+			new MemberInbox(this.files.paths.memberTopics(opts.name), this.config.messageHistoryLimit),
+		);
 
 		// Subscribe to session events
 		const unsub = session.subscribe((event) => this.handleMemberEvent(opts.name, event));
@@ -156,11 +234,14 @@ export class TeamManager implements TeamManagerLike {
 		teamMd.members.push({
 			name: opts.name,
 			role: opts.role,
-			status: "idle",
+			status: "active",
 			currentTask: "—",
 			...(sessionId ? { sessionId } : {}),
 		});
 		this.files.writeTeamMd(teamMd);
+
+		const initMessage = buildMemberInitMessage(opts.role);
+		void session.prompt(initMessage);
 
 		this.emit({ type: "member_created", memberName: opts.name });
 		logTeamEvent("member_created", { memberName: opts.name, role: opts.role });
@@ -184,6 +265,9 @@ export class TeamManager implements TeamManagerLike {
 			for (const memberRow of teamMd.members) {
 				try {
 					const memberIndex = this.files.readMemberIndex(memberRow.name);
+					const assignedTools = filterMemberTools(memberIndex?.assignedTools);
+					const assignedSkills = memberIndex?.assignedSkills ?? [];
+					const assignedMcps = this.resolveMcps(memberIndex?.assignedMcps);
 					const systemPrompts = buildMemberSystemPrompt({
 						name: memberRow.name,
 						role: memberRow.role,
@@ -192,6 +276,9 @@ export class TeamManager implements TeamManagerLike {
 						memberIndex,
 						teamMd,
 						selfName: memberRow.name,
+						assignedTools,
+						assignedSkills,
+						assignedMcps,
 					});
 
 					// Resolve SessionManager — open existing or create new
@@ -215,19 +302,10 @@ export class TeamManager implements TeamManagerLike {
 						sessionManager = await SessionManager.create(this.cwd, sessionDir);
 					}
 
-					// Create AgentSession (same tools/settings as createMember)
-					const resourceLoader = new DefaultResourceLoader({
-						cwd: this.cwd,
-						agentDir: AGENT_DIR,
-						settingsManager: opts.services.settingsManager,
-						appendSystemPrompt: systemPrompts,
-						noExtensions: true,
-						noSkills: true,
-						noContextFiles: true,
-					});
+					const resourceLoader = this.buildMemberLoader(systemPrompts, assignedSkills);
+					const memberCustomTools = this.buildMemberCustomTools(memberRow.name, assignedMcps);
 
 					const resolvedModel = opts.parentModel ?? this.defaultParentModel;
-					const memberToolNames = ["read", "bash", "grep", "find"];
 					const { session } = await createAgentSession({
 						cwd: this.cwd,
 						agentDir: AGENT_DIR,
@@ -235,8 +313,8 @@ export class TeamManager implements TeamManagerLike {
 						modelRegistry: opts.services.modelRegistry,
 						model: resolvedModel,
 						settingsManager: opts.services.settingsManager,
-						tools: memberToolNames,
-						customTools: [createMemoryTool({ teamRef: { current: this } })],
+						tools: assignedTools,
+						customTools: memberCustomTools,
 						resourceLoader,
 						sessionManager,
 					});
@@ -245,11 +323,9 @@ export class TeamManager implements TeamManagerLike {
 						? basename(session.sessionFile).replace(/\.jsonl$/, "")
 						: undefined;
 
-					// Derive currentTaskId from active tasks
 					const activeTask = activeTasks.find((t) => t.memberName === memberRow.name && !t.done);
 					const currentTaskId = activeTask?.id ?? null;
 
-					// Build member state
 					const state: MemberState = {
 						name: memberRow.name,
 						role: memberRow.role,
@@ -260,8 +336,18 @@ export class TeamManager implements TeamManagerLike {
 						sessionId,
 						currentTaskId,
 						lastTaskPrompt: null,
+						assignedTools,
+						assignedSkills,
+						assignedMcps,
 					};
 					this.members.set(memberRow.name, state);
+					this.inboxes.set(
+						memberRow.name,
+						new MemberInbox(
+							this.files.paths.memberTopics(memberRow.name),
+							this.config.messageHistoryLimit,
+						),
+					);
 
 					// Subscribe to session events
 					const unsub = session.subscribe((event) => this.handleMemberEvent(memberRow.name, event));
@@ -310,6 +396,10 @@ export class TeamManager implements TeamManagerLike {
 		this.files.writeTeamMd(teamMd);
 
 		this.members.delete(name);
+		this.inboxes.delete(name);
+		this.sendWindow.delete(name);
+		this.broadcastWindow.delete(name);
+		this.inFlightSteer.delete(name);
 		this.emit({ type: "member_removed", memberName: name });
 		logTeamEvent("member_removed", { memberName: name });
 	}
@@ -508,6 +598,302 @@ export class TeamManager implements TeamManagerLike {
 		logTeamEvent("member_direct", { memberName: name, kind, payload: payload.slice(0, 80) });
 	}
 
+	// ─── Member-to-Member Messaging ────────────────────────
+
+	sendMessage(opts: { from: MemberName; to: MemberName; content: string }): {
+		message: MemberMessage;
+		delivery: DeliveryMode;
+	} {
+		const { from, to, content } = opts;
+		if (!content.trim()) throw new Error("content is required");
+		if (from === to) throw new Error("cannot send a message to yourself");
+		const recipient = this.members.get(to);
+		if (!recipient) throw new Error(`recipient "${to}" not found`);
+
+		this.assertSendRateLimit(from);
+		this.assertPairCooldown(from, to);
+
+		const message: MemberMessage = {
+			id: generateMessageId(),
+			from,
+			to,
+			content,
+			timestamp: Date.now(),
+			read: false,
+		};
+
+		const delivery = this.deliver(recipient, message);
+		this.recordPairExchange(from, to);
+
+		this.emit({
+			type: "member_message_sent",
+			from,
+			to,
+			messageId: message.id,
+			delivery,
+		});
+		logTeamEvent("member_message_sent", {
+			from,
+			to,
+			messageId: message.id,
+			delivery,
+			contentLen: content.length,
+		});
+
+		return { message, delivery };
+	}
+
+	broadcastMessage(opts: {
+		from: MemberName;
+		content: string;
+	}): Array<{ message: MemberMessage; delivery: DeliveryMode }> {
+		const { from, content } = opts;
+		if (!content.trim()) throw new Error("content is required");
+		this.assertBroadcastRateLimit(from);
+
+		// Snapshot to survive concurrent removeMember
+		const recipients = this.listMembers().filter((m) => m.name !== from);
+
+		const results: Array<{ message: MemberMessage; delivery: DeliveryMode }> = [];
+		for (const recipient of recipients) {
+			try {
+				const message: MemberMessage = {
+					id: generateMessageId(),
+					from,
+					to: BROADCAST_RECIPIENT,
+					content,
+					timestamp: Date.now(),
+					read: false,
+				};
+				const delivery = this.deliver(recipient, message);
+				results.push({ message, delivery });
+				this.emit({
+					type: "member_message_sent",
+					from,
+					to: BROADCAST_RECIPIENT,
+					messageId: message.id,
+					delivery,
+				});
+				logTeamEvent("member_message_sent", {
+					from,
+					to: BROADCAST_RECIPIENT,
+					recipient: recipient.name,
+					messageId: message.id,
+					delivery,
+					contentLen: content.length,
+				});
+			} catch (err) {
+				logTeamEvent("member_message_broadcast_skip", {
+					from,
+					recipient: recipient.name,
+					error: err instanceof Error ? err.message : String(err),
+				});
+			}
+		}
+		return results;
+	}
+
+	readInbox(name: MemberName, opts?: ReadInboxOptions): MemberMessage[] {
+		const inbox = this.inboxes.get(name);
+		if (!inbox) throw new Error(`inbox for "${name}" not found`);
+		const messages = inbox.read(opts);
+		return messages;
+	}
+
+	markInboxRead(name: MemberName, ids?: string[]): number {
+		const inbox = this.inboxes.get(name);
+		if (!inbox) throw new Error(`inbox for "${name}" not found`);
+		const count = inbox.markRead(ids);
+		if (count > 0) {
+			this.emit({ type: "member_message_read", by: name, count });
+			logTeamEvent("member_message_read", { by: name, count });
+		}
+		return count;
+	}
+
+	/** Deliver to recipient: persist + (if active and below steer cap) steer into session. */
+	private deliver(recipient: MemberState, message: MemberMessage): DeliveryMode {
+		const inbox = this.inboxes.get(recipient.name);
+		if (!inbox) throw new Error(`inbox for "${recipient.name}" not found`);
+		inbox.append(message);
+
+		// cancelled members cannot receive; persist-only for idle/paused/error;
+		// active members get steer if below the in-flight cap.
+		if (recipient.status === "cancelled") {
+			throw new Error(`recipient "${recipient.name}" is cancelled`);
+		}
+		if (recipient.status !== "active") {
+			logTeamEvent("member_message_delivered", {
+				to: recipient.name,
+				messageId: message.id,
+				deliveredVia: "persist-only",
+				reason: `status=${recipient.status}`,
+			});
+			return "persist-only";
+		}
+
+		const inFlight = this.inFlightSteer.get(recipient.name) ?? 0;
+		if (inFlight >= TeamManager.MAX_IN_FLIGHT_STEER) {
+			logTeamEvent("member_message_delivered", {
+				to: recipient.name,
+				messageId: message.id,
+				deliveredVia: "persist-only",
+				reason: "steer-cap",
+			});
+			return "persist-only";
+		}
+
+		this.inFlightSteer.set(recipient.name, inFlight + 1);
+		const prefix = message.from === "leader" ? "Leader" : `@${message.from}`;
+		const note = `[Message from ${prefix}] ${message.content}`;
+		const session = recipient.session;
+		const decrement = () => {
+			const current = this.inFlightSteer.get(recipient.name) ?? 0;
+			this.inFlightSteer.set(recipient.name, Math.max(0, current - 1));
+		};
+
+		try {
+			if (session.isStreaming) {
+				const promise = session.steer(note) as unknown as Promise<void> | void;
+				if (promise && typeof (promise as Promise<void>).then === "function") {
+					(promise as Promise<void>).then(decrement, decrement);
+				} else {
+					decrement();
+				}
+			} else {
+				const promise = session.prompt(note) as unknown as Promise<void> | void;
+				if (promise && typeof (promise as Promise<void>).then === "function") {
+					(promise as Promise<void>).then(decrement, decrement);
+				} else {
+					decrement();
+				}
+			}
+		} catch (err) {
+			decrement();
+			logTeamEvent("member_message_delivered", {
+				to: recipient.name,
+				messageId: message.id,
+				deliveredVia: "persist-only",
+				reason: `steer-error: ${err instanceof Error ? err.message : String(err)}`,
+			});
+			return "persist-only";
+		}
+
+		logTeamEvent("member_message_delivered", {
+			to: recipient.name,
+			messageId: message.id,
+			deliveredVia: "steer",
+		});
+		return "steer";
+	}
+
+	private resolveMcps(requested?: string[]): string[] {
+		if (!requested || requested.length === 0) return [];
+		if (!this.mcpManager) {
+			console.warn(
+				`[teams] member requested MCPs ${requested.join(",")} but no McpManager is wired up; ignoring`,
+			);
+			return [];
+		}
+		const available = new Set(this.mcpManager.listServerNames());
+		const resolved: string[] = [];
+		for (const name of requested) {
+			if (!name.trim()) continue;
+			if (available.has(name)) {
+				resolved.push(name);
+			} else {
+				console.warn(`[teams] MCP server "${name}" not connected; skipping assignment`);
+			}
+		}
+		return resolved;
+	}
+
+	private buildMemberLoader(
+		systemPrompts: string[],
+		assignedSkills: string[],
+	): DefaultResourceLoader {
+		const wantsSkills = assignedSkills.length > 0 && this.skillManager;
+		const skillSet = new Set(assignedSkills);
+		return new DefaultResourceLoader({
+			cwd: this.cwd,
+			agentDir: AGENT_DIR,
+			settingsManager: this.services.settingsManager,
+			appendSystemPrompt: systemPrompts,
+			noExtensions: true,
+			noSkills: !wantsSkills,
+			noContextFiles: true,
+			...(wantsSkills
+				? {
+						skillsOverride: (base: { skills: Skill[]; diagnostics: ResourceDiagnostic[] }) => ({
+							...base,
+							skills: base.skills.filter((s) => skillSet.has(s.name)),
+						}),
+					}
+				: {}),
+		});
+	}
+
+	private buildMemberCustomTools(memberName: MemberName, assignedMcps: string[]): ToolDefinition[] {
+		const tools: ToolDefinition[] = [
+			createMemoryTool({ teamRef: { current: this }, selfName: memberName }),
+			createMessageTool({ teamRef: { current: this }, selfName: memberName }),
+		];
+		if (assignedMcps.length > 0 && this.mcpManager) {
+			const memberMcp = this.mcpManager.getAuthorizedToolDefinition(assignedMcps);
+			if (memberMcp) tools.push(memberMcp);
+		}
+		return tools;
+	}
+
+	private assertSendRateLimit(from: MemberName): void {
+		const now = Date.now();
+		const window = (this.sendWindow.get(from) ?? []).filter(
+			(ts) => now - ts < TeamManager.BROADCAST_WINDOW_MS,
+		);
+		if (window.length >= this.config.messageRateLimitPerMinute) {
+			throw new Error(
+				`rate limit: ${from} already sent ${window.length} messages in the last minute`,
+			);
+		}
+		window.push(now);
+		this.sendWindow.set(from, window);
+	}
+
+	private assertBroadcastRateLimit(from: MemberName): void {
+		const now = Date.now();
+		const window = (this.broadcastWindow.get(from) ?? []).filter(
+			(ts) => now - ts < TeamManager.BROADCAST_WINDOW_MS,
+		);
+		if (window.length >= TeamManager.BROADCAST_MAX_PER_WINDOW) {
+			throw new Error(`broadcast rate limit: ${from} already broadcast in the last minute`);
+		}
+		window.push(now);
+		this.broadcastWindow.set(from, window);
+	}
+
+	private assertPairCooldown(a: MemberName, b: MemberName): void {
+		const key = pairKey(a, b);
+		const now = Date.now();
+		const window = (this.pairLastExchange.get(key) ?? []).filter(
+			(ts) => now - ts < TeamManager.PAIR_COOLDOWN_MS,
+		);
+		if (window.length >= TeamManager.PAIR_MAX_EXCHANGES) {
+			throw new Error(
+				`pair cooldown: wait ~${Math.round((TeamManager.PAIR_COOLDOWN_MS - (now - window[0])) / 1000)}s before messaging @${b} again`,
+			);
+		}
+	}
+
+	private recordPairExchange(a: MemberName, b: MemberName): void {
+		const key = pairKey(a, b);
+		const now = Date.now();
+		const window = (this.pairLastExchange.get(key) ?? []).filter(
+			(ts) => now - ts < TeamManager.PAIR_COOLDOWN_MS,
+		);
+		window.push(now);
+		this.pairLastExchange.set(key, window);
+	}
+
 	// ─── Memory Operations ─────────────────────────────────
 
 	writeMemory(opts: {
@@ -613,6 +999,11 @@ export class TeamManager implements TeamManagerLike {
 		}
 		this.sessionUnsubs.clear();
 		this.members.clear();
+		this.inboxes.clear();
+		this.sendWindow.clear();
+		this.broadcastWindow.clear();
+		this.pairLastExchange.clear();
+		this.inFlightSteer.clear();
 		// Note: .openagent/team/ directory is preserved (memory files are persistent)
 	}
 
@@ -693,6 +1084,25 @@ function sanitizeConstraints(raw?: string): string | undefined {
 		.trim();
 	if (!stripped) return undefined;
 	return stripped.length > CONSTRAINTS_MAX_LEN ? stripped.slice(0, CONSTRAINTS_MAX_LEN) : stripped;
+}
+
+function buildMemberInitMessage(role: string): string {
+	return [
+		"[Initialization] You've just been created on this team.",
+		`Your role is "${role}". Your goal, constraints, and team context are above.`,
+		"",
+		"You are now active and ready to receive work. Do not start any task on your own — wait for the leader to assign a task or for a teammate to message you.",
+		"",
+		"While waiting, you may:",
+		'- Read your own memory index with `memory(action="read")` to see what you\'ve learned before.',
+		'- Read your inbox with `message(action="read")` to see any messages from teammates.',
+		"",
+		"Respond minimally now (a short acknowledgment is enough). Save your effort for the actual task.",
+	].join("\n");
+}
+
+function pairKey(a: MemberName, b: MemberName): string {
+	return a < b ? `${a}|${b}` : `${b}|${a}`;
 }
 
 function extractLastAssistantText(session: AgentSession): string | null {

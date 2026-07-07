@@ -65,6 +65,16 @@ export class McpManager {
 		return this._toolDefinition ? [this._toolDefinition] : [];
 	}
 
+	getAuthorizedToolDefinition(serverNames: string[]): ToolDefinition | null {
+		const allowed = this.connections.filter((c) => serverNames.includes(c.name));
+		if (allowed.length === 0) return null;
+		return createMcpToolDefinition(allowed, this.executeTool.bind(this));
+	}
+
+	listServerNames(): string[] {
+		return this.connections.map((c) => c.name);
+	}
+
 	async executeTool(
 		serverName: string,
 		toolName: string,
