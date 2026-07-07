@@ -26,6 +26,7 @@ import type { TeamManagerRef } from "../teams/types-v2.js";
 import { createEditTool } from "../tools/edit.js";
 import { clearEditConfirmBridge, type EditConfirmBridge } from "../tools/edit-confirm-bridge.js";
 import { createMemoryTool } from "../tools/memory.js";
+import { createMessageTool } from "../tools/message.js";
 import { createNotifyTool } from "../tools/notify.js";
 import { createQuestionTool } from "../tools/question.js";
 import { clearBridge, type QuestionBridge } from "../tools/question-bridge.js";
@@ -64,6 +65,7 @@ export const TEAM_ACTIVE_TOOLS = [
 	"webfetch",
 	"team",
 	"memory",
+	"message",
 ];
 
 export function activeToolsFor(agentMode: AgentMode): string[] {
@@ -436,7 +438,7 @@ function registerCustomProvider(registry: ModelRegistry, name: string, config: P
 					models: config.models.map((m) => ({
 						id: m.id,
 						name: m.name,
-						api: (config.api ?? "openai-completions") as any,
+						api: (config.api ?? "openai") as any,
 						...(config.baseUrl ? { baseUrl: config.baseUrl } : {}),
 						reasoning: false,
 						input: ["text" as const],
@@ -471,5 +473,9 @@ export type { AgentSession, AgentSessionEvent, AgentSessionRuntime };
 function buildTeamTools(
 	teamRef: import("../teams/types-v2.js").TeamManagerRef,
 ): import("@earendil-works/pi-coding-agent").ToolDefinition[] {
-	return [createTeamTool({ teamRef }), createMemoryTool({ teamRef })];
+	return [
+		createTeamTool({ teamRef }),
+		createMemoryTool({ teamRef }),
+		createMessageTool({ teamRef }),
+	];
 }

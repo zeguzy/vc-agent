@@ -3,7 +3,15 @@ import type { AgentSession, AgentSessionEvent } from "../agent/session.js";
 import type { CommandContext } from "../commands/registry.js";
 import type { Message } from "../message.js";
 import type { SessionInfo } from "../session/list.js";
-import type { MemberName, MemberState, TaskState, TeamEvent } from "../teams/types-v2.js";
+import type {
+	DeliveryMode,
+	MemberMessage,
+	MemberName,
+	MemberState,
+	ReadInboxOptions,
+	TaskState,
+	TeamEvent,
+} from "../teams/types-v2.js";
 
 export type AgentMode = "standard" | "planner" | "orchestrator" | "team";
 
@@ -78,6 +86,9 @@ export interface AgentClient {
 		/** Optional role-specific constraints; injected into member's Anti-Patterns. */
 		constraints?: string;
 		model?: string;
+		tools?: string[];
+		skills?: string[];
+		mcps?: string[];
 	}): Promise<MemberState>;
 	removeMember(name: MemberName): Promise<void>;
 	getMember(name: MemberName): MemberState | undefined;
@@ -96,4 +107,16 @@ export interface AgentClient {
 	resumeMember(name: MemberName): void;
 	cancelMember(name: MemberName): void;
 	directMember(name: MemberName, kind: "directive" | "context" | "redirect", payload: string): void;
+
+	sendMessage(opts: {
+		from: MemberName;
+		to: MemberName;
+		content: string;
+	}): Promise<{ message: MemberMessage; delivery: DeliveryMode }>;
+	broadcastMessage(opts: {
+		from: MemberName;
+		content: string;
+	}): Promise<Array<{ message: MemberMessage; delivery: DeliveryMode }>>;
+	readInbox(name: MemberName, opts?: ReadInboxOptions): MemberMessage[];
+	markInboxRead(name: MemberName, ids?: string[]): number;
 }

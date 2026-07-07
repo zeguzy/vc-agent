@@ -2,7 +2,15 @@ import type { AgentSessionEvent } from "../agent/session.js";
 import type { CommandContext } from "../commands/registry.js";
 import type { Message } from "../message.js";
 import type { SessionInfo } from "../session/list.js";
-import type { MemberName, MemberState, TaskState, TeamEvent } from "../teams/types-v2.js";
+import type {
+	DeliveryMode,
+	MemberMessage,
+	MemberName,
+	MemberState,
+	ReadInboxOptions,
+	TaskState,
+	TeamEvent,
+} from "../teams/types-v2.js";
 import type {
 	AgentClient,
 	AgentMode,
@@ -301,6 +309,51 @@ export class HttpClient implements AgentClient {
 		throw new NotSupportedError(
 			"directMember (sync) — use HTTP POST /team/members/:name/direct instead",
 		);
+	}
+
+	async sendMessage(opts: {
+		from: MemberName;
+		to: MemberName;
+		content: string;
+	}): Promise<{ message: MemberMessage; delivery: DeliveryMode }> {
+		const res = await this.postJson("/team/messages", opts);
+		return res as { message: MemberMessage; delivery: DeliveryMode };
+	}
+
+	async broadcastMessage(opts: {
+		from: MemberName;
+		content: string;
+	}): Promise<Array<{ message: MemberMessage; delivery: DeliveryMode }>> {
+		const res = (await this.postJson("/team/messages/broadcast", opts)) as {
+			results: Array<{ message: MemberMessage; delivery: DeliveryMode }>;
+		};
+		return res.results ?? [];
+	}
+
+	readInbox(_name: MemberName, _opts?: ReadInboxOptions): MemberMessage[] {
+		throw new NotSupportedError("readInbox (sync) — use fetchInbox() instead");
+	}
+
+	markInboxRead(_name: MemberName, _ids?: string[]): number {
+		throw new NotSupportedError(
+			"markInboxRead (sync) — use async HTTP POST /team/inbox/read instead",
+		);
+	}
+
+	async fetchInbox(name: MemberName, opts?: ReadInboxOptions): Promise<MemberMessage[]> {
+		const params = new URLSearchParams({ member: name });
+		if (opts?.from) params.set("from", opts.from);
+		if (opts?.unreadOnly) params.set("unreadOnly", "true");
+		if (opts?.limit) params.set("limit", String(opts.limit));
+		const data = await this.getJson<{ messages: MemberMessage[] }>(`/team/inbox?${params}`);
+		return data.messages ?? [];
+	}
+
+	async fetchInboxReadCount(name: MemberName, ids?: string[]): Promise<number> {
+		const res = (await this.postJson("/team/inbox/read", { member: name, ids })) as {
+			count: number;
+		};
+		return res.count ?? 0;
 	}
 }
 

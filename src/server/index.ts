@@ -71,6 +71,8 @@ export class AgentServer {
 			this.sessionTeamDir(),
 			undefined,
 			this.session.model,
+			this.skillManager,
+			this.mcpManager,
 		);
 		if (opts.teamRef) {
 			opts.teamRef.current = this.teamManager;
@@ -87,6 +89,8 @@ export class AgentServer {
 					this.sessionTeamDir(),
 					undefined,
 					this.session.model,
+					this.skillManager,
+					this.mcpManager,
 				);
 				this.teamRef.current = this.teamManager;
 			}
@@ -335,6 +339,9 @@ export class AgentServer {
 		goal: string;
 		constraints?: string;
 		model?: string;
+		tools?: string[];
+		skills?: string[];
+		mcps?: string[];
 	}): Promise<MemberState> {
 		return this.teamManager.createMember({
 			...opts,
@@ -383,6 +390,31 @@ export class AgentServer {
 		payload: string,
 	): void {
 		this.teamManager.directMember(name, kind, payload);
+	}
+
+	handleSendMessage(opts: { from: MemberName; to: MemberName; content: string }): {
+		message: import("../teams/types-v2.js").MemberMessage;
+		delivery: import("../teams/types-v2.js").DeliveryMode;
+	} {
+		return this.teamManager.sendMessage(opts);
+	}
+
+	handleBroadcastMessage(opts: { from: MemberName; content: string }): Array<{
+		message: import("../teams/types-v2.js").MemberMessage;
+		delivery: import("../teams/types-v2.js").DeliveryMode;
+	}> {
+		return this.teamManager.broadcastMessage(opts);
+	}
+
+	handleReadInbox(
+		name: MemberName,
+		opts?: { from?: MemberName; unreadOnly?: boolean; limit?: number },
+	): import("../teams/types-v2.js").MemberMessage[] {
+		return this.teamManager.readInbox(name, opts);
+	}
+
+	handleMarkInboxRead(name: MemberName, ids?: string[]): number {
+		return this.teamManager.markInboxRead(name, ids);
 	}
 }
 

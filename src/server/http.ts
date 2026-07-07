@@ -108,6 +108,9 @@ async function handleRequest(server: AgentServer, req: IncomingMessage, res: Ser
 			role: string;
 			goal: string;
 			model?: string;
+			tools?: string[];
+			skills?: string[];
+			mcps?: string[];
 		}>(req);
 		if (!body.name || !body.role || !body.goal) {
 			return sendJson(res, { error: "name, role, and goal required" }, 400);
@@ -211,6 +214,62 @@ async function handleRequest(server: AgentServer, req: IncomingMessage, res: Ser
 		try {
 			server.handleDirectMember(name, body.kind, body.payload);
 			return sendJson(res, { ok: true });
+		} catch (err) {
+			return sendJson(res, { error: String(err) }, 400);
+		}
+	}
+
+	if (method === "POST" && path === "/team/messages") {
+		const body = await readBody<{ from: string; to: string; content: string }>(req);
+		if (!body.from || !body.to || !body.content) {
+			return sendJson(res, { error: "from, to, and content required" }, 400);
+		}
+		try {
+			const result = server.handleSendMessage(body);
+			return sendJson(res, result);
+		} catch (err) {
+			return sendJson(res, { error: String(err) }, 400);
+		}
+	}
+
+	if (method === "POST" && path === "/team/messages/broadcast") {
+		const body = await readBody<{ from: string; content: string }>(req);
+		if (!body.from || !body.content) {
+			return sendJson(res, { error: "from and content required" }, 400);
+		}
+		try {
+			const results = server.handleBroadcastMessage(body);
+			return sendJson(res, { results });
+		} catch (err) {
+			return sendJson(res, { error: String(err) }, 400);
+		}
+	}
+
+	if (method === "GET" && path === "/team/inbox") {
+		const member = url.searchParams.get("member");
+		const from = url.searchParams.get("from") ?? undefined;
+		const unreadOnly = url.searchParams.get("unreadOnly") === "true";
+		const limitRaw = url.searchParams.get("limit");
+		const limit = limitRaw ? Number.parseInt(limitRaw, 10) : undefined;
+		if (!member) {
+			return sendJson(res, { error: "member query parameter required" }, 400);
+		}
+		try {
+			const messages = server.handleReadInbox(member, { from, unreadOnly, limit });
+			return sendJson(res, { messages });
+		} catch (err) {
+			return sendJson(res, { error: String(err) }, 400);
+		}
+	}
+
+	if (method === "POST" && path === "/team/inbox/read") {
+		const body = await readBody<{ member: string; ids?: string[] }>(req);
+		if (!body.member) {
+			return sendJson(res, { error: "member required" }, 400);
+		}
+		try {
+			const count = server.handleMarkInboxRead(body.member, body.ids);
+			return sendJson(res, { count });
 		} catch (err) {
 			return sendJson(res, { error: String(err) }, 400);
 		}

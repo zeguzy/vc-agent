@@ -3,7 +3,15 @@ import type { AgentSession, AgentSessionRuntime } from "../agent/session.js";
 import type { CommandContext } from "../commands/registry.js";
 import type { AgentServer } from "../server/index.js";
 import type { SkillManager } from "../skills/manager.js";
-import type { MemberName, MemberState, TaskState, TeamEvent } from "../teams/types-v2.js";
+import type {
+	DeliveryMode,
+	MemberMessage,
+	MemberName,
+	MemberState,
+	ReadInboxOptions,
+	TaskState,
+	TeamEvent,
+} from "../teams/types-v2.js";
 import type {
 	AgentClient,
 	ContextUsage,
@@ -182,6 +190,29 @@ export class InProcessClient implements AgentClient {
 		payload: string,
 	): void {
 		this.server.handleDirectMember(name, kind, payload);
+	}
+
+	async sendMessage(opts: {
+		from: MemberName;
+		to: MemberName;
+		content: string;
+	}): Promise<{ message: MemberMessage; delivery: DeliveryMode }> {
+		return this.server.handleSendMessage(opts);
+	}
+
+	async broadcastMessage(opts: {
+		from: MemberName;
+		content: string;
+	}): Promise<Array<{ message: MemberMessage; delivery: DeliveryMode }>> {
+		return this.server.handleBroadcastMessage(opts);
+	}
+
+	readInbox(name: MemberName, opts?: ReadInboxOptions): MemberMessage[] {
+		return this.server.handleReadInbox(name, opts);
+	}
+
+	markInboxRead(name: MemberName, ids?: string[]): number {
+		return this.server.handleMarkInboxRead(name, ids);
 	}
 }
 
