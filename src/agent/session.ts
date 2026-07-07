@@ -25,6 +25,7 @@ import { SkillManager } from "../skills/manager.js";
 import type { TeamManagerRef } from "../teams/types-v2.js";
 import { createEditTool } from "../tools/edit.js";
 import { clearEditConfirmBridge, type EditConfirmBridge } from "../tools/edit-confirm-bridge.js";
+import { createGlobToolDefinition } from "../tools/glob.js";
 import { createMemoryTool } from "../tools/memory.js";
 import { createMessageTool } from "../tools/message.js";
 import { createNotifyTool } from "../tools/notify.js";
@@ -50,15 +51,17 @@ const PLANNER_TOOLS = ["read", "bash", "grep", "find", ...LSP_TOOL_NAMES];
  */
 export const STANDARD_ACTIVE_TOOLS = [
 	...ALL_TOOLS,
+	"glob",
 	"edit",
 	"todo",
 	"question",
 	"subagent",
 	"webfetch",
 ];
-export const PLANNER_ACTIVE_TOOLS = [...PLANNER_TOOLS, "todo", "question", "webfetch"];
+export const PLANNER_ACTIVE_TOOLS = [...PLANNER_TOOLS, "glob", "todo", "question", "webfetch"];
 export const TEAM_ACTIVE_TOOLS = [
 	...ALL_TOOLS,
+	"glob",
 	"edit",
 	"todo",
 	"question",
@@ -289,6 +292,7 @@ export async function createSession(options: SessionOptions): Promise<SessionRes
 			createQuestionTool(options.bridge),
 			createNotifyTool(),
 			createWebfetchTool(),
+			createGlobToolDefinition(options.cwd),
 			createSubagentTool({
 				cwd: options.cwd,
 				services: svc,
@@ -343,6 +347,7 @@ export async function createRuntime(options: RuntimeOptions): Promise<RuntimeRes
 			createQuestionTool(options.bridge),
 			createNotifyTool(),
 			createWebfetchTool(),
+			createGlobToolDefinition(fCwd),
 		];
 		if (isTeamMode) {
 			customTools.push(createTeamGuardedBashTool(fCwd), createTeamGuardedWriteTool(fCwd));
