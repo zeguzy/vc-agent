@@ -564,7 +564,7 @@ const WorkerMessageView = memo(function WorkerMessageView({ message }: { message
 			borderStyle="rounded"
 			border={["top", "right", "bottom", "left"]}
 			borderColor={borderColor}
-			margin={1}
+			marginTop={1}
 			paddingTop={1}
 			paddingBottom={1}
 			paddingLeft={2}
@@ -591,7 +591,6 @@ const WorkerMessageView = memo(function WorkerMessageView({ message }: { message
 							maxHeight={RESULT_BLOCK_MAX_HEIGHT}
 							scrollY
 							focused={false}
-							paddingRight={1}
 						>
 							<markdown
 								id={`md-${message.id}`}
@@ -622,7 +621,6 @@ const WorkerMessageView = memo(function WorkerMessageView({ message }: { message
 						stickyScroll
 						stickyStart="bottom"
 						focused={false}
-						paddingRight={1}
 					>
 						<markdown
 							id={`md-${message.id}`}
