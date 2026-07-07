@@ -10,8 +10,10 @@ package-lock.json
 # opencode runtime artifacts
 .omo/
 
-# openagent local config (contains per-user API keys)
+# openagent local state (config, team runtime, sessions)
 .openagent/config.json
+.openagent/team/
+.openagent/sessions/
 
 node_modules
 !.gitignore
