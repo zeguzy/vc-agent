@@ -24,6 +24,7 @@ import type {
 	MemberName,
 	MemberState,
 	TaskState,
+	TaskType,
 	TeamEvent,
 	TeamManagerRef,
 } from "../teams/types-v2.js";
@@ -367,6 +368,7 @@ export class AgentServer {
 		description: string;
 		memberName: MemberName;
 		priority?: "high" | "medium" | "low";
+		type?: TaskType;
 	}): Promise<TaskState> {
 		return this.teamManager.assignTask(opts);
 	}

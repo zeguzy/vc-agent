@@ -156,9 +156,13 @@ async function handleRequest(server: AgentServer, req: IncomingMessage, res: Ser
 			description: string;
 			memberName: string;
 			priority?: "high" | "medium" | "low";
+			type?: "execution" | "discussion";
 		}>(req);
 		if (!body.title || !body.description || !body.memberName) {
 			return sendJson(res, { error: "title, description, and memberName required" }, 400);
+		}
+		if (body.type !== undefined && body.type !== "execution" && body.type !== "discussion") {
+			return sendJson(res, { error: "invalid type" }, 400);
 		}
 		try {
 			const task = await server.handleAssignTask(body);
