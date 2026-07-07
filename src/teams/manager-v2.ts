@@ -75,6 +75,21 @@ export function filterMemberTools(requested?: string[]): string[] {
 	return out;
 }
 
+export function syncMemberAllowlist(
+	baseTools: string[],
+	customTools: { name: string }[],
+): string[] {
+	const out = [...baseTools];
+	const seen = new Set(baseTools);
+	for (const t of customTools) {
+		if (!seen.has(t.name)) {
+			out.push(t.name);
+			seen.add(t.name);
+		}
+	}
+	return out;
+}
+
 export class TeamManager implements TeamManagerLike {
 	private readonly config: ResolvedTeamConfig;
 	private readonly services: SubagentServices;
@@ -196,7 +211,7 @@ export class TeamManager implements TeamManagerLike {
 			modelRegistry: this.services.modelRegistry,
 			model: resolvedModel,
 			settingsManager: this.services.settingsManager,
-			tools: assignedTools,
+			tools: syncMemberAllowlist(assignedTools, memberCustomTools),
 			customTools: memberCustomTools,
 			resourceLoader,
 			sessionManager,
@@ -313,7 +328,7 @@ export class TeamManager implements TeamManagerLike {
 						modelRegistry: opts.services.modelRegistry,
 						model: resolvedModel,
 						settingsManager: opts.services.settingsManager,
-						tools: assignedTools,
+						tools: syncMemberAllowlist(assignedTools, memberCustomTools),
 						customTools: memberCustomTools,
 						resourceLoader,
 						sessionManager,
