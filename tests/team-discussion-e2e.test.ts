@@ -24,31 +24,12 @@ import { join } from "node:path";
 import process from "node:process";
 import { createRuntime } from "../src/agent/session.js";
 import { HttpClient } from "../src/client/http.js";
-import type { Config } from "../src/config.js";
 import { createHttpServer } from "../src/server/http.js";
 import type { AgentServer } from "../src/server/index.js";
+import { ASTRON_KEY, buildAstronConfig } from "./helpers/astron-config.js";
 
 const ENABLED = process.env.RUN_LLM_TESTS === "1";
 const REAL_HOME = process.env.HOME ?? homedir();
-
-const ASTRON_KEY = process.env.ASTRON_API_KEY ?? process.env.XUNFEI_ASTRON_KEY ?? "";
-const ASTRON_PROVIDER = "xunfei-astron";
-const ASTRON_MODEL_ID = "astron-code-latest";
-const ASTRON_BASE_URL = "https://maas-coding-api.cn-huabei-1.xf-yun.com/v2";
-
-function buildAstronConfig(): Config {
-	return {
-		model: `${ASTRON_PROVIDER}:${ASTRON_MODEL_ID}`,
-		providers: {
-			[ASTRON_PROVIDER]: {
-				apiKey: ASTRON_KEY,
-				baseUrl: ASTRON_BASE_URL,
-				api: "openai-completions",
-				models: [{ id: ASTRON_MODEL_ID, name: "Astron Coding", contextWindow: 128000 }],
-			},
-		},
-	};
-}
 
 function todayLogPath(): string {
 	const date = new Date().toISOString().slice(0, 10);

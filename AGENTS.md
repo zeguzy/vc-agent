@@ -62,6 +62,12 @@ MCP 工具已合并为单个 `mcp` 工具（参数含 `server_name` + `tool_name
 
 - **包管理器**：Bun，`bun.lock` 是唯一 lockfile；`package-lock.json` 已 gitignore，勿提交
 - **测试**：`bun test`，纯函数测试放 `tests/*.test.ts`
+- **Team 模式测试三层架构**（详见 `/team-test-writing` skill）：
+  - **Unit**（`tests/team-*-unit.test.ts`）：纯函数，无 LLM 依赖，默认运行
+  - **Integration**（`tests/team-*-integration.test.ts`）：mock session + `mock.module`，默认运行
+  - **E2E**（`tests/team-*-e2e.test.ts`）：真 LLM，`describe.skipIf(process.env.RUN_LLM_TESTS !== "1")` 门控
+  - **LLM provider 配置**：E2E 测试用 `tests/helpers/astron-config.ts` 共享 helper，默认 `ASTRON_INFINITY_API_KEY`（低级模型），切换用 `ASTRON_API_KEY`
+  - **已知坑**：MemberState.session JSON 循环引用（已修 stripSession）、logger LOG_DIR 模块加载固化（缓存 REAL_HOME）、createRealServer 不传 config（E2E 自建 server）
 - **提交钩子**：lefthook 自动 biome 修复 + typecheck（见 `lefthook.yml`），勿用 `--no-verify` 绕过
 - **规格变更**：走 OpenSpec 流程（`openspec/specs/`），用 `/openspec-*` 命令驱动
 - **React 状态引用**：`useKeyboard` / `useCallback` / `useEffect` 等闭包内读取组件状态时，**必须**通过 `xxxRef.current` 而非直接读 `state`。`useKeyboard` 的回调在组件挂载时注册一次，后续不随 re-render 更新——闭包里捕获的 `state` 永远是初始值。正确模式：
