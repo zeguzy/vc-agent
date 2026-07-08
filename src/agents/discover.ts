@@ -11,6 +11,12 @@ import type {
 	AgentScope,
 } from "./types.js";
 
+export interface AvailableSkill {
+	name: string;
+	description: string;
+	source: "project" | "global";
+}
+
 const VALID_PERMISSION_MODES = new Set<AgentPermissionMode>(["default", "plan", "acceptEdits"]);
 const VALID_TIERS = new Set<ModelTier>(["fast", "standard", "powerful"]);
 
@@ -171,5 +177,77 @@ export function buildAvailableAgentsPrompt(agents: AgentConfig[]): string {
 		lines.join("\n"),
 		"",
 		"Use these agents via the `subagent` tool. See the tool description for call syntax.",
+	].join("\n");
+}
+
+function loadSkillsFromDir(dir: string, source: "global" | "project"): AvailableSkill[] {
+	if (!isDirectory(dir)) return [];
+
+	let entries: Dirent[];
+	try {
+		entries = readdirSync(dir, { withFileTypes: true });
+	} catch {
+		return [];
+	}
+
+	const skills: AvailableSkill[] = [];
+	for (const entry of entries) {
+		if (!entry.isDirectory()) continue;
+
+		const skillFile = join(dir, entry.name, "SKILL.md");
+		let content: string;
+		try {
+			content = readFileSync(skillFile, "utf-8");
+		} catch {
+			continue;
+		}
+
+		const { frontmatter } = parseFrontmatter<Record<string, unknown>>(content);
+		if (typeof frontmatter.name !== "string" || typeof frontmatter.description !== "string")
+			continue;
+
+		skills.push({
+			name: frontmatter.name,
+			description: frontmatter.description,
+			source,
+		});
+	}
+
+	return skills;
+}
+
+export function getGlobalSkillsDir(): string {
+	return join(homedir(), ".config", "openagent", "skills");
+}
+
+export function getProjectSkillsDir(cwd: string): string {
+	return join(cwd, ".opencode", "skills");
+}
+
+export function discoverAvailableSkills(cwd: string): AvailableSkill[] {
+	const globalDir = getGlobalSkillsDir();
+	const projectDir = getProjectSkillsDir(cwd);
+
+	const globalSkills = loadSkillsFromDir(globalDir, "global");
+	const projectSkills = loadSkillsFromDir(projectDir, "project");
+
+	const skillMap = new Map<string, AvailableSkill>();
+	for (const skill of globalSkills) skillMap.set(skill.name, skill);
+	for (const skill of projectSkills) skillMap.set(skill.name, skill);
+
+	return Array.from(skillMap.values());
+}
+
+export function buildAvailableSkillsPrompt(cwd: string): string | undefined {
+	const skills = discoverAvailableSkills(cwd);
+	if (skills.length === 0) return undefined;
+
+	const lines = skills.map((s) => `- **${s.name}** (${s.source}): ${s.description}`);
+	return [
+		"## Available Skills",
+		"",
+		'Assign relevant skills to team members via the `skills` parameter when creating members (e.g., `skills=["harness"]`).',
+		"",
+		lines.join("\n"),
 	].join("\n");
 }

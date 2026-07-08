@@ -22,8 +22,12 @@ import {
 } from "../session/storage.js";
 import type { SkillManager } from "../skills/manager.js";
 import { AGENT_DIR } from "../teams/worker.js";
+import { createEditTool } from "../tools/edit.js";
+import { createGlobToolDefinition } from "../tools/glob.js";
 import { createMemoryTool } from "../tools/memory.js";
 import { createMessageTool } from "../tools/message.js";
+import { createTodoTool } from "../tools/todo.js";
+import { createWebfetchTool } from "../tools/webfetch/index.js";
 import { handleCompactionEnd } from "./auto-memory.js";
 import { buildCompactionReinject, buildMemberSystemPrompt, buildTaskLayer } from "./context.js";
 import { collectRecentMessages, runCoordinator } from "./coordinator.js";
@@ -91,6 +95,32 @@ export function syncMemberAllowlist(
 		}
 	}
 	return out;
+}
+
+/**
+ * Build ToolDefinition objects for openagent custom tools that appear in the
+ * assigned list.  Pi SDK builtins (read, bash, write, grep, find) auto-register
+ * via the internal registry, so they only need to be in the whitelist — they do
+ * NOT need a ToolDefinition.  Only openagent-specific tools (edit, glob, todo,
+ * webfetch) require explicit definitions.
+ *
+ * Extracted as a standalone exported function for unit-testability.
+ */
+export function buildMemberToolDefinitions(assignedTools: string[], cwd: string): ToolDefinition[] {
+	const tools: ToolDefinition[] = [];
+	if (assignedTools.includes("edit")) {
+		tools.push(createEditTool(cwd)); // No bridge — members are headless, no confirm UI
+	}
+	if (assignedTools.includes("glob")) {
+		tools.push(createGlobToolDefinition(cwd));
+	}
+	if (assignedTools.includes("todo")) {
+		tools.push(createTodoTool());
+	}
+	if (assignedTools.includes("webfetch")) {
+		tools.push(createWebfetchTool());
+	}
+	return tools;
 }
 
 export class TeamManager implements TeamManagerLike {
@@ -202,7 +232,7 @@ export class TeamManager implements TeamManagerLike {
 		});
 
 		const resourceLoader = this.buildMemberLoader(systemPrompts, assignedSkills);
-		const memberCustomTools = this.buildMemberCustomTools(opts.name, assignedMcps);
+		const memberCustomTools = this.buildMemberCustomTools(opts.name, assignedTools, assignedMcps);
 
 		const resolvedModel = opts.parentModel ?? this.defaultParentModel;
 		const sessionDir = resolveSessionDir();
@@ -324,7 +354,11 @@ export class TeamManager implements TeamManagerLike {
 					}
 
 					const resourceLoader = this.buildMemberLoader(systemPrompts, assignedSkills);
-					const memberCustomTools = this.buildMemberCustomTools(memberRow.name, assignedMcps);
+					const memberCustomTools = this.buildMemberCustomTools(
+						memberRow.name,
+						assignedTools,
+						assignedMcps,
+					);
 
 					const resolvedModel = opts.parentModel ?? this.defaultParentModel;
 					const { session } = await createAgentSession({
@@ -970,10 +1004,15 @@ export class TeamManager implements TeamManagerLike {
 		});
 	}
 
-	private buildMemberCustomTools(memberName: MemberName, assignedMcps: string[]): ToolDefinition[] {
+	private buildMemberCustomTools(
+		memberName: MemberName,
+		assignedTools: string[],
+		assignedMcps: string[],
+	): ToolDefinition[] {
 		const tools: ToolDefinition[] = [
 			createMemoryTool({ teamRef: { current: this }, selfName: memberName }),
 			createMessageTool({ teamRef: { current: this }, selfName: memberName }),
+			...buildMemberToolDefinitions(assignedTools, this.cwd),
 		];
 		if (assignedMcps.length > 0 && this.mcpManager) {
 			const memberMcp = this.mcpManager.getAuthorizedToolDefinition(assignedMcps);

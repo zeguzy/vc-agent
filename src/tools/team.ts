@@ -155,6 +155,10 @@ export function createTeamTool(opts: TeamToolOptions): ToolDefinition {
 		name: "team",
 		label: "Team",
 		description:
+			"IMPORTANT: New members are read-only by default (read, bash, grep, find, memory, message).\n" +
+			'To let a member edit code, you MUST specify tools, e.g. tools=["read","bash","edit","write","grep","find"].\n' +
+			"Optionally specify skills to load relevant instructions for the member.\n" +
+			"\n" +
 			"Manage your team. Actions:\n" +
 			"- read: See who's on the team, what they're working on, current tasks.\n" +
 			"- create: Add a member. Give them a name, role, and goal. Optionally include taskTitle + taskDescription to start them working right away.\n" +
