@@ -194,55 +194,32 @@ The TUI SHALL support vim-style visual mode for selecting text and yanking (copy
 - **THEN** `UserMessageView`、`ToolMessageView`、`ReadGroupView`、`SeparatorView` SHALL 被 `memo()` 跳过重渲染，仅 `AssistantMessageView` 重渲染
 
 ### Requirement: 工具调用卡片
-系统 SHALL 以圆角边框卡片样式渲染工具调用，按工具类型显示不同的详情和结果。edit 工具在执行成功且携带 `toolResult.details.patch` 时，SHALL 渲染 OpenTUI `<diff>` 组件展示带语法高亮、行号与 +/- 标记的 unified diff，替代早期单行 old/new 文本。
 
-#### Scenario: 工具卡片样式
-- **WHEN** 渲染工具调用消息
-- **THEN** 消息 SHALL 使用 `borderStyle="rounded"` 四边圆框，`backgroundColor=backgroundInset`，顶部行显示状态图标 + 工具名（`secondary` 色），下方显示详情行
+`formatToolDetail()` 函数 SHALL 为以下工具提供专用 case，提取参数生成 label + lines：
 
-#### Scenario: 状态图标与边框颜色
-- **WHEN** 工具执行中/完成/失败
-- **THEN** 图标 SHALL 为 spinner `⠹`（running）/ `✓`（done, `success` 色）/ `✗`（error, `error` 色），边框颜色 SHALL 为 `borderActive`（running）/ `borderSoft`（done）/ `error`（error）
+#### Scenario: MCP 工具调用
+- **WHEN** 工具名为 `mcp`
+- **THEN** label SHALL 为 `{server_name} · {tool_name}`，lines SHALL 为 arguments 中的前 3 个 primitive key-value 对（格式 `key=value`，value 截断 50 字符，key 名含 key/token/secret/password 时跳过）
 
-#### Scenario: 按工具类型显示详情
-- **WHEN** 渲染工具详情行
-- **THEN** read 工具 SHALL 显示 `path` + 可选行范围（offset+limit→`path:offset-(offset+limit-1)`，offset only→`path:offset+`）
-- **AND** bash 工具 SHALL 显示 `command`（截断 80 字符）
-- **AND** edit 工具 SHALL 仅显示 `path` 标题（diff 由下方 unified diff 渲染 Scenario 接管，不再显示单行 old/new 文本）
-- **AND** write 工具 SHALL 显示 `path` + 行数
+#### Scenario: glob 工具调用
+- **WHEN** 工具名为 `glob`
+- **THEN** label SHALL 为 `glob`，lines SHALL 为 `[pattern]` + 可选 `[path]`
 
-#### Scenario: edit 工具渲染 unified diff
-- **WHEN** 渲染 edit 工具调用且 `message.toolResult.details.patch` 为非空字符串
-- **THEN** 系统 SHALL 在 path 标题行下方渲染 `<EditDiffView patch={toolResult.details.patch} filePath={toolArgs.path}>`，内部使用 OpenTUI `<diff>` 元素，传入：
-  - `diff={patch}`（jsdiff `createTwoFilesPatch` 输出的 unified diff 文本）
-  - `filetype={pathToFiletype(toolArgs.path)}`（按扩展名映射的 tree-sitter 语言名）
-  - `syntaxStyle={syntaxStyle}`（复用 markdown 代码块同款）
-  - `view="unified"`、`showLineNumbers={true}`
-  - +/- 染色与背景由 DiffRenderable 默认配色 + `addedSignColor`/`removedSignColor`/`addedBg`/`removedBg` 显式注入
-- **AND** DiffRenderable SHALL 内部完成 parseDiff + 行号对齐 + `+`/`-`/` ` 前缀染色 + tree-sitter 语法高亮
-- **AND** 该 `<diff>` 区 SHALL 设 `flexShrink={0}` 保证在消息列表 ScrollBox 内不被压扁
+#### Scenario: webfetch 工具调用
+- **WHEN** 工具名为 `webfetch`
+- **THEN** label SHALL 为 `webfetch`，lines SHALL 为 `[url]`
 
-#### Scenario: edit diff 的 filetype 映射
-- **WHEN** 计算 edit diff 的 `filetype` prop
-- **THEN** 系统 SHALL 通过纯函数 `pathToFiletype(path)` 按扩展名映射：`.ts`/`.tsx`/`.mts`/`.cts`→`typescript`、`.js`/`.jsx`/`.mjs`→`javascript`、`.py`→`python`、`.go`→`go`、`.rs`→`rust`、`.java`→`java`、`.kt`→`kotlin`、`.md`→`markdown`、`.json`→`json`、`.sh`/`.bash`→`bash`、`.c`/`.h`→`c`、`.cpp`→`cpp`、`.yml`/`.yaml`→`yaml`、`.toml`→`toml`；`Dockerfile` 特判
-- **AND** 未知扩展名/无扩展名 SHALL 不传 `filetype`，`<diff>` 退化为纯 +/- 染色无语法高亮，仍可读
+#### Scenario: question 工具调用
+- **WHEN** 工具名为 `question`
+- **THEN** label SHALL 为 `question`，lines SHALL 为各 question 的 header，逗号分隔
 
-#### Scenario: edit 工具结果文本不重复显示
-- **WHEN** edit 工具成功渲染了 `<diff>` 区
-- **THEN** 系统 SHALL 不再通过 `formatToolResult` 显示 "Successfully replaced N block(s)" 文本行（该信息已由 diff 区表达）
-- **AND** 该抑制 SHALL 仅作用于 edit 工具的成功路径
+#### Scenario: todo 工具调用
+- **WHEN** 工具名为 `todo`
+- **THEN** label SHALL 为 `todo`，lines SHALL 为 `[action]`（如 "add", "update", "list"）
 
-#### Scenario: edit 工具无 diff 数据时降级
-- **WHEN** 渲染 edit 工具调用且 `toolResult.details.patch` 缺失/非字符串（如 edit 失败、旧会话恢复历史消息、匹配错误）
-- **THEN** 系统 SHALL 不渲染 `<diff>` 组件
-- **AND** 系统 SHALL 回退到 `formatToolResult(message.toolResult)` 文本行展示（与现有非 read 工具一致，上限 15 行）
-- **AND** 错误结果 SHALL 使用 `error` 色
-
-#### Scenario: 工具结果显示（非 edit 成功路径）
-- **WHEN** 非 edit 工具执行完成（status=done/error），或 edit 工具处于降级态/错误态
-- **THEN** 系统 SHALL 通过 `formatToolResult` 从 `{content:[{type:'text',text}]}` 提取文本，显示最多 15 行
-- **AND** read 工具 SHALL 跳过结果显示
-- **AND** 错误结果 SHALL 使用 `error` 色
+#### Scenario: 未列出的工具保持 default
+- **WHEN** 工具名不在 read/bash/edit/write/grep/find/lsp/subagent/mcp/glob/webfetch/question/todo/notify 中
+- **THEN** label SHALL 为工具名，lines SHALL 为空数组
 
 ### Requirement: 连续 Read 调用合并
 系统 SHALL 将连续的 read 工具调用消息合并为一个卡片，每行代表一次 read 调用。
@@ -536,7 +513,6 @@ The TUI SHALL support vim-style visual mode for selecting text and yanking (copy
 - **THEN** `client.onWorkerEvent` 触发 SHALL 重渲染 WorkersView，列表条目数与状态实时变化
 - **AND** 已聚焦某 worker 时若该 worker 终结 SHALL 刷新其状态指示符但不退出聚焦
 
-
 ### Requirement: 成员消息源切换
 
 系统 SHALL 支持 MessageList 根据 `activeMemberName` 状态切换消息源，显示不同成员的子会话消息。
@@ -602,3 +578,4 @@ The TUI SHALL support vim-style visual mode for selecting text and yanking (copy
 - **WHEN** 定义 `Message` interface
 - **THEN** SHALL 包含 `subagentDetails?: SubagentToolDetails`（类型来自 `src/agents/types.ts`）
 - **AND** 该字段 SHALL 仅在 subagent 工具的 `tool_execution_end` 时填充，其他工具消息保持 `undefined`
+

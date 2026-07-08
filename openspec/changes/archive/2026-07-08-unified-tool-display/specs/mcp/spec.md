@@ -2,7 +2,7 @@
 
 ## MODIFIED Requirements
 
-### Requirement: MCP status 命令输出格式
+### Requirement: /mcp 命令面板
 
 `/mcp status` 命令输出 SHALL 使用状态图标替代方括号标签，并附加 server type hint。
 

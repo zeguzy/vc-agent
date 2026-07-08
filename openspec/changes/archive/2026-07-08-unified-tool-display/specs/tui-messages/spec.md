@@ -2,7 +2,7 @@
 
 ## MODIFIED Requirements
 
-### Requirement: 工具调用卡片渲染
+### Requirement: 工具调用卡片
 
 `formatToolDetail()` 函数 SHALL 为以下工具提供专用 case，提取参数生成 label + lines：
 
