@@ -55,6 +55,14 @@ export function InputBox({
 	const branch = usePollState<string>("git-branch", pollManager);
 	const dirty = usePollState<boolean>("git-dirty", pollManager);
 	const gitColor = dirty ? colors.warning : colors.success;
+	const mcpStatusRaw = usePollState<string>("mcp-status", pollManager);
+	const mcpInfo = useMemo(() => {
+		if (!mcpStatusRaw) return null;
+		const [totalStr, hasFailedStr] = mcpStatusRaw.split(":");
+		const total = Number(totalStr);
+		if (!total || total <= 0) return null;
+		return { total, hasFailed: hasFailedStr === "true" };
+	}, [mcpStatusRaw]);
 	const pathDisplay = useMemo(() => {
 		const parts = cwd
 			.replace(process.env.HOME ?? "", "~")
@@ -285,6 +293,14 @@ export function InputBox({
 					<>
 						<text fg={colors.textSubtle}>{" · "}</text>
 						<text fg={gitColor}>{branch}</text>
+					</>
+				) : null}
+				{mcpInfo ? (
+					<>
+						<text fg={colors.textSubtle}>{" · "}</text>
+						<text fg={mcpInfo.hasFailed ? colors.error : colors.success}>
+							{`⊙ ${mcpInfo.total} MCP`}
+						</text>
 					</>
 				) : null}
 				<box flexGrow={1} />

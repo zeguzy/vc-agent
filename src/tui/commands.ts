@@ -1,7 +1,7 @@
 import { existsSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
-import { buildAgentModeCycle, getBaseMode } from "../agent/session.js";
+import { activeToolsFor, buildAgentModeCycle, getBaseMode } from "../agent/session.js";
 import { type CommandContext, commandRegistry } from "../commands/registry.js";
 import { getDefaultConfigTemplate, writeConfig } from "../config.js";
 import {
@@ -29,6 +29,13 @@ export interface SuggestionItem {
 	description: string;
 	type: "command" | "skill";
 }
+
+const MCP_STATUS_ICONS: Record<string, string> = {
+	connected: "✓",
+	cached: "○",
+	connecting: "◌",
+	failed: "✗",
+};
 
 async function showSessions(ctx: CommandContext): Promise<void> {
 	try {
@@ -728,9 +735,12 @@ export function registerBuiltinCommands(): void {
 				}
 				lines.push("");
 				for (const s of statuses) {
-					const stale = s.status !== "connected" ? " ⚠" : "";
-					const errSuffix = s.error ? ` — ${s.error}` : "";
-					lines.push(`  [${s.status}] ${s.name} (${s.toolCount} tools)${stale}${errSuffix}`);
+					const icon = MCP_STATUS_ICONS[s.status] ?? "?";
+					const typeHint = s.type ?? "";
+					const suffix =
+						s.status === "cached" ? " (background refresh)" : s.error ? ` — ${s.error}` : "";
+					const typeStr = typeHint ? `  ${typeHint}` : "";
+					lines.push(`  ${icon} ${s.name}  ${s.toolCount} tools${typeStr}${suffix}`);
 				}
 				ctx.setMessages((prev) => [...prev, createAssistantMessage(lines.join("\n"))]);
 				return;
@@ -742,6 +752,45 @@ export function registerBuiltinCommands(): void {
 					"/mcp [refresh [server] | status]\n\n  refresh [server]  — Reconnect and refresh MCP tool cache\n  status           — Show cache and connection status",
 				),
 			]);
+		},
+	});
+
+	commandRegistry.register({
+		name: "tools",
+		description: "Show available tools and MCP server status",
+		usage: "/tools",
+		handler: (_args: string, ctx: CommandContext) => {
+			const mode = ctx.agentMode ?? "standard";
+			const modeLabel = mode === "team" ? "team" : mode === "planner" ? "planner" : "standard";
+			const tools = activeToolsFor(mode);
+			const lines: string[] = [`Tools (${modeLabel} mode):`, `  ${tools.join("  ")}`, ""];
+
+			const manager = ctx.mcpManager;
+			if (!manager || manager.getConnectionStatus().length === 0) {
+				lines.push("MCP Servers: none configured");
+			} else {
+				const statuses = manager.getConnectionStatus();
+				lines.push("MCP Servers:");
+				for (const s of statuses) {
+					const icon = MCP_STATUS_ICONS[s.status] ?? "?";
+					const typeHint = s.type ?? "";
+					const typeStr = typeHint ? `  ${typeHint}` : "";
+					const suffix =
+						s.status === "cached" ? " (background refresh)" : s.error ? ` — ${s.error}` : "";
+					lines.push(`  ${icon} ${s.name}  ${s.toolCount} tools${typeStr}${suffix}`);
+				}
+				const total = statuses.length;
+				const connected = statuses.filter(
+					(s) => s.status === "connected" || s.status === "cached",
+				).length;
+				const failed = statuses.filter((s) => s.status === "failed").length;
+				lines.push("");
+				lines.push(
+					`${total} servers · ${connected} connected${failed > 0 ? ` · ${failed} failed` : ""}`,
+				);
+			}
+
+			ctx.setMessages((prev) => [...prev, createAssistantMessage(lines.join("\n"))]);
 		},
 	});
 

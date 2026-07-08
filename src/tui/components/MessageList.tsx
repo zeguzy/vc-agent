@@ -156,6 +156,28 @@ const AssistantMessageView = memo(function AssistantMessageView({
 	);
 });
 
+const MCP_SENSITIVE_KEY_RE =
+	/key|password|token|secret|auth|credential|private|bearer|cookie|session/i;
+
+export function formatMcpArgs(args: Record<string, unknown>): { label: string; lines: string[] } {
+	const server = String(args.server_name ?? "");
+	const tool = String(args.tool_name ?? "");
+	const label = [server, tool].filter(Boolean).join(" · ");
+
+	const inner = args.arguments;
+	if (!inner || typeof inner !== "object") return { label: label || "mcp", lines: [] };
+
+	const lines: string[] = [];
+	for (const [k, v] of Object.entries(inner as Record<string, unknown>)) {
+		if (MCP_SENSITIVE_KEY_RE.test(k)) continue;
+		if (typeof v === "string" || typeof v === "number" || typeof v === "boolean") {
+			const val = String(v);
+			lines.push(`${k}: ${val.length > 50 ? `${val.slice(0, 47)}...` : val}`);
+		}
+	}
+	return { label: label || "mcp", lines };
+}
+
 function formatToolDetail(toolName: string, args: unknown): { label: string; lines: string[] } {
 	if (!args || typeof args !== "object") return { label: toolName, lines: [] };
 	const a = args as Record<string, unknown>;
@@ -232,6 +254,28 @@ function formatToolDetail(toolName: string, args: unknown): { label: string; lin
 			else if (mode) lines.push(mode);
 			if (description) lines.push(description);
 			return { label: "subagent", lines };
+		}
+		case "mcp": {
+			return formatMcpArgs(a);
+		}
+		case "glob": {
+			const pattern = String(a.pattern ?? "");
+			const lines: string[] = [pattern];
+			if (a.path) lines.push(String(a.path));
+			return { label: "glob", lines };
+		}
+		case "webfetch": {
+			const url = String(a.url ?? "");
+			return { label: "webfetch", lines: [url] };
+		}
+		case "question": {
+			const questions = a.questions as Array<{ header?: string }> | undefined;
+			const headers = questions?.map((q) => q.header).filter(Boolean) ?? [];
+			return { label: "question", lines: headers.length > 0 ? [headers.join(", ")] : [] };
+		}
+		case "todo": {
+			const action = String(a.action ?? "");
+			return { label: "todo", lines: [action] };
 		}
 		default:
 			return { label: toolName, lines: [] };
