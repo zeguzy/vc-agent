@@ -215,7 +215,7 @@
 
 ### Requirement: Agent 定义 frontmatter 扩展字段
 
-系统 SHALL 在 `src/agents/discover.ts:loadAgentsFromDir` 与 `src/agents/types.ts:AgentDefinition` 解析以下 frontmatter 字段为可选：`disallowedTools?: string[]` / `maxTurns?: number` / `background?: boolean` / `permissionMode?: "default" | "plan" | "acceptEdits"`（V1 不允许 `"bypass"`，校验失败跳过 agent 并 warn——详见下方 Scenario `permissionMode 枚举拒收 bypass`）。未声明时分别采用：`[]` / `Config.teams.defaultMaxTurns`（默认 8）/ `false` / `"default"`。
+系统 SHALL 在 `src/agents/discover.ts:loadAgentsFromDir` 与 `src/agents/types.ts:AgentDefinition` 解析以下 frontmatter 字段为可选：`disallowedTools?: string[]` / `maxTurns?: number` / `background?: boolean` / `permissionMode?: "default" | "plan" | "acceptEdits"` / `tier?: "fast" | "standard" | "powerful"`（V1 不允许 `"bypass"`，校验失败跳过 agent 并 warn——详见下方 Scenario `permissionMode 枚举拒收 bypass`）。未声明时分别采用：`[]` / `Config.teams.defaultMaxTurns`（默认 8）/ `false` / `"default"` / `undefined`。
 
 #### Scenario: 解析 disallowedTools 字段
 - **WHEN** agent frontmatter 含 `disallowedTools: [write, edit]`
@@ -239,8 +239,8 @@
 - **AND** 等价运行时只激活 `STANDARD_ACTIVE_TOOLS` 减去 `["write", "edit", "bash"]` 的子集
 
 #### Scenario: 未声明字段保留默认
-- **WHEN** agent frontmatter 未声明任何上述四个字段
-- **THEN** `AgentDefinition.disallowedTools = []`、`maxTurns = Config.teams.defaultMaxTurns`（默认 8）、`background = false`、`permissionMode = "default"`
+- **WHEN** agent frontmatter 未声明任何上述五个字段
+- **THEN** `AgentDefinition.disallowedTools = []`、`maxTurns = Config.teams.defaultMaxTurns`（默认 8）、`background = false`、`permissionMode = "default"`、`tier = undefined`
 - **AND** 现有 agent 定义文件**无需改写**，零迁移成本
 
 #### Scenario: permissionMode 枚举拒收 bypass
@@ -248,16 +248,22 @@
 - **THEN** `src/agents/discover.ts` YAML 解析 SHALL 视为非法、跳过该 agent 并 stderr 输出 warn `agent <name> permissionMode must be one of default|plan|acceptEdits, got "<value>"`
 - **AND** V1 不允许 `bypass` 取值的约束 SHALL 在 `discover.ts` 枚举校验处强制；`bypass` 留待 V2 提案独立设计权限模型时再评估其必要性
 
+#### Scenario: tier 枚举校验
+- **WHEN** agent frontmatter 含 `tier: ultra` 或不属于 `"fast" | "standard" | "powerful"` 的其他取值
+- **THEN** `src/agents/discover.ts` YAML 解析 SHALL 视为非法、跳过该 agent 并 stderr 输出 warn `agent <name> tier must be one of fast|standard|powerful, got "<value>"`
+
 ### Requirement: Worker session 创建路径（异步起点）
 
 系统 SHALL 在 `src/teams/worker.ts` 提供 `Worker.spawn(opts)` 静态工厂，**先直接在 worker.ts 内创建独立 `createAgentSession`**（不立刻抽出 `src/agents/runner.ts:runSubagent` 共享工厂），关键改造是把 `session.prompt(task)` 改成 fire-and-track 而非 await。事后通过 tasks 14.2 重构 `runSubagent` 与 `Worker.spawn` 共享工厂。
+
+模型解析 SHALL 调用统一函数 `resolveSubagentModel({agent, config, modelRegistry, parentModel})`（定义于 `src/agents/model-resolver.ts`），该函数按链式回退优先级解析模型，返回 `ResolvedModel | undefined`。返回 `undefined` 时 SHALL throw Error。
 
 #### Scenario: spawn 不阻塞主 agent 工具调用
 - **WHEN** `Worker.spawn({agent, task, cwd, services, parentModel, signal?})` 被调用
 - **THEN** SHALL 内部 `createAgentSession` 创建独立会话，配置：
   - `cwd`（与主 session 同一）
   - `authStorage` / `modelRegistry` / `settingsManager` 复用主会话的 `services`
-  - `model`: `agent.model ? resolveModel(services.modelRegistry, agent.model) : parentModel`
+  - `model`: `resolveSubagentModel({agent, config: services.config, modelRegistry: services.modelRegistry, parentModel})` 的返回值，为 undefined 时 throw
   - `tools`: 解析 `agent.tools` allowlist（应用 `disallowedTools` deny 后再应用 `tools` 允许）
   - `resourceLoader`: `new DefaultResourceLoader({cwd, agentDir, settingsManager, appendSystemPrompt: [agent.systemPrompt], noSkills: true, noContextFiles: true, noExtensions: true})`
 - **AND** SHALL 注册 `session.subscribe()` 转发事件到 `WorkerSessionPool`
@@ -269,10 +275,12 @@
 - **THEN** 实际激活工具集 SHALL 从 `agent.tools ?? BUILTIN_TOOLS` 中过滤掉 `["write", "edit"]`
 - **AND** 同步 subagent `runSubagent` 调用路径 SHALL 与现有行为保持一致（不引入回退）
 
-#### Scenario: worker 模型解析回退父模型
-- **WHEN** agent frontmatter 未声明 `model` 字段
-- **THEN** worker session SHALL 使用创建时传入的 `parentModel`（主 session 当前 model）
-- **AND** parentModel 为 `undefined` 时 SHALL 走 SDK 默认解析路径
+#### Scenario: worker 模型解析使用统一链式回退
+- **WHEN** worker 构造时需要解析模型
+- **THEN** SHALL 调用 `resolveSubagentModel({agent, config, modelRegistry, parentModel, extraFallback: defaultWorkerModel})`
+- **AND** 解析链 SHALL 为：`config.subagents.models[agent.name]` > `config.subagents.modelTiers[agent.tier]` > `parentModel` > `agent.model`（经 resolveModel） > `extraFallback`/`defaultWorkerModel`（经 resolveModel） > `config.subagents.fallback`（经 resolveModel） > `config.model`（经 resolveModel） > throw
+- **AND** parentModel（③）优先于 agent.model（④），因为 agent.model 字符串经 resolveModel 可能误匹配到错误 provider
+- **AND** 全部候选均失败时 SHALL throw Error，消息包含 agent name 和已尝试的候选列表
 
 #### Scenario: worker 单点失败不传染 pool
 - **WHEN** 某 worker 的 prompt promise reject（如 LLM 限流 / 网络 drop / API timeout）
