@@ -5,7 +5,8 @@ import {
 	createAgentSession,
 	DefaultResourceLoader,
 } from "@earendil-works/pi-coding-agent";
-import { BUILTIN_TOOLS, resolveModel } from "../agent/session.js";
+import { BUILTIN_TOOLS } from "../agent/session.js";
+import { buildNoModelError, resolveSubagentModel } from "../agents/model-resolver.js";
 import type { AgentConfig, SubagentServices } from "../agents/types.js";
 import { extractAssistantText } from "../utils/content.js";
 import { logTeamEvent } from "./logger.js";
@@ -219,18 +220,13 @@ export class Worker {
 			`[teams] Worker.create: parentModel=${parentModel ? `yes(id=${(parentModel as { id?: string }).id},provider=${(parentModel as { provider?: string }).provider})` : "none"} agent.model=${agent.model ?? "none"} opts.defaultWorkerModel=${opts.defaultWorkerModel ?? "none"}`,
 		);
 
-		// parentModel takes precedence over agent.model: when a parent session
-		// supplies its own resolved model, the worker should inherit the
-		// parent's provider/auth rather than re-resolving from a string that
-		// may land on a different provider (e.g. "deepseek/deepseek-v4-pro"
-		// matches the openrouter provider's model id, not deepseek's).
-		const model = parentModel
-			? parentModel
-			: agent.model
-				? resolveModel(services.modelRegistry, agent.model)
-				: opts.defaultWorkerModel
-					? resolveModel(services.modelRegistry, opts.defaultWorkerModel)
-					: undefined;
+		const model = resolveSubagentModel({
+			agent,
+			config: services.config,
+			modelRegistry: services.modelRegistry,
+			parentModel,
+			extraFallback: opts.defaultWorkerModel,
+		});
 		logTeamEvent("worker_create", {
 			workerId: id,
 			parentModel: parentModel
@@ -242,9 +238,7 @@ export class Worker {
 				: "none",
 		});
 		if (!model) {
-			throw new Error(
-				`worker "${agent.name}": no model resolved (agent.model=${agent.model ?? "none"}, defaultWorkerModel=${opts.defaultWorkerModel ?? "none"})`,
-			);
+			throw new Error(buildNoModelError(agent));
 		}
 
 		console.error(

@@ -15,6 +15,19 @@ export interface CustomModel {
 	maxTokens?: number;
 }
 
+export type ModelTier = "fast" | "standard" | "powerful";
+
+/**
+ * Subagent model configuration. All model id strings should use colon syntax
+ * (provider:model) for reliable resolveModel matching — bare strings risk
+ * matching the wrong provider's model id.
+ */
+export interface SubagentsConfig {
+	modelTiers?: Partial<Record<ModelTier, string>>;
+	models?: Record<string, string>;
+	fallback?: string;
+}
+
 export interface ProviderConfig {
 	apiKey?: string;
 	baseUrl?: string;
@@ -58,6 +71,7 @@ export interface Config {
 	notifications?: NotificationsConfig;
 	/** teams 模式配置块——异步后台 worker pool。缺省时按 `DEFAULT_TEAM_CONFIG` 生效。 */
 	teams?: TeamConfig;
+	subagents?: SubagentsConfig;
 	contextPruning?: ContextPruningUserConfig;
 	/** Additional instruction files to inject into system prompt. Supports relative paths, ~/ expansion, globs, and HTTP(S) URLs. */
 	instructions?: string[];
