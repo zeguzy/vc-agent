@@ -38,7 +38,7 @@ describe("Team leader tool assignment — Layer 2 acceptance", () => {
 		mkdirSync(testCwd, { recursive: true });
 		writeFileSync(join(testCwd, "hello.txt"), "Hello Wrld\n");
 
-		const originalHome = process.env.HOME;
+		const _originalHome = process.env.HOME;
 		const isolatedHome = join(tmpdir(), `openagent-e2e-home-${process.pid}-${Date.now()}`);
 		mkdirSync(join(isolatedHome, ".config", "openagent"), { recursive: true });
 		process.env.HOME = isolatedHome;
@@ -162,6 +162,240 @@ describe("Team leader tool assignment — Layer 2 acceptance", () => {
 		150_000,
 	);
 });
+
+describe("Team leader tool assignment — Phase 1 expanded", () => {
+	let server: AgentServer;
+	let httpServer: ReturnType<typeof createHttpServer>;
+	let baseUrl: string;
+	let testCwd: string;
+
+	beforeAll(async () => {
+		testCwd = makeIsolatedCwd();
+		mkdirSync(testCwd, { recursive: true });
+
+		const isolatedHome = join(tmpdir(), `openagent-e2e-home2-${process.pid}-${Date.now()}`);
+		mkdirSync(join(isolatedHome, ".config", "openagent"), { recursive: true });
+		process.env.HOME = isolatedHome;
+
+		const result: RuntimeResult = await createRuntime({
+			cwd: testCwd,
+			mode: "new",
+			agentMode: "team",
+		});
+
+		const { createServer } = await import("../src/server/index.js");
+		server = createServer({
+			runtime: result.runtime,
+			skillManager: result.skillManager,
+			cwd: testCwd,
+		});
+
+		httpServer = createHttpServer({ server, port: 0, host: "127.0.0.1" });
+		const address = httpServer.address();
+		const port = typeof address === "object" && address ? address.port : 0;
+		baseUrl = `http://127.0.0.1:${port}`;
+	}, 30000);
+
+	afterEach(() => {
+		if (server?.handleListMembers) {
+			for (const m of server.handleListMembers()) {
+				try {
+					server.handleCancelMember(m.name);
+				} catch {}
+			}
+		}
+	});
+
+	it("assignedTools persisted in member state", async () => {
+		const tools = ["read", "bash", "edit", "write", "grep", "find", "glob", "todo", "webfetch"];
+		const res = await fetch(`${baseUrl}/team/members`, {
+			method: "POST",
+			headers: { "Content-Type": "application/json" },
+			body: JSON.stringify({
+				name: "multi-tool",
+				role: "full-stack dev",
+				goal: "write and search code",
+				tools,
+			}),
+		});
+		expect(res.status).toBe(200);
+
+		const members = server.handleListMembers();
+		const member = members.find((m) => m.name === "multi-tool");
+		expect(member).toBeDefined();
+		expect(member?.assignedTools).toBeDefined();
+		expect(member?.assignedTools).toEqual(expect.arrayContaining(tools));
+	});
+
+	it("default member has read-only tool set", async () => {
+		const res = await fetch(`${baseUrl}/team/members`, {
+			method: "POST",
+			headers: { "Content-Type": "application/json" },
+			body: JSON.stringify({
+				name: "ro-member",
+				role: "reader",
+				goal: "read only",
+			}),
+		});
+		expect(res.status).toBe(200);
+
+		const members = server.handleListMembers();
+		const member = members.find((m) => m.name === "ro-member");
+		expect(member).toBeDefined();
+		expect(member?.assignedTools).toBeDefined();
+		expect(member?.assignedTools).not.toContain("edit");
+		expect(member?.assignedTools).not.toContain("write");
+	});
+
+	it("subagent/team/question never in assigned tools even if requested", async () => {
+		const res = await fetch(`${baseUrl}/team/members`, {
+			method: "POST",
+			headers: { "Content-Type": "application/json" },
+			body: JSON.stringify({
+				name: "safe-member",
+				role: "test",
+				goal: "should not have dangerous tools",
+				tools: ["read", "subagent", "team", "question", "edit"],
+			}),
+		});
+		expect(res.status).toBe(200);
+
+		const members = server.handleListMembers();
+		const member = members.find((m) => m.name === "safe-member");
+		expect(member).toBeDefined();
+		expect(member?.assignedTools).not.toContain("subagent");
+		expect(member?.assignedTools).not.toContain("team");
+		expect(member?.assignedTools).not.toContain("question");
+		expect(member?.assignedTools).toContain("edit");
+	});
+});
+
+(RUN_LLM && HAS_KEY ? describe : describe.skip)(
+	"Team leader tool assignment — Phase 2 expanded (LLM E2E)",
+	() => {
+		let server: AgentServer;
+		let httpServer: ReturnType<typeof createHttpServer>;
+		let baseUrl: string;
+		let testCwd: string;
+
+		beforeAll(async () => {
+			testCwd = makeIsolatedCwd();
+			mkdirSync(testCwd, { recursive: true });
+			writeFileSync(join(testCwd, "data.txt"), "apple\nbanana\ncherry\n");
+
+			const isolatedHome = join(tmpdir(), `openagent-e2e-home3-${process.pid}-${Date.now()}`);
+			mkdirSync(join(isolatedHome, ".config", "openagent"), { recursive: true });
+			process.env.HOME = isolatedHome;
+
+			const config = buildAstronConfig();
+
+			const result: RuntimeResult = await createRuntime({
+				cwd: testCwd,
+				mode: "new",
+				agentMode: "team",
+				config,
+			});
+
+			const { createServer } = await import("../src/server/index.js");
+			server = createServer({
+				runtime: result.runtime,
+				skillManager: result.skillManager,
+				cwd: testCwd,
+			});
+
+			httpServer = createHttpServer({ server, port: 0, host: "127.0.0.1" });
+			const address = httpServer.address();
+			const port = typeof address === "object" && address ? address.port : 0;
+			baseUrl = `http://127.0.0.1:${port}`;
+		}, 30000);
+
+		afterEach(() => {
+			if (server?.handleListMembers) {
+				for (const m of server.handleListMembers()) {
+					try {
+						server.handleCancelMember(m.name);
+					} catch {}
+				}
+			}
+		});
+
+		it("member without edit/write/bash cannot modify file", async () => {
+			const original = readFileSync(join(testCwd, "data.txt"), "utf-8");
+
+			const createRes = await fetch(`${baseUrl}/team/members`, {
+				method: "POST",
+				headers: { "Content-Type": "application/json" },
+				body: JSON.stringify({
+					name: "reader-locked",
+					role: "read-only analyst",
+					goal: "read and analyze",
+					tools: ["read", "grep", "find"],
+				}),
+			});
+			expect(createRes.status).toBe(200);
+
+			const taskRes = await fetch(`${baseUrl}/team/tasks`, {
+				method: "POST",
+				headers: { "Content-Type": "application/json" },
+				body: JSON.stringify({
+					title: "Add date to data.txt",
+					description:
+						"Use the edit or write tool to add a line 'processed' at the end of data.txt.",
+					memberName: "reader-locked",
+					priority: "high",
+				}),
+			});
+			expect(taskRes.status).toBe(200);
+
+			await new Promise((r) => setTimeout(r, 30_000));
+
+			const content = readFileSync(join(testCwd, "data.txt"), "utf-8");
+			expect(content).toBe(original);
+		}, 60_000);
+
+		it("member with write tool creates a new file", async () => {
+			const createRes = await fetch(`${baseUrl}/team/members`, {
+				method: "POST",
+				headers: { "Content-Type": "application/json" },
+				body: JSON.stringify({
+					name: "writer-llm",
+					role: "file creator",
+					goal: "create files on demand",
+					tools: ["read", "bash", "write", "edit", "grep", "find"],
+				}),
+			});
+			expect(createRes.status).toBe(200);
+
+			const taskRes = await fetch(`${baseUrl}/team/tasks`, {
+				method: "POST",
+				headers: { "Content-Type": "application/json" },
+				body: JSON.stringify({
+					title: "Create summary file",
+					description:
+						"Create a new file called summary.txt in the current directory with the content 'Task completed successfully'.",
+					memberName: "writer-llm",
+					priority: "high",
+				}),
+			});
+			expect(taskRes.status).toBe(200);
+
+			const deadline = Date.now() + 120_000;
+			let created = false;
+			while (Date.now() < deadline) {
+				await new Promise((r) => setTimeout(r, 5000));
+				try {
+					readFileSync(join(testCwd, "summary.txt"), "utf-8");
+					created = true;
+					break;
+				} catch {}
+			}
+
+			expect(created).toBe(true);
+			const content = readFileSync(join(testCwd, "summary.txt"), "utf-8");
+			expect(content).toContain("completed");
+		}, 150_000);
+	},
+);
 
 process.on("exit", () => {
 	try {
