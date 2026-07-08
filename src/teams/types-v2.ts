@@ -182,7 +182,7 @@ export interface TeamManagerLike {
 		topic: string;
 		content: string;
 		shared?: boolean;
-	}): void;
+	}): Promise<void>;
 	readMemberIndex(name: MemberName): MemberIndexStructure | null;
 	readTopicFile(
 		name: MemberName,

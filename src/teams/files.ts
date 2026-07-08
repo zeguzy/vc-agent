@@ -185,7 +185,18 @@ export class TeamFiles {
 			: createFrontmatter(type, content);
 		const raw = serializeFrontmatter(fm, content);
 		const path = this.paths.sharedTopic(topic);
-		// Use file lock for shared writes
+		// proper-lockfile requires the target file to exist before locking — a
+		// first-time write would otherwise fail with ENOENT (lstat on the
+		// not-yet-created file). Create an empty file atomically (O_EXCL|O_CREAT
+		// via 'wx'); a concurrent writer racing to create is harmless since only
+		// one 'wx' wins and the loser's EEXIST is swallowed.
+		if (!existsSync(path)) {
+			try {
+				writeFileSync(path, "", { flag: "wx" });
+			} catch {
+				// Race lost or already exists — proceed to lock.
+			}
+		}
 		const release = await lockfile.lock(path, { retries: 3 });
 		try {
 			this.atomicWrite(path, raw);
