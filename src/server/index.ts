@@ -1,4 +1,3 @@
-import { join } from "node:path";
 import type { AgentSession, AgentSessionEvent, AgentSessionRuntime } from "../agent/session.js";
 import { activeToolsFor } from "../agent/session.js";
 import type {
@@ -137,12 +136,13 @@ export class AgentServer {
 	}
 
 	private sessionTeamDir(): string {
+		// Always use per-session directory to isolate members across sessions.
+		// sessionFile may be undefined (e.g. in-memory sessions), but sessionId
+		// is always available. Prefer sessionFile's parsed ID for consistency
+		// with session storage paths; fall back to sessionId directly.
 		const sf = this.session.sessionFile;
-		if (sf) {
-			const sessionId = parseSessionIdFromUri(sf);
-			return teamDirForSession(sessionId);
-		}
-		return join(this.cwd, ".openagent", "team");
+		const sessionId = sf ? parseSessionIdFromUri(sf) : this.session.sessionId;
+		return teamDirForSession(sessionId);
 	}
 
 	private broadcastTeamEvent(event: TeamEvent) {

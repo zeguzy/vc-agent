@@ -123,21 +123,21 @@ async function handleRequest(server: AgentServer, req: IncomingMessage, res: Ser
 		}
 		try {
 			const member = await server.handleCreateMember(body);
-			return sendJson(res, member);
+			return sendJson(res, stripSession(member));
 		} catch (err) {
 			return sendJson(res, { error: String(err) }, 400);
 		}
 	}
 
 	if (method === "GET" && path === "/team/members") {
-		return sendJson(res, { members: server.handleListMembers() });
+		return sendJson(res, { members: server.handleListMembers().map(stripSession) });
 	}
 
 	if (method === "GET" && path.startsWith("/team/members/")) {
 		const name = path.slice("/team/members/".length);
 		const member = server.handleGetMember(name);
 		if (!member) return sendJson(res, { error: "member not found" }, 404);
-		return sendJson(res, { member });
+		return sendJson(res, { member: stripSession(member) });
 	}
 
 	if (method === "DELETE" && path.startsWith("/team/members/")) {
@@ -306,8 +306,14 @@ async function readBody<T>(req: IncomingMessage): Promise<T> {
 }
 
 function sendJson(res: ServerResponse, data: unknown, status = 200): void {
+	if (res.headersSent) return;
 	res.writeHead(status, { "Content-Type": "application/json" });
 	res.end(JSON.stringify(data));
+}
+
+function stripSession<T extends { session?: unknown }>(member: T): Omit<T, "session"> {
+	const { session: _session, ...rest } = member;
+	return rest;
 }
 
 function createSSEResponse(
