@@ -24,6 +24,7 @@ export interface McpServerConnection {
 	transport: import("@modelcontextprotocol/sdk/shared/transport.js").Transport | null;
 	tools: import("@modelcontextprotocol/sdk/types.js").Tool[];
 	status: ConnectionStatus;
+	type?: string;
 	connectionPromise?: Promise<void>;
 	error?: string;
 }

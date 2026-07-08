@@ -108,35 +108,18 @@ TBD - created by archiving change add-skills-mcp-support. Update Purpose after a
 - **THEN** `mcp` 工具的 catalog 与 schema SHALL 来自缓存 tool schemas，description SHALL 标记 `(stale)` 提示数据可能陈旧；后台刷新完成后 SHALL 热替换为实时数据并移除标记
 
 ### Requirement: /mcp 命令面板
-系统 SHALL 提供 `/mcp` 命令，支持无参（打开交互面板）和子命令（`refresh`、`status`）两种形式，可视化 MCP server 连接状态与缓存状态。
 
-#### Scenario: 打开面板（无参）
-- **WHEN** 用户执行 `/mcp`（无参数）
-- **THEN** 系统 SHALL 打开 `McpPanel`（实现风格参照现有 `SettingsPanel`），显示所有已配置 server
+`/mcp status` 命令输出 SHALL 使用状态图标替代方括号标签，并附加 server type hint。
 
-#### Scenario: 状态展示
-- **WHEN** 渲染 `McpPanel`
-- **THEN** 每个 server SHALL 显示名称、transport 类型、连接状态（`connected`/`error`/`disconnected`/`stale`）、工具数量、`stale` 标记；`error` 状态 SHALL 显示可读错误信息
+#### Scenario: 图标映射
+- **WHEN** 渲染 server 状态行
+- **THEN** connected → `✓`，cached → `○`，connecting → `◌`，failed → `✗`
 
-#### Scenario: 重连操作
-- **WHEN** 用户在面板对 `error`/`disconnected`/`stale` 的 server 触发重连
-- **THEN** 系统 SHALL 调用 `McpManager.refreshTools(serverName)` 重新连接并刷新该 server 的缓存，完成后刷新面板状态
-
-#### Scenario: 关闭面板返回
-- **WHEN** 用户在面板按 Esc
-- **THEN** 系统 SHALL 关闭面板返回主消息视图
-
-#### Scenario: refresh 子命令（全部）
-- **WHEN** 用户执行 `/mcp refresh`（无 server 参数）
-- **THEN** 系统 SHALL 对所有 `enabled:true` 的 server 触发 `McpManager.refreshTools()`，重新连接 + listTools + 更新缓存，完成后显示刷新结果摘要（成功/失败数）
-
-#### Scenario: refresh 子命令（指定 server）
-- **WHEN** 用户执行 `/mcp refresh github`
-- **THEN** 系统 SHALL 仅对 `github` server 触发刷新，保留其他 server 现有状态；指定不存在的 server 名 SHALL 返回错误提示
-
-#### Scenario: status 子命令
-- **WHEN** 用户执行 `/mcp status`
-- **THEN** 系统 SHALL 显示缓存命中情况（configHash 是否匹配）、各 server 连接状态、每个 server 的 stale tool 数量、缓存文件路径与最后更新时间
+#### Scenario: type hint 显示
+- **WHEN** server 配置的 transport type 为 streamable-http 或 sse
+- **THEN** 输出 SHALL 显示 `remote` type hint
+- **WHEN** server 配置的 transport type 为 stdio
+- **THEN** 输出 SHALL 显示 `local` type hint
 
 ### Requirement: MCP tool 状态缓存
 系统 SHALL 维护一份 MCP tool schemas 的磁盘缓存（`~/.config/openagent/mcp-tool-cache.json`），以合并后 `mcp.json` 的内容哈希为键。缓存 SHALL 存储每个 server 的完整 tool 定义（name + description + inputSchema）。缓存 SHALL NOT 存储 `client`/`transport` 等不可序列化的连接态对象。

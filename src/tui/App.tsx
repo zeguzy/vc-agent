@@ -335,11 +335,22 @@ export function App({
 	useEffect(() => {
 		pollManagerRef.current.register("git-branch", () => getGitBranch(cwd), 3000);
 		pollManagerRef.current.register("git-dirty", () => getGitDirty(cwd), 3000);
+		pollManagerRef.current.register(
+			"mcp-status",
+			() => {
+				const statuses = mcpManager?.getConnectionStatus() ?? [];
+				const total = statuses.length;
+				const hasFailed = statuses.some((s) => s.status === "failed");
+				return `${total}:${hasFailed}`;
+			},
+			5000,
+		);
 		return () => {
 			pollManagerRef.current.unregister("git-branch");
 			pollManagerRef.current.unregister("git-dirty");
+			pollManagerRef.current.unregister("mcp-status");
 		};
-	}, [cwd]);
+	}, [cwd, mcpManager]);
 
 	useEffect(() => {
 		client.onSessionChange(async () => {

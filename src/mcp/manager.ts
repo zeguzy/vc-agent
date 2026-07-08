@@ -73,12 +73,14 @@ export class McpManager {
 		name: string;
 		status: string;
 		toolCount: number;
+		type?: string;
 		error?: string;
 	}> {
 		return this.connections.map((c) => ({
 			name: c.name,
 			status: c.status,
 			toolCount: c.tools.length,
+			type: c.type,
 			error: c.error,
 		}));
 	}
@@ -226,6 +228,7 @@ export class McpManager {
 				transport: null,
 				tools: server.tools as import("@modelcontextprotocol/sdk/types.js").Tool[],
 				status: "cached",
+				type: entryMap.get(server.name)?.type,
 			});
 		}
 
@@ -380,10 +383,12 @@ export class McpManager {
 	}
 
 	private async connectServer(name: string, config: McpServerConfig): Promise<McpServerConnection> {
-		if (config.type === "remote") {
-			return this.connectRemoteServer(name, config);
-		}
-		return this.connectLocalServer(name, config);
+		const conn =
+			config.type === "remote"
+				? await this.connectRemoteServer(name, config)
+				: await this.connectLocalServer(name, config);
+		conn.type = config.type;
+		return conn;
 	}
 
 	private async connectRemoteServer(
