@@ -88,7 +88,7 @@ export function createMemoryTool(opts: MemoryToolOptions): ToolDefinition {
 			try {
 				switch (args.action) {
 					case "write":
-						return handleWrite(manager, selfName, args);
+						return await handleWrite(manager, selfName, args);
 					case "read":
 						return handleRead(manager, selfName, args);
 					case "update-self":
@@ -103,7 +103,7 @@ export function createMemoryTool(opts: MemoryToolOptions): ToolDefinition {
 	};
 }
 
-function handleWrite(
+async function handleWrite(
 	manager: TeamManagerLike,
 	selfName: string | undefined,
 	args: Record<string, unknown>,
@@ -119,13 +119,17 @@ function handleWrite(
 	const targetMember = (args.name as string) || selfName || (isSharedWrite ? "leader" : undefined);
 	if (!targetMember) return err("no member specified and you are not a team member");
 
-	manager.writeMemory({
-		memberName: targetMember,
-		type,
-		topic,
-		content,
-		shared: isSharedWrite,
-	});
+	try {
+		await manager.writeMemory({
+			memberName: targetMember,
+			type,
+			topic,
+			content,
+			shared: isSharedWrite,
+		});
+	} catch (e) {
+		return err(`failed to write memory: ${e instanceof Error ? e.message : String(e)}`);
+	}
 
 	const location = isSharedWrite ? "shared/" : `members/${targetMember}/`;
 	return ok(`Memory written: ${location}${topic}.md [${type}]`);

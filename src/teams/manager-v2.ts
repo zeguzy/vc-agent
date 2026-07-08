@@ -1033,26 +1033,23 @@ export class TeamManager implements TeamManagerLike {
 
 	// ─── Memory Operations ─────────────────────────────────
 
-	writeMemory(opts: {
+	async writeMemory(opts: {
 		memberName: MemberName;
 		type: MemoryType;
 		topic: string;
 		content: string;
 		shared?: boolean;
-	}): void {
+	}): Promise<void> {
 		validateName(opts.memberName, "member name");
 		validateName(opts.topic, "topic name");
 
 		if (opts.shared && (opts.type === "project" || opts.type === "reference")) {
-			// Write to shared/ directory
+			// Write to shared/ directory — await so a write failure propagates
+			// instead of silently leaving a dangling TEAM.md index entry.
 			const existing = this.files.readSharedTopic(opts.topic);
-			this.files
-				.writeSharedTopic(opts.topic, opts.type, opts.content, existing ?? undefined)
-				.catch((err) => {
-					console.error(`[team] failed to write shared topic: ${err}`);
-				});
+			await this.files.writeSharedTopic(opts.topic, opts.type, opts.content, existing ?? undefined);
 
-			// Update TEAM.md shared memory index
+			// Update TEAM.md shared memory index (only reached if write succeeded)
 			const teamMd = this.files.readTeamMd();
 			const alreadyListed = teamMd.sharedMemoryIndex.some(
 				(s) => s.path === `shared/${opts.topic}.md`,
