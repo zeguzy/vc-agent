@@ -256,5 +256,4 @@ export type TeamEvent =
 /** Lazy reference to TeamManager — mirrors WorkerPoolRef pattern. */
 export interface TeamManagerRef {
 	current: TeamManagerLike | null;
-	wakeUp?: (msg: string) => void;
 }

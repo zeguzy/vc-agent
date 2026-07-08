@@ -174,10 +174,10 @@ export function createTeamTool(opts: TeamToolOptions): ToolDefinition {
 			"- edit-member: Update a member's goal or active-context.\n" +
 			"- complete: Mark a task as done by its ID.\n" +
 			"- remove: Remove a member from the team. Only use this when the user explicitly asks to remove someone — finished members stay idle and available for new tasks.\n" +
-			"- wait: Pause for N seconds (default 30, max 300), then wake up to check team status. Use this instead of repeatedly calling read while members work.\n" +
+			"- wait: Block for N seconds (default 30, max 300), then resume to check team status. Use this instead of repeatedly calling read while members work. The agent loop is suspended during the wait.\n" +
 			'  Example: team(action="wait", duration=60)',
 		parameters: TeamParamsSchema,
-		async execute(_toolCallId, params, _signal, _onUpdate, _ctx) {
+		async execute(_toolCallId, params, signal, _onUpdate, _ctx) {
 			const manager = opts.teamRef.current;
 			if (!manager) return err("Team manager not available yet — try again in a moment.");
 			const args = params as {
@@ -248,7 +248,7 @@ export function createTeamTool(opts: TeamToolOptions): ToolDefinition {
 					case "remove":
 						return await handleRemove(manager, args);
 					case "wait":
-						return handleWait(opts.teamRef, args);
+						return await handleWait(args, signal);
 					default:
 						return err(`Unknown action: ${args.action}`);
 				}
@@ -628,22 +628,22 @@ async function handleRemove(manager: TeamManagerLike, args: Record<string, unkno
 	return ok(`Member "${name}" removed and archived.`);
 }
 
-function handleWait(teamRef: TeamManagerRef, args: { duration?: number }) {
+async function handleWait(args: { duration?: number }, signal: AbortSignal | undefined) {
 	const seconds = Math.max(5, Math.min(300, args.duration ?? 30));
-	const wakeUp = teamRef.wakeUp;
-	if (!wakeUp) {
-		return err("Wake-up callback not available. Use read to poll manually.");
-	}
-	console.error(`[team] wait: scheduling wake-up in ${seconds}s`);
-	setTimeout(() => {
-		console.error(`[team] wait: timer fired, calling wakeUp`);
-		try {
-			wakeUp(`[Team Wake-up] ${seconds}s elapsed. Check team status now.`);
-		} catch (e) {
-			console.error(`[team] wait: wakeUp threw:`, e);
+	await new Promise<void>((resolve, reject) => {
+		const timer = setTimeout(() => resolve(), seconds * 1000);
+		if (signal) {
+			signal.addEventListener(
+				"abort",
+				() => {
+					clearTimeout(timer);
+					reject(signal.reason ?? new Error("Aborted"));
+				},
+				{ once: true },
+			);
 		}
-	}, seconds * 1000);
-	return ok(`Waiting ${seconds}s. I'll check back then.`);
+	});
+	return ok(`Waited ${seconds}s. Checking team status now.`);
 }
 
 function ok(text: string) {
