@@ -1,6 +1,6 @@
 import type { ToolDefinition } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
-import type { TeamManagerLike, TeamManagerRef } from "../teams/types-v2.js";
+import type { MemberState, TeamManagerLike, TeamManagerRef } from "../teams/types-v2.js";
 
 interface TeamToolOptions {
 	teamRef: TeamManagerRef;
@@ -9,6 +9,109 @@ interface TeamToolOptions {
 export const CREATE_BATCH_SOFT_LIMIT = 20;
 export const ASSIGN_BATCH_SOFT_LIMIT = 20;
 export const DIRECT_BATCH_SOFT_LIMIT = 20;
+
+// 核心函数故意不做字段校验：单条 handler 校验（保持字面量），批量靠 TeamManager 抛异常。
+// 单条调一次，批量顺序循环调。
+
+type CreateOneResult =
+	| { ok: true; state: MemberState; taskId: string | null; taskWarn?: string }
+	| { ok: false; error: string };
+
+type AssignResult = { ok: true; taskId: string } | { ok: false; error: string };
+
+type DirectResult = { ok: true } | { ok: false; error: string };
+
+function toErrMsg(e: unknown): string {
+	return e instanceof Error ? e.message : String(e);
+}
+
+async function createOneMember(
+	manager: TeamManagerLike,
+	spec: {
+		name: string;
+		role: string;
+		goal: string;
+		constraints?: string;
+		tools?: string[];
+		skills?: string[];
+		mcps?: string[];
+		taskTitle?: string;
+		taskDescription?: string;
+		taskPriority?: "high" | "medium" | "low";
+	},
+): Promise<CreateOneResult> {
+	let state: MemberState;
+	try {
+		state = await manager.createMember({
+			name: spec.name,
+			role: spec.role,
+			goal: spec.goal,
+			constraints: spec.constraints,
+			model: undefined,
+			services: {} as never,
+			parentModel: undefined,
+			tools: spec.tools,
+			skills: spec.skills,
+			mcps: spec.mcps,
+		});
+	} catch (e) {
+		return { ok: false, error: toErrMsg(e) };
+	}
+
+	if (!spec.taskTitle) {
+		return { ok: true, state, taskId: null };
+	}
+
+	try {
+		const task = manager.assignTask({
+			title: spec.taskTitle,
+			description: spec.taskDescription ?? "",
+			memberName: spec.name,
+			priority: spec.taskPriority ?? "medium",
+		});
+		return { ok: true, state, taskId: task.id };
+	} catch (e) {
+		return { ok: true, state, taskId: null, taskWarn: toErrMsg(e) };
+	}
+}
+
+function assignOneTask(
+	manager: TeamManagerLike,
+	spec: {
+		name: string;
+		title: string;
+		description?: string;
+		priority?: "high" | "medium" | "low";
+	},
+): AssignResult {
+	try {
+		const task = manager.assignTask({
+			title: spec.title,
+			description: spec.description ?? "",
+			memberName: spec.name,
+			priority: spec.priority ?? "medium",
+		});
+		return { ok: true, taskId: task.id };
+	} catch (e) {
+		return { ok: false, error: toErrMsg(e) };
+	}
+}
+
+function directOneMessage(
+	manager: TeamManagerLike,
+	spec: {
+		name: string;
+		kind: "directive" | "context" | "redirect";
+		payload: string;
+	},
+): DirectResult {
+	try {
+		manager.directMember(spec.name, spec.kind, spec.payload);
+		return { ok: true };
+	} catch (e) {
+		return { ok: false, error: toErrMsg(e) };
+	}
+}
 
 const ActionSchema = Type.Union(
 	[
@@ -301,36 +404,32 @@ async function handleCreate(manager: TeamManagerLike, args: Record<string, unkno
 	if (!role) return err("role is required for create");
 	if (!goal) return err("goal is required for create");
 
-	const tools = args.tools as string[] | undefined;
-	const skills = args.skills as string[] | undefined;
-	const mcps = args.mcps as string[] | undefined;
-
-	const state = await manager.createMember({
+	const result = await createOneMember(manager, {
 		name,
 		role,
 		goal,
 		constraints: args.constraints as string | undefined,
-		model: undefined,
-		services: {} as never,
-		parentModel: undefined,
-		...(tools ? { tools } : {}),
-		...(skills ? { skills } : {}),
-		...(mcps ? { mcps } : {}),
+		tools: args.tools as string[] | undefined,
+		skills: args.skills as string[] | undefined,
+		mcps: args.mcps as string[] | undefined,
+		taskTitle: args.taskTitle as string | undefined,
+		taskDescription: args.taskDescription as string | undefined,
+		taskPriority: args.taskPriority as "high" | "medium" | "low" | undefined,
 	});
+
+	if (!result.ok) return err(result.error);
+	if (result.taskWarn) return err(result.taskWarn);
 
 	const taskTitle = args.taskTitle as string | undefined;
 	if (taskTitle) {
-		const task = manager.assignTask({
-			title: taskTitle,
-			description: (args.taskDescription as string) ?? "",
-			memberName: name,
-			priority: (args.taskPriority as "high" | "medium" | "low" | undefined) ?? "medium",
-		});
 		return ok(
-			`Member "${name}" (${role}) created and working on "${taskTitle}" [${task.id}]. Status: active`,
+			`Member "${name}" (${role}) created and working on "${taskTitle}" [${result.taskId}]. Status: active`,
 		);
 	}
 
+	const tools = args.tools as string[] | undefined;
+	const skills = args.skills as string[] | undefined;
+	const mcps = args.mcps as string[] | undefined;
 	const toolSummary = [
 		tools && `tools=[${tools.join(",")}`,
 		skills && `skills=[${skills.join(",")}`,
@@ -339,7 +438,7 @@ async function handleCreate(manager: TeamManagerLike, args: Record<string, unkno
 		.filter(Boolean)
 		.join(" | ");
 	return ok(
-		`Member "${name}" (${role}) created. Status: ${state.status}${toolSummary ? `. ${toolSummary}` : ""}`,
+		`Member "${name}" (${role}) created. Status: ${result.state.status}${toolSummary ? `. ${toolSummary}` : ""}`,
 	);
 }
 
@@ -391,45 +490,16 @@ async function handleCreateBatch(manager: TeamManagerLike, args: Record<string, 
 	const failed: BatchFailure[] = [];
 
 	for (const m of members) {
-		try {
-			await manager.createMember({
-				name: m.name,
-				role: m.role,
-				goal: m.goal,
-				constraints: m.constraints,
-				model: undefined,
-				services: {} as never,
-				parentModel: undefined,
-				tools: m.tools,
-				skills: m.skills,
-				mcps: m.mcps,
-			});
-		} catch (e) {
-			failed.push({ name: m.name, error: e instanceof Error ? e.message : String(e) });
+		const result = await createOneMember(manager, m);
+		if (!result.ok) {
+			failed.push({ name: m.name, error: result.error });
 			continue;
 		}
-
-		if (!m.taskTitle) {
-			succeeded.push({ name: m.name, role: m.role, taskId: null });
+		if (result.taskWarn) {
+			succeeded.push({ name: m.name, role: m.role, taskId: null, taskWarn: result.taskWarn });
 			continue;
 		}
-
-		try {
-			const task = manager.assignTask({
-				title: m.taskTitle,
-				description: m.taskDescription ?? "",
-				memberName: m.name,
-				priority: m.taskPriority ?? "medium",
-			});
-			succeeded.push({ name: m.name, role: m.role, taskId: task.id });
-		} catch (e) {
-			succeeded.push({
-				name: m.name,
-				role: m.role,
-				taskId: null,
-				taskWarn: e instanceof Error ? e.message : String(e),
-			});
-		}
+		succeeded.push({ name: m.name, role: m.role, taskId: result.taskId });
 	}
 
 	const lines: string[] = [];
@@ -465,13 +535,14 @@ function handleAssign(manager: TeamManagerLike, args: Record<string, unknown>) {
 	const title = args.title as string | undefined;
 	if (!name) return err("name (member) is required for assign");
 	if (!title) return err("title is required for assign");
-	const task = manager.assignTask({
+	const result = assignOneTask(manager, {
+		name,
 		title,
-		description: (args.description as string) ?? "",
-		memberName: name,
-		priority: (args.priority as "high" | "medium" | "low" | undefined) ?? "medium",
+		description: args.description as string | undefined,
+		priority: args.priority as "high" | "medium" | "low" | undefined,
 	});
-	return ok(`Task ${task.id} "${title}" assigned to @${name}. Member is now active.`);
+	if (!result.ok) return err(result.error);
+	return ok(`Task ${result.taskId} "${title}" assigned to @${name}. Member is now active.`);
 }
 
 function handleAssignBatch(manager: TeamManagerLike, args: Record<string, unknown>) {
@@ -496,17 +567,12 @@ function handleAssignBatch(manager: TeamManagerLike, args: Record<string, unknow
 	const failed: BatchFailure[] = [];
 
 	for (const t of tasks) {
-		try {
-			const task = manager.assignTask({
-				title: t.title,
-				description: t.description ?? "",
-				memberName: t.name,
-				priority: t.priority ?? "medium",
-			});
-			succeeded.push({ name: t.name, taskId: task.id, title: t.title });
-		} catch (e) {
-			failed.push({ name: t.name, error: e instanceof Error ? e.message : String(e) });
+		const result = assignOneTask(manager, t);
+		if (!result.ok) {
+			failed.push({ name: t.name, error: result.error });
+			continue;
 		}
+		succeeded.push({ name: t.name, taskId: result.taskId, title: t.title });
 	}
 
 	const lines: string[] = [];
@@ -538,7 +604,8 @@ function handleDirect(manager: TeamManagerLike, args: Record<string, unknown>) {
 	if (!name) return err("name is required for direct");
 	if (!kind) return err("kind is required for direct");
 	if (!payload) return err("payload is required for direct");
-	manager.directMember(name, kind, payload);
+	const result = directOneMessage(manager, { name, kind, payload });
+	if (!result.ok) return err(result.error);
 	return ok(`Message sent to ${name} [${kind}].`);
 }
 
@@ -563,12 +630,12 @@ function handleDirectBatch(manager: TeamManagerLike, args: Record<string, unknow
 	const failed: BatchFailure[] = [];
 
 	for (const m of messages) {
-		try {
-			manager.directMember(m.name, m.kind, m.payload);
-			succeeded.push({ name: m.name, kind: m.kind, payload: m.payload });
-		} catch (e) {
-			failed.push({ name: m.name, error: e instanceof Error ? e.message : String(e) });
+		const result = directOneMessage(manager, m);
+		if (!result.ok) {
+			failed.push({ name: m.name, error: result.error });
+			continue;
 		}
+		succeeded.push({ name: m.name, kind: m.kind, payload: m.payload });
 	}
 
 	const lines: string[] = [];
