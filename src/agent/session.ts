@@ -204,6 +204,7 @@ export interface InitializedServices {
 	resourceLoader: Awaited<ReturnType<SkillManager["initialize"]>>;
 	model: ReturnType<typeof resolveModel>;
 	mcpManager: McpManager;
+	config?: Config;
 }
 
 async function initServices(opts: {
@@ -257,6 +258,7 @@ async function initServices(opts: {
 		resourceLoader,
 		model,
 		mcpManager,
+		config: opts.config,
 	};
 }
 

@@ -1,8 +1,9 @@
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { createAgentSession, DefaultResourceLoader } from "@earendil-works/pi-coding-agent";
-import { BUILTIN_TOOLS, resolveModel } from "../agent/session.js";
+import { BUILTIN_TOOLS } from "../agent/session.js";
 import { extractAssistantText } from "../utils/content.js";
+import { buildNoModelError, resolveSubagentModel } from "./model-resolver.js";
 import type { RunSubagentOptions, SubagentResult, SubagentUsage } from "./types.js";
 
 const AGENT_DIR = join(homedir(), ".config", "openagent");
@@ -10,7 +11,13 @@ const AGENT_DIR = join(homedir(), ".config", "openagent");
 export async function runSubagent(options: RunSubagentOptions): Promise<SubagentResult> {
 	const { agent, task, cwd, services, parentModel, signal, onUpdate } = options;
 
-	const model = agent.model ? resolveModel(services.modelRegistry, agent.model) : parentModel;
+	const model = resolveSubagentModel({
+		agent,
+		config: services.config,
+		modelRegistry: services.modelRegistry,
+		parentModel,
+	});
+	if (!model) throw new Error(buildNoModelError(agent));
 
 	const resourceLoader = new DefaultResourceLoader({
 		cwd,

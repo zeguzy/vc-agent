@@ -1,4 +1,5 @@
 import type { AuthStorage, ModelRegistry, SettingsManager } from "@earendil-works/pi-coding-agent";
+import type { Config, ModelTier } from "../config.js";
 
 export type AgentScope = "user" | "project" | "both";
 export type AgentSource = "builtin" | "user" | "project";
@@ -15,6 +16,7 @@ export interface AgentConfig {
 	maxTurns?: number;
 	background?: boolean;
 	permissionMode?: AgentPermissionMode;
+	tier?: ModelTier;
 }
 
 export type AgentPermissionMode = "default" | "plan" | "acceptEdits";
@@ -68,6 +70,7 @@ export interface SubagentServices {
 	authStorage: AuthStorage;
 	modelRegistry: ModelRegistry;
 	settingsManager: SettingsManager;
+	config?: Config;
 }
 
 export interface RunSubagentOptions {

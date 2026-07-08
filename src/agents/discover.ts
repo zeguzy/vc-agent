@@ -2,6 +2,7 @@ import { type Dirent, readdirSync, readFileSync, statSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { parseFrontmatter } from "@earendil-works/pi-coding-agent";
+import type { ModelTier } from "../config.js";
 import { BUILTIN_AGENTS } from "./defaults.js";
 import type {
 	AgentConfig,
@@ -11,6 +12,7 @@ import type {
 } from "./types.js";
 
 const VALID_PERMISSION_MODES = new Set<AgentPermissionMode>(["default", "plan", "acceptEdits"]);
+const VALID_TIERS = new Set<ModelTier>(["fast", "standard", "powerful"]);
 
 function isDirectory(p: string): boolean {
 	try {
@@ -78,6 +80,17 @@ function loadAgentsFromDir(dir: string, source: "user" | "project"): AgentConfig
 			}
 		}
 
+		let tier: ModelTier | undefined;
+		if (typeof frontmatter.tier === "string") {
+			if (VALID_TIERS.has(frontmatter.tier as ModelTier)) {
+				tier = frontmatter.tier as ModelTier;
+			} else {
+				console.error(
+					`[agents] ${entry.name}: invalid tier "${frontmatter.tier}" (must be one of: fast, standard, powerful) — ignoring`,
+				);
+			}
+		}
+
 		agents.push({
 			name: frontmatter.name,
 			description: frontmatter.description,
@@ -90,6 +103,7 @@ function loadAgentsFromDir(dir: string, source: "user" | "project"): AgentConfig
 			maxTurns,
 			background,
 			permissionMode,
+			tier,
 		});
 	}
 

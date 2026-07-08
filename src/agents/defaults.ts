@@ -100,6 +100,7 @@ Rules:
 - Prioritize breadth over depth`,
 		source: "builtin",
 		filePath: "(builtin)",
+		tier: "fast",
 	},
 	{
 		name: "ribosome",
@@ -137,6 +138,7 @@ Rules:
 - Bugfix rule: fix minimally, never refactor while fixing`,
 		source: "builtin",
 		filePath: "(builtin)",
+		tier: "standard",
 	},
 	{
 		name: "nucleus",
@@ -178,6 +180,7 @@ Rules:
 - If you need more context, say exactly what files you'd need`,
 		source: "builtin",
 		filePath: "(builtin)",
+		tier: "powerful",
 	},
 	{
 		name: "plasmid",
@@ -223,6 +226,7 @@ Rules:
 - Match existing patterns unless there's a clear reason not to`,
 		source: "builtin",
 		filePath: "(builtin)",
+		tier: "standard",
 	},
 	{
 		name: "lysosome",
@@ -233,5 +237,6 @@ Rules:
 		systemPrompt: LYSOSOME_SYSTEM_PROMPT,
 		source: "builtin",
 		filePath: "(builtin)",
+		tier: "powerful",
 	},
 ];
