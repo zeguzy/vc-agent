@@ -14,7 +14,11 @@ import {
 	SessionManager,
 	SettingsManager,
 } from "@earendil-works/pi-coding-agent";
-import { buildAvailableAgentsPrompt, discoverAgents } from "../agents/discover.js";
+import {
+	buildAvailableAgentsPrompt,
+	buildAvailableSkillsPrompt,
+	discoverAgents,
+} from "../agents/discover.js";
 import type { Config, ProviderConfig } from "../config.js";
 import { ORCHESTRATOR_SYSTEM_PROMPT, TEAM_ORCHESTRATOR_PROMPT } from "../context-files.js";
 import { createLspToolDefinitions, LspClient } from "../lsp/index.js";
@@ -124,7 +128,13 @@ export function appendSystemPromptFor(
 			return prompts;
 		const { agents } = discoverAgents(cwd);
 		const agentList = buildAvailableAgentsPrompt(agents);
-		return agentList ? [...prompts, agentList] : prompts;
+		let result = agentList ? [...prompts, agentList] : prompts;
+		// Inject skill list for team mode only
+		if (agentMode === "team") {
+			const skillList = buildAvailableSkillsPrompt(cwd);
+			if (skillList) result = [...result, skillList];
+		}
+		return result;
 	};
 
 	if (agentMode === "team") return injectAgentList([TEAM_ORCHESTRATOR_PROMPT]);
