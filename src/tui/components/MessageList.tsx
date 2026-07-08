@@ -4,6 +4,7 @@ import type { Message } from "../../message.js";
 import { syntaxStyle } from "../utils/syntax.js";
 import { colors, icons } from "../utils/theme.js";
 import { EditDiffView } from "./EditDiffView.js";
+import { SubagentMessageView } from "./SubagentMessageView.js";
 
 function workerStatusIcon(status: Message["workerStatus"]): string {
 	switch (status) {
@@ -671,6 +672,8 @@ export function MessageList({
 						return <UserMessageView key={msg.id} message={msg} index={item.index} />;
 					if (msg.role === "tool") {
 						if (msg.toolName === "todo") return <TodoMessageView key={msg.id} message={msg} />;
+						if (msg.toolName === "subagent")
+							return <SubagentMessageView key={msg.id} message={msg} />;
 						return <ToolMessageView key={msg.id} message={msg} />;
 					}
 					if (msg.role === "worker") return <WorkerMessageView key={msg.id} message={msg} />;

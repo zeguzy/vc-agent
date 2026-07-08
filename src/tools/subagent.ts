@@ -11,6 +11,8 @@ import type {
 } from "../agents/types.js";
 import { MAX_OUTPUT_CHARS, MAX_PARALLEL_TASKS, PARALLEL_CONCURRENCY } from "../agents/types.js";
 
+const PREVIEW_MAX_CHARS = 5000;
+
 type ResolvedModel = NonNullable<ReturnType<typeof import("../agent/session.js").resolveModel>>;
 
 interface SubagentToolOptions {
@@ -84,6 +86,7 @@ export function createSubagentTool(options: SubagentToolOptions): ToolDefinition
 		"Modes: single (one agent, one task), parallel (multiple tasks concurrently, max 8), chain (sequential, {previous} placeholder).",
 		"Each delegation prompt MUST include: specific GOAL, relevant file CONTEXT, and clear SCOPE boundaries.",
 		"Vague prompts produce poor results — be exhaustive in your task description.",
+		"The result returned by the subagent is not visible to the user. To show the user the result, send a text message summarizing it.",
 	].join(" ");
 
 	const emptyDetails = (mode: string): SubagentToolDetails => ({
@@ -94,7 +97,12 @@ export function createSubagentTool(options: SubagentToolOptions): ToolDefinition
 	});
 
 	const errorResult = (msg: string, mode: string) => ({
-		content: [{ type: "text" as const, text: `Error: ${msg}` }],
+		content: [
+			{
+				type: "text" as const,
+				text: `<subagent-result status="failed" mode="${mode}">\n<error>${msg}</error>\n</subagent-result>`,
+			},
+		],
 		details: emptyDetails(mode),
 	});
 
@@ -142,12 +150,14 @@ export function createSubagentTool(options: SubagentToolOptions): ToolDefinition
 						}),
 				});
 
-				const output = truncate(result.output, MAX_OUTPUT_CHARS);
+				const preview = truncate(result.output, PREVIEW_MAX_CHARS);
+				const status = result.error ? "failed" : "completed";
+				const errorTag = result.error ? `\n<error>${result.error}</error>` : "";
 				return {
 					content: [
 						{
 							type: "text" as const,
-							text: `## Subagent: ${result.agent}\n\n${output}${result.error ? `\n\n**Error:** ${result.error}` : ""}`,
+							text: `<subagent-result agent="${result.agent}" status="${status}" mode="single">\n<output>\n${preview}\n</output>${errorTag}\n</subagent-result>`,
 						},
 					],
 					details: {
@@ -194,18 +204,20 @@ export function createSubagentTool(options: SubagentToolOptions): ToolDefinition
 					}),
 				);
 
-				const parts = results.map((r, i) => {
-					const text = truncate(r.output, MAX_OUTPUT_CHARS);
-					return `### Task ${i + 1}: ${r.description} (${r.agent})\n\n${text}${r.error ? `\n\n**Error:** ${r.error}` : ""}`;
+				const taskTags = results.map((r) => {
+					const preview = truncate(r.output, PREVIEW_MAX_CHARS);
+					const err = r.error ? `\n<error>${r.error}</error>` : "";
+					return `  <task agent="${r.agent}">\n    <description>${r.description}</description>\n    <output>${preview}</output>${err}\n  </task>`;
 				});
 				const totalCost = results.reduce((s, r) => s + (r.usage?.cost ?? 0), 0);
 				const totalTurns = results.reduce((s, r) => s + (r.usage?.turns ?? 0), 0);
+				const status = results.every((r) => !r.error) ? "completed" : "failed";
 
 				return {
 					content: [
 						{
 							type: "text" as const,
-							text: `## Subagent Results (${results.length} tasks)\n\n${parts.join("\n\n---\n\n")}`,
+							text: `<subagent-result mode="parallel" status="${status}">\n${taskTags.join("\n")}\n</subagent-result>`,
 						},
 					],
 					details: { mode: "parallel", results, totalCost, totalTurns } as SubagentToolDetails,
@@ -258,18 +270,21 @@ export function createSubagentTool(options: SubagentToolOptions): ToolDefinition
 				previousOutput = truncate(result.output, MAX_OUTPUT_CHARS);
 			}
 
-			const parts = chainResults.map((r, i) => {
-				const text = truncate(r.output, MAX_OUTPUT_CHARS);
-				return `### Step ${i + 1}: ${r.agent}\n\n${text}${r.error ? `\n\n**Error:** ${r.error}` : ""}`;
+			const stepTags = chainResults.map((r, i) => {
+				const preview = truncate(r.output, PREVIEW_MAX_CHARS);
+				const err = r.error ? `\n    <error>${r.error}</error>` : "";
+				return `  <task agent="${r.agent}" step="${i + 1}">\n    <output>${preview}</output>${err}\n  </task>`;
 			});
 			const totalCost = chainResults.reduce((s, r) => s + (r.usage?.cost ?? 0), 0);
 			const totalTurns = chainResults.reduce((s, r) => s + (r.usage?.turns ?? 0), 0);
+			const allDone = chainResults.length === tasks.length && chainResults.every((r) => !r.error);
+			const status = allDone ? "completed" : "failed";
 
 			return {
 				content: [
 					{
 						type: "text" as const,
-						text: `## Subagent Chain (${chainResults.length}/${tasks.length} steps)\n\n${parts.join("\n\n---\n\n")}`,
+						text: `<subagent-result mode="chain" status="${status}" steps="${chainResults.length}/${tasks.length}">\n${stepTags.join("\n")}\n</subagent-result>`,
 					},
 				],
 				details: {

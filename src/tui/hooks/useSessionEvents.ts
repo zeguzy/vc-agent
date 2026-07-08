@@ -7,6 +7,7 @@ import {
 	createToolMessage,
 	createWorkerMessage,
 	type Message,
+	type SubagentToolDetails,
 } from "../../message.js";
 import type { TeamEvent } from "../../teams/types-v2.js";
 import type { QuestionData } from "../../tools/question-bridge.js";
@@ -105,9 +106,23 @@ export function useSessionEvents(
 					break;
 				}
 
+				case "tool_execution_update": {
+					const msgId = toolCallIdToMsgId.current.get(event.toolCallId);
+					if (msgId) {
+						setMessages((prev) =>
+							prev.map((m) => (m.id === msgId ? { ...m, toolResult: event.partialResult } : m)),
+						);
+					}
+					break;
+				}
+
 				case "tool_execution_end": {
 					const msgId = toolCallIdToMsgId.current.get(event.toolCallId);
 					if (msgId) {
+						const isSubagent = event.toolName === "subagent";
+						const details = isSubagent
+							? (event.result as { details?: SubagentToolDetails })?.details
+							: undefined;
 						setMessages((prev) =>
 							prev.map((m) =>
 								m.id === msgId
@@ -115,6 +130,7 @@ export function useSessionEvents(
 											...m,
 											toolStatus: event.isError ? "error" : "done",
 											toolResult: event.result,
+											...(details ? { subagentDetails: details } : {}),
 										}
 									: m,
 							),
