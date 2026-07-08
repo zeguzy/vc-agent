@@ -21,6 +21,7 @@ import {
 } from "../agents/discover.js";
 import type { Config, ProviderConfig } from "../config.js";
 import { ORCHESTRATOR_SYSTEM_PROMPT, TEAM_ORCHESTRATOR_PROMPT } from "../context-files.js";
+import { activateDcpExtension, prepareDcpExtension } from "../dcp/init.js";
 import { createLspToolDefinitions, LspClient } from "../lsp/index.js";
 import { McpManager } from "../mcp/manager.js";
 import { installSqliteBackend } from "../session/install-sqlite-backend.js";
@@ -290,6 +291,7 @@ export async function createSession(options: SessionOptions): Promise<SessionRes
 			: [];
 
 	const mcpToolDefs = svc.mcpManager.getToolDefinitions();
+	const dcpTool = prepareDcpExtension(options.config?.contextPruning);
 	const result = await createAgentSession({
 		cwd: options.cwd,
 		authStorage: svc.authStorage,
@@ -297,7 +299,11 @@ export async function createSession(options: SessionOptions): Promise<SessionRes
 		...(svc.model ? { model: svc.model } : {}),
 		settingsManager: svc.settingsManager,
 		resourceLoader: svc.resourceLoader,
-		tools: [...STANDARD_ACTIVE_TOOLS, ...(mcpToolDefs.length ? ["mcp"] : [])],
+		tools: [
+			...STANDARD_ACTIVE_TOOLS,
+			...(mcpToolDefs.length ? ["mcp"] : []),
+			...(dcpTool ? ["compress"] : []),
+		],
 		customTools: [
 			...createLspToolDefinitions({ client: svc.lspClient }),
 			createTodoTool(),
@@ -313,9 +319,13 @@ export async function createSession(options: SessionOptions): Promise<SessionRes
 			}),
 			...teamTools,
 			...mcpToolDefs,
+			...(dcpTool ? [dcpTool] : []),
 		],
 		sessionManager: SessionManager.inMemory(),
 	});
+	if (dcpTool) {
+		activateDcpExtension(result.session);
+	}
 	return { session: result.session, skillManager: svc.skillManager };
 }
 
@@ -374,6 +384,10 @@ export async function createRuntime(options: RuntimeOptions): Promise<RuntimeRes
 			}),
 		);
 		customTools.push(...teamTools);
+		const dcpTool = prepareDcpExtension(options.config?.contextPruning);
+		if (dcpTool) {
+			customTools.push(dcpTool);
+		}
 		const mcpToolDefs = svc.mcpManager.getToolDefinitions();
 		const result = await createAgentSession({
 			cwd: fCwd,
@@ -382,10 +396,17 @@ export async function createRuntime(options: RuntimeOptions): Promise<RuntimeRes
 			...(svc.model ? { model: svc.model } : {}),
 			settingsManager: svc.settingsManager,
 			resourceLoader: svc.resourceLoader,
-			tools: [...activeToolsFor(agentMode), ...(mcpToolDefs.length ? ["mcp"] : [])],
+			tools: [
+				...activeToolsFor(agentMode),
+				...(mcpToolDefs.length ? ["mcp"] : []),
+				...(dcpTool ? ["compress"] : []),
+			],
 			customTools: [...customTools, ...mcpToolDefs],
 			sessionManager: fSessionManager,
 		});
+		if (dcpTool) {
+			activateDcpExtension(result.session);
+		}
 		const services: AgentSessionServices = {
 			cwd: fCwd,
 			agentDir: fAgentDir,

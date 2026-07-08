@@ -13,6 +13,7 @@ import type { CommandContext } from "../commands/registry.js";
 import { commandRegistry } from "../commands/registry.js";
 import { readConfig, resolveConfigTeams } from "../config.js";
 import { ORCHESTRATOR_SYSTEM_PROMPT, TEAM_ORCHESTRATOR_PROMPT } from "../context-files.js";
+import { getDcpConfig, isDcpEnabled } from "../dcp/config.js";
 import type { McpManager } from "../mcp/manager.js";
 import { NotificationRouter, setGlobalRouter } from "../notifications/notifier.js";
 import { listSessions } from "../session/list.js";
@@ -275,7 +276,12 @@ export class AgentServer {
 
 	handleSetAgentMode(mode: AgentMode): void {
 		const hasMcp = this.mcpManager.getToolDefinitions().length > 0;
-		this.session.setActiveToolsByName([...activeToolsFor(mode), ...(hasMcp ? ["mcp"] : [])]);
+		const dcpOn = isDcpEnabled(getDcpConfig());
+		this.session.setActiveToolsByName([
+			...activeToolsFor(mode),
+			...(hasMcp ? ["mcp"] : []),
+			...(dcpOn ? ["compress"] : []),
+		]);
 		if (mode === "orchestrator") {
 			this.session.steer(ORCHESTRATOR_SYSTEM_PROMPT);
 		}

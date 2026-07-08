@@ -380,7 +380,6 @@
 - **WHEN** bridge 参数为 undefined（如 headless/HTTP 模式）
 - **THEN** `createQuestionTool(undefined)` SHALL 返回一个工具定义，其 execute() 检测到 bridge 不可用时立即返回错误结果，不阻塞
 
-
 ### Requirement: tool_execution_update 事件处理
 系统 SHALL 在 `useSessionEvents`（`src/tui/hooks/useSessionEvents.ts`）中处理 Pi SDK 的 `tool_execution_update` 事件，将 `partialResult` 写入对应工具消息的 `toolResult` 字段，驱动实时进度渲染。
 
@@ -434,3 +433,50 @@
 #### Scenario: 工具描述补充转述提示
 - **WHEN** subagent 工具的 `description`（ToolDefinition.description）被构造
 - **THEN** SHALL 包含提示文本："The result returned by the subagent is not visible to the user. To show the user the result, send a text message summarizing it."
+
+### Requirement: DCP extension 注入（opt-in）
+
+The agent-session MUST check DCP configuration at creation time. When DCP is opt-in enabled, it SHALL inject the DCP extension (wrap transformContext + register compress tool).
+
+#### Scenario: createRuntime 注入 DCP
+
+WHEN createRuntime factory 创建 agent session
+AND contextPruning.enabled 为 true
+THEN initDcpExtension 初始化 holder（config/state/runtime）
+AND customTools 数组加入 createCompressTool(deps)
+AND tools 白名单加入 "compress"
+AND createAgentSession 返回后 wrap session.agent.transformContext
+
+#### Scenario: DCP 关闭时跳过
+
+WHEN contextPruning.enabled 为 false
+THEN 不调用 initDcpExtension
+AND customTools 不含 compress
+AND tools 白名单不含 compress
+AND transformContext 不被 wrap
+
+#### Scenario: createSession 同步注入
+
+WHEN createSession（legacy 路径）创建 agent session
+AND contextPruning.enabled 为 true
+THEN 同 createRuntime 注入 DCP
+
+#### Scenario: handleSetAgentMode 保留 compress
+
+WHEN handleSetAgentMode 切换 agent mode，重建 tools 白名单
+AND DCP 已启用
+THEN 新白名单包含 "compress"
+
+#### Scenario: transformContext 防御性降级
+
+WHEN wrapped transformContext 执行时抛出异常
+THEN catch 异常，透传原始消息（降级）
+AND 记录日志（dcpDiag）
+
+#### Scenario: DCP 与 compaction 共存
+
+WHEN DCP 已启用 AND Pi SDK compaction 也启用
+THEN DCP 优先工作（模型自主压缩）
+AND compaction 在 token 超限时兜底
+AND 两者不互相干扰
+
