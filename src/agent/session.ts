@@ -19,6 +19,7 @@ import {
 	buildAvailableSkillsPrompt,
 	discoverAgents,
 } from "../agents/discover.js";
+import { TaskRegistry } from "../agents/task-registry.js";
 import type { Config, ProviderConfig } from "../config.js";
 import { ORCHESTRATOR_SYSTEM_PROMPT, TEAM_ORCHESTRATOR_PROMPT } from "../context-files.js";
 import { activateDcpExtension, prepareDcpExtension } from "../dcp/init.js";
@@ -29,6 +30,8 @@ import { listSessions, resolveSessionRef } from "../session/list.js";
 import { resolveSessionDir } from "../session/storage.js";
 import { SkillManager } from "../skills/manager.js";
 import type { TeamManagerRef } from "../teams/types-v2.js";
+import { createBackgroundCancelTool } from "../tools/background-cancel.js";
+import { createBackgroundOutputTool } from "../tools/background-output.js";
 import { createEditTool } from "../tools/edit.js";
 import { clearEditConfirmBridge, type EditConfirmBridge } from "../tools/edit-confirm-bridge.js";
 import { createGlobToolDefinition } from "../tools/glob.js";
@@ -47,6 +50,8 @@ export const BUILTIN_TOOLS = ["read", "bash", "write", "grep", "find"];
 const LSP_TOOL_NAMES = ["lsp"];
 const ALL_TOOLS = [...BUILTIN_TOOLS, ...LSP_TOOL_NAMES];
 
+export const taskRegistry = new TaskRegistry();
+
 /** Tools available in planner mode — read-only, no file mutations. */
 const PLANNER_TOOLS = ["read", "bash", "grep", "find", ...LSP_TOOL_NAMES];
 
@@ -63,6 +68,8 @@ export const STANDARD_ACTIVE_TOOLS = [
 	"question",
 	"subagent",
 	"webfetch",
+	"background_output",
+	"background_cancel",
 ];
 export const PLANNER_ACTIVE_TOOLS = [...PLANNER_TOOLS, "glob", "todo", "question", "webfetch"];
 export const TEAM_ACTIVE_TOOLS = [
@@ -76,6 +83,8 @@ export const TEAM_ACTIVE_TOOLS = [
 	"memory",
 	"message",
 	"subagent",
+	"background_output",
+	"background_cancel",
 ];
 
 export function activeToolsFor(agentMode: AgentMode): string[] {
@@ -316,7 +325,10 @@ export async function createSession(options: SessionOptions): Promise<SessionRes
 				cwd: options.cwd,
 				services: svc,
 				parentModel: svc.model,
+				taskRegistry,
 			}),
+			createBackgroundOutputTool({ registry: taskRegistry }),
+			createBackgroundCancelTool({ registry: taskRegistry }),
 			...teamTools,
 			...mcpToolDefs,
 			...(dcpTool ? [dcpTool] : []),
@@ -372,15 +384,39 @@ export async function createRuntime(options: RuntimeOptions): Promise<RuntimeRes
 			createNotifyTool(),
 			createWebfetchTool(),
 			createGlobToolDefinition(fCwd),
+			createBackgroundOutputTool({ registry: taskRegistry }),
+			createBackgroundCancelTool({ registry: taskRegistry }),
 		];
 		if (isTeamMode) {
 			customTools.push(createTeamGuardedBashTool(fCwd), createTeamGuardedWriteTool(fCwd));
 		}
+
+		// Bridge for background subagent completion notifications.
+		// The session is created below, but subagent tool needs a callback
+		// to notify the parent session when a background task completes.
+		// We use a late-binding ref so the tool can be created before the session.
+		let parentSession: AgentSession | null = null;
+		const onBackgroundComplete = (
+			taskId: string,
+			result: import("../agents/types.js").SubagentResult,
+		) => {
+			if (!parentSession) return;
+			const note = `[Background Task ${taskId} completed]\nAgent: ${result.agent} | Cost: $${result.usage?.cost.toFixed(4) ?? "0"} | Turns: ${result.usage?.turns ?? 0}\n${result.output.slice(0, 500)}`;
+			if (parentSession.isStreaming) {
+				parentSession.steer(note);
+			} else {
+				void parentSession.prompt(note);
+			}
+		};
+
 		customTools.push(
 			createSubagentTool({
 				cwd: fCwd,
 				services: svc,
 				parentModel: svc.model,
+				taskRegistry,
+				parentSessionId: undefined, // Will be set after session creation
+				onBackgroundComplete,
 			}),
 		);
 		customTools.push(...teamTools);
@@ -407,6 +443,7 @@ export async function createRuntime(options: RuntimeOptions): Promise<RuntimeRes
 		if (dcpTool) {
 			activateDcpExtension(result.session);
 		}
+		parentSession = result.session;
 		const services: AgentSessionServices = {
 			cwd: fCwd,
 			agentDir: fAgentDir,

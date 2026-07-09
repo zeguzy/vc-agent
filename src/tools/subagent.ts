@@ -1,7 +1,8 @@
 import type { ToolDefinition } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 import { discoverAgents } from "../agents/discover.js";
-import { runSubagent } from "../agents/runner.js";
+import { continueSubagent, runSubagent } from "../agents/runner.js";
+import type { TaskRegistry } from "../agents/task-registry.js";
 import type {
 	AgentConfig,
 	SubagentResult,
@@ -19,6 +20,9 @@ interface SubagentToolOptions {
 	cwd: string;
 	services: SubagentServices;
 	parentModel?: ResolvedModel;
+	taskRegistry?: TaskRegistry;
+	parentSessionId?: string;
+	onBackgroundComplete?: (taskId: string, result: SubagentResult) => void;
 }
 
 const SubagentParamsSchema = Type.Object({
@@ -38,6 +42,36 @@ const SubagentParamsSchema = Type.Object({
 			}),
 			{ description: "Tasks for parallel/chain mode" },
 		),
+	),
+	prompt: Type.Optional(
+		Type.String({
+			description:
+				"Full detailed prompt for the subagent (supersedes 'description' for task content)",
+		}),
+	),
+	category: Type.Optional(
+		Type.String({
+			description:
+				"Task category: quick/deep/ultrabrain/visual-engineering/artistry/unspecified-high/unspecified-low/writing",
+		}),
+	),
+	subagent_type: Type.Optional(
+		Type.String({
+			description:
+				"Direct agent type: explore/librarian/oracle/metis/momus/codebase-analyzer/codebase-locator/codebase-pattern-finder/thoughts-analyzer/thoughts-locator/web-search-researcher/multimodal-looker",
+		}),
+	),
+	run_in_background: Type.Optional(
+		Type.Boolean({
+			description: "Run asynchronously, return task ID immediately (default: false)",
+		}),
+	),
+	task_id: Type.Optional(
+		Type.String({ description: "Continue an existing subagent session (ses_... format)" }),
+	),
+	command: Type.Optional(Type.String({ description: "Slash command that triggered this task" })),
+	load_skills: Type.Optional(
+		Type.Array(Type.String(), { description: "Skill names to inject into subagent session" }),
 	),
 });
 
@@ -75,8 +109,37 @@ function formatAgentNames(agents: AgentConfig[]): string {
 	return agents.length > 0 ? agents.map((a) => a.name).join(", ") : "(none defined yet)";
 }
 
+function formatResultMarkdown(result: SubagentResult, mode: string): string {
+	const status = result.error ? "failed" : "completed";
+	const lines: string[] = [
+		`## Subagent Result`,
+		``,
+		`**Agent**: ${result.agent} | **Status**: ${status} | **Mode**: ${mode}`,
+	];
+	if (result.category) lines.push(`**Category**: ${result.category}`);
+	if (result.sessionId) lines.push(`**Session**: ${result.sessionId}`);
+	if (result.backgroundTaskId) lines.push(`**Background Task**: ${result.backgroundTaskId}`);
+	if (result.usage) {
+		lines.push(
+			`**Usage**: ${result.usage.turns} turns | $${result.usage.cost.toFixed(4)} | ${result.usage.inputTokens}in/${result.usage.outputTokens}out`,
+		);
+	}
+	lines.push("", "### Output", "");
+	if (result.error) {
+		lines.push(`**Error**: ${result.error}`, "");
+	}
+	const preview = truncate(result.output, PREVIEW_MAX_CHARS);
+	lines.push(preview);
+	lines.push("");
+	lines.push(
+		`<task_metadata session_id="${result.sessionId ?? ""}" agent="${result.agent}" category="${result.category ?? ""}" background_task_id="${result.backgroundTaskId ?? ""}" />`,
+	);
+	return lines.join("\n");
+}
+
 export function createSubagentTool(options: SubagentToolOptions): ToolDefinition {
-	const { cwd, services, parentModel } = options;
+	const { cwd, services, parentModel, taskRegistry, parentSessionId, onBackgroundComplete } =
+		options;
 
 	const initialAgents = discoverAgents(cwd).agents;
 	const agentList = formatAgentNames(initialAgents);
@@ -87,6 +150,8 @@ export function createSubagentTool(options: SubagentToolOptions): ToolDefinition
 		"Each delegation prompt MUST include: specific GOAL, relevant file CONTEXT, and clear SCOPE boundaries.",
 		"Vague prompts produce poor results — be exhaustive in your task description.",
 		"The result returned by the subagent is not visible to the user. To show the user the result, send a text message summarizing it.",
+		"Single mode accepts: 'prompt' (full task text, supersedes 'description'), 'subagent_type' (alias for 'agent'), 'category' (quick/deep/ultrabrain/visual-engineering/artistry/unspecified-high/unspecified-low/writing), 'load_skills' (skill names to inject), 'run_in_background' (async, returns bg_xxx ID), 'task_id' (continue session ses_xxx), 'command' (originating slash command).",
+		"Use background_output to fetch results from async tasks, background_cancel to abort them.",
 	].join(" ");
 
 	const emptyDetails = (mode: string): SubagentToolDetails => ({
@@ -100,7 +165,7 @@ export function createSubagentTool(options: SubagentToolOptions): ToolDefinition
 		content: [
 			{
 				type: "text" as const,
-				text: `<subagent-result status="failed" mode="${mode}">\n<error>${msg}</error>\n</subagent-result>`,
+				text: formatResultMarkdown({ agent: "", description: "", output: "", error: msg }, mode),
 			},
 		],
 		details: emptyDetails(mode),
@@ -125,8 +190,43 @@ export function createSubagentTool(options: SubagentToolOptions): ToolDefinition
 			}
 
 			if (p.mode === "single") {
-				if (!p.agent || !p.description) {
-					return errorResult("agent and description required for single mode", "single");
+				// task_id continuation: look up existing background task
+				if (p.task_id && taskRegistry) {
+					const contResult = await continueSubagent({
+						sessionId: p.task_id,
+						task: p.prompt ?? p.description ?? "",
+						taskRegistry,
+						onUpdate: (text) =>
+							onUpdate?.({
+								content: [{ type: "text", text }],
+								details: emptyDetails("single"),
+							}),
+					});
+					return {
+						content: [
+							{
+								type: "text" as const,
+								text: formatResultMarkdown(contResult, "single"),
+							},
+						],
+						details: {
+							mode: "single",
+							results: [contResult],
+							totalCost: contResult.usage?.cost ?? 0,
+							totalTurns: contResult.usage?.turns ?? 0,
+						} as SubagentToolDetails,
+					};
+				}
+
+				if (p.subagent_type && !p.agent) {
+					p.agent = p.subagent_type;
+				}
+				const taskText = p.prompt ?? p.description ?? "";
+				if (!p.agent || !taskText) {
+					return errorResult(
+						"agent (or subagent_type) and description (or prompt) required for single mode",
+						"single",
+					);
 				}
 				const agentConfig = agentMap.get(p.agent);
 				if (!agentConfig) {
@@ -138,11 +238,17 @@ export function createSubagentTool(options: SubagentToolOptions): ToolDefinition
 
 				const result = await runSubagent({
 					agent: agentConfig,
-					task: p.description,
+					task: taskText,
 					cwd,
 					services,
 					parentModel,
 					signal,
+					category: p.category,
+					loadSkills: p.load_skills,
+					runInBackground: p.run_in_background,
+					taskRegistry,
+					parentSessionId,
+					onBackgroundComplete,
 					onUpdate: (text) =>
 						onUpdate?.({
 							content: [{ type: "text", text }],
@@ -150,14 +256,11 @@ export function createSubagentTool(options: SubagentToolOptions): ToolDefinition
 						}),
 				});
 
-				const preview = truncate(result.output, PREVIEW_MAX_CHARS);
-				const status = result.error ? "failed" : "completed";
-				const errorTag = result.error ? `\n<error>${result.error}</error>` : "";
 				return {
 					content: [
 						{
 							type: "text" as const,
-							text: `<subagent-result agent="${result.agent}" status="${status}" mode="single">\n<output>\n${preview}\n</output>${errorTag}\n</subagent-result>`,
+							text: formatResultMarkdown(result, "single"),
 						},
 					],
 					details: {
@@ -204,26 +307,25 @@ export function createSubagentTool(options: SubagentToolOptions): ToolDefinition
 					}),
 				);
 
-				const taskTags = results.map((r) => {
-					const preview = truncate(r.output, PREVIEW_MAX_CHARS);
-					const err = r.error ? `\n<error>${r.error}</error>` : "";
-					return `  <task agent="${r.agent}">\n    <description>${r.description}</description>\n    <output>${preview}</output>${err}\n  </task>`;
-				});
 				const totalCost = results.reduce((s, r) => s + (r.usage?.cost ?? 0), 0);
 				const totalTurns = results.reduce((s, r) => s + (r.usage?.turns ?? 0), 0);
-				const status = results.every((r) => !r.error) ? "completed" : "failed";
+
+				const taskSections = results
+					.map((r) => formatResultMarkdown(r, "parallel"))
+					.join("\n---\n");
 
 				return {
-					content: [
-						{
-							type: "text" as const,
-							text: `<subagent-result mode="parallel" status="${status}">\n${taskTags.join("\n")}\n</subagent-result>`,
-						},
-					],
-					details: { mode: "parallel", results, totalCost, totalTurns } as SubagentToolDetails,
+					content: [{ type: "text" as const, text: taskSections }],
+					details: {
+						mode: "parallel",
+						results,
+						totalCost,
+						totalTurns,
+					} as SubagentToolDetails,
 				};
 			}
 
+			// chain mode
 			const tasks = p.tasks;
 			if (!tasks || tasks.length === 0) {
 				return errorResult("tasks required for chain mode", "chain");
@@ -270,23 +372,18 @@ export function createSubagentTool(options: SubagentToolOptions): ToolDefinition
 				previousOutput = truncate(result.output, MAX_OUTPUT_CHARS);
 			}
 
-			const stepTags = chainResults.map((r, i) => {
-				const preview = truncate(r.output, PREVIEW_MAX_CHARS);
-				const err = r.error ? `\n    <error>${r.error}</error>` : "";
-				return `  <task agent="${r.agent}" step="${i + 1}">\n    <output>${preview}</output>${err}\n  </task>`;
-			});
 			const totalCost = chainResults.reduce((s, r) => s + (r.usage?.cost ?? 0), 0);
 			const totalTurns = chainResults.reduce((s, r) => s + (r.usage?.turns ?? 0), 0);
-			const allDone = chainResults.length === tasks.length && chainResults.every((r) => !r.error);
-			const status = allDone ? "completed" : "failed";
+
+			const chainSections = chainResults
+				.map((r, i) => {
+					const header = `### Step ${i + 1}/${tasks.length}`;
+					return `${header}\n${formatResultMarkdown(r, "chain")}`;
+				})
+				.join("\n---\n");
 
 			return {
-				content: [
-					{
-						type: "text" as const,
-						text: `<subagent-result mode="chain" status="${status}" steps="${chainResults.length}/${tasks.length}">\n${stepTags.join("\n")}\n</subagent-result>`,
-					},
-				],
+				content: [{ type: "text" as const, text: chainSections }],
 				details: {
 					mode: "chain",
 					results: chainResults,

@@ -24,6 +24,7 @@ interface InputBoxProps {
 	members?: MemberState[];
 	tasks?: TaskState[];
 	activeMemberName?: string | null;
+	perspectiveLabel?: string;
 }
 
 export function InputBox({
@@ -40,6 +41,7 @@ export function InputBox({
 	members = [],
 	tasks = [],
 	activeMemberName = null,
+	perspectiveLabel,
 }: InputBoxProps) {
 	const [inputHeight, setInputHeight] = useState(2);
 	const [animationFrame, setAnimationFrame] = useState(0);
@@ -285,6 +287,12 @@ export function InputBox({
 			<TeamTopology members={members} tasks={tasks} activeMemberName={activeMemberName} />
 			<box height={1} flexDirection="row" paddingLeft={2} paddingRight={2}>
 				<text fg={modeColor}>{modeLabel}</text>
+				{perspectiveLabel ? (
+					<>
+						<text fg={colors.textSubtle}>{" · "}</text>
+						<text fg={colors.accent}>{`▶ ${perspectiveLabel}`}</text>
+					</>
+				) : null}
 				<text fg={colors.textSubtle}>{" · "}</text>
 				<text fg={colors.textSubtle}>{model}</text>
 				<text fg={colors.textSubtle}>{" · "}</text>

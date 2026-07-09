@@ -2,7 +2,8 @@ import type { ScrollBoxRenderable } from "@opentui/core";
 import { useKeyboard, useRenderer } from "@opentui/react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { AgentSessionEvent } from "../agent/session.js";
-import { buildAgentModeCycle, getBaseMode } from "../agent/session.js";
+import { buildAgentModeCycle, getBaseMode, taskRegistry } from "../agent/session.js";
+import type { BackgroundTask } from "../agents/task-registry.js";
 import type { AgentClient, AgentMode } from "../client/index.js";
 import { commandRegistry } from "../commands/registry.js";
 import type { Config } from "../config.js";
@@ -42,6 +43,36 @@ import { colors } from "./utils/theme.js";
 import { createVimOverlay, type VimOverlay } from "./vim/index.js";
 
 const WELCOME_MESSAGE = createAssistantMessage("");
+
+const SUBAGENT_PREFIX = "bg_";
+
+function isSubagentPerspective(name: string | null): name is string {
+	return name?.startsWith(SUBAGENT_PREFIX) === true;
+}
+
+function buildSubagentView(task: BackgroundTask): Message[] {
+	const lines: string[] = [
+		`Background task: ${task.id}`,
+		`Status: ${task.status}`,
+		`Description: ${task.description}`,
+		`Agent: ${task.agent}${task.category ? ` · ${task.category}` : ""}`,
+	];
+	if (task.sessionId) lines.push(`Session: ${task.sessionId}`);
+	if (task.error) {
+		lines.push("");
+		lines.push(`Error: ${task.error}`);
+	}
+	if (task.result) {
+		lines.push("");
+		lines.push("── Result ──");
+		lines.push(task.result);
+	}
+	lines.push("");
+	lines.push(
+		"(Background task view — use background_output / background_cancel tools to interact)",
+	);
+	return [createAssistantMessage(lines.join("\n"))];
+}
 
 interface AppProps {
 	client: AgentClient;
@@ -219,6 +250,23 @@ export function App({
 		};
 	}, [activeMemberName, client]);
 
+	useEffect(() => {
+		if (!isSubagentPerspective(activeMemberName)) return;
+		const id = activeMemberName;
+		const interval = setInterval(() => {
+			setMemberTick(Date.now());
+			const task = taskRegistry.get(id);
+			if (
+				task?.status === "completed" ||
+				task?.status === "error" ||
+				task?.status === "cancelled"
+			) {
+				clearInterval(interval);
+			}
+		}, 500);
+		return () => clearInterval(interval);
+	}, [activeMemberName]);
+
 	// Keep members list in sync with team events
 	useEffect(() => {
 		const unsub = client.subscribeTeam(() => {
@@ -227,10 +275,16 @@ export function App({
 		return unsub;
 	}, [client]);
 
-	// Derive display messages based on active member
 	const displayMessages = useMemo(() => {
 		if (!activeMemberName) {
 			return messages;
+		}
+		if (isSubagentPerspective(activeMemberName)) {
+			const task = taskRegistry.get(activeMemberName);
+			if (!task) {
+				return [createAssistantMessage(`Background task ${activeMemberName} not found.`)];
+			}
+			return buildSubagentView(task);
 		}
 		const member = client.getMember(activeMemberName);
 		if (!member) {
@@ -243,7 +297,7 @@ export function App({
 		}
 		return memberMsgs;
 		// eslint-disable-next-line react-hooks/exhaustive-deps
-	}, [activeMemberName, messages, client]);
+	}, [activeMemberName, messages, client, _memberTick]);
 
 	useEffect(() => {
 		const router = getGlobalRouter();
@@ -419,8 +473,10 @@ export function App({
 
 	const handleMemberNav = useCallback(
 		(direction: "prev" | "next") => {
-			if (agentModeRef.current !== "team") return;
-			const list = [null, ...members.map((m) => m.name)];
+			const memberNames = agentModeRef.current === "team" ? members.map((m) => m.name) : [];
+			const subagentIds = taskRegistry.listByParent(client.getSessionId()).map((t) => t.id);
+			const list: (string | null)[] = [null, ...memberNames, ...subagentIds];
+			if (list.length <= 1) return;
 			const currentIdx = list.indexOf(activeMemberNameRef.current);
 			const nextIdx =
 				direction === "next"
@@ -428,11 +484,20 @@ export function App({
 					: (currentIdx - 1 + list.length) % list.length;
 			setActiveMemberName(list[nextIdx]);
 		},
-		[members],
+		[members, client],
 	);
 
 	const handlePrompt = useCallback(
 		(text: string) => {
+			if (isSubagentPerspective(activeMemberNameRef.current)) {
+				setMessages((prev) => [
+					...prev,
+					createAssistantMessage(
+						`Background task view — use background_output / background_cancel tools to interact with ${activeMemberNameRef.current}.`,
+					),
+				]);
+				return;
+			}
 			// Route to member when in member sub-session view
 			if (activeMemberNameRef.current) {
 				client.directMember(activeMemberNameRef.current, "directive", text);
@@ -580,6 +645,15 @@ export function App({
 	});
 
 	const modelDisplay = client.getModel()?.name || client.getModel()?.id || model;
+	const perspectiveLabel = useMemo(() => {
+		if (!activeMemberName) return undefined;
+		if (isSubagentPerspective(activeMemberName)) {
+			const task = taskRegistry.get(activeMemberName);
+			const desc = task ? task.description.slice(0, 30) : "background task";
+			return `[${activeMemberName}] ${desc}`;
+		}
+		return activeMemberName;
+	}, [activeMemberName, _memberTick]);
 	const queuedMsgs = messages.filter((m) => m.queued);
 	const isWelcome = messages.length === 1 && messages[0].id === WELCOME_MESSAGE.id;
 
@@ -673,6 +747,7 @@ export function App({
 						members={members}
 						tasks={client.listTasks()}
 						activeMemberName={activeMemberName}
+						perspectiveLabel={perspectiveLabel}
 					/>
 				)}
 				<StatusBar

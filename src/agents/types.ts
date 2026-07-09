@@ -46,6 +46,12 @@ export interface SubagentResult {
 	output: string;
 	usage?: SubagentUsage;
 	error?: string;
+	/** Session ID for continuation (ses_xxx format) */
+	sessionId?: string;
+	/** Task category (quick/deep/ultrabrain/visual-engineering/etc.) */
+	category?: string;
+	/** Background task ID (bg_xxx format), set when run_in_background=true */
+	backgroundTaskId?: string;
 }
 
 /**
@@ -55,7 +61,18 @@ export interface SubagentResult {
  * - chain: sequential tasks, `{previous}` in description is replaced with prior output
  */
 export type SubagentToolParams =
-	| { mode: "single"; agent: string; description: string }
+	| {
+			mode: "single";
+			agent: string;
+			description: string;
+			prompt?: string;
+			category?: string;
+			subagent_type?: string;
+			run_in_background?: boolean;
+			task_id?: string;
+			command?: string;
+			load_skills?: string[];
+	  }
 	| { mode: "parallel"; tasks: SubagentTask[] }
 	| { mode: "chain"; tasks: SubagentTask[] };
 
@@ -80,6 +97,19 @@ export interface RunSubagentOptions {
 	services: SubagentServices;
 	parentModel?: ReturnType<ModelRegistry["getAll"]>[number];
 	signal?: AbortSignal;
+	onUpdate?: (text: string) => void;
+	category?: string;
+	loadSkills?: string[];
+	runInBackground?: boolean;
+	parentSessionId?: string;
+	taskRegistry?: import("./task-registry.js").TaskRegistry;
+	onBackgroundComplete?: (taskId: string, result: SubagentResult) => void;
+}
+
+export interface ContinueSubagentOptions {
+	sessionId: string;
+	task: string;
+	taskRegistry: import("./task-registry.js").TaskRegistry;
 	onUpdate?: (text: string) => void;
 }
 

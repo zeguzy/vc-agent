@@ -11,6 +11,7 @@ import {
 	SessionManager,
 	type Skill,
 } from "@earendil-works/pi-coding-agent";
+import { activeToolsFor, taskRegistry } from "../agent/session.js";
 import type { SubagentServices } from "../agents/types.js";
 import type { McpManager } from "../mcp/manager.js";
 import {
@@ -22,10 +23,13 @@ import {
 } from "../session/storage.js";
 import type { SkillManager } from "../skills/manager.js";
 import { AGENT_DIR } from "../teams/worker.js";
+import { createBackgroundCancelTool } from "../tools/background-cancel.js";
+import { createBackgroundOutputTool } from "../tools/background-output.js";
 import { createEditTool } from "../tools/edit.js";
 import { createGlobToolDefinition } from "../tools/glob.js";
 import { createMemoryTool } from "../tools/memory.js";
 import { createMessageTool } from "../tools/message.js";
+import { createTeamGuardedBashTool, createTeamGuardedWriteTool } from "../tools/team-guard.js";
 import { createTodoTool } from "../tools/todo.js";
 import { createWebfetchTool } from "../tools/webfetch/index.js";
 import { handleCompactionEnd } from "./auto-memory.js";
@@ -202,7 +206,7 @@ export class TeamManager implements TeamManagerLike {
 		}
 
 		const constraints = sanitizeConstraints(opts.constraints);
-		const assignedTools = filterMemberTools(opts.tools);
+		const assignedTools = this.resolveMemberAssignedTools(opts.tools);
 		const assignedSkills = (opts.skills ?? []).filter((s) => Boolean(s.trim()));
 		const assignedMcps = this.resolveMcps(opts.mcps);
 
@@ -316,7 +320,7 @@ export class TeamManager implements TeamManagerLike {
 			for (const memberRow of teamMd.members) {
 				try {
 					const memberIndex = this.files.readMemberIndex(memberRow.name);
-					const assignedTools = filterMemberTools(memberIndex?.assignedTools);
+					const assignedTools = this.resolveMemberAssignedTools(memberIndex?.assignedTools);
 					const assignedSkills = memberIndex?.assignedSkills ?? [];
 					const assignedMcps = this.resolveMcps(memberIndex?.assignedMcps);
 					const systemPrompts = buildMemberSystemPrompt({
@@ -1004,6 +1008,36 @@ export class TeamManager implements TeamManagerLike {
 		});
 	}
 
+	private resolveMemberAssignedTools(requested?: string[]): string[] {
+		// Hardcoded "team": TeamManager only exists when teams are enabled, forcing team mode.
+		const inherited = activeToolsFor("team").filter((t) => !NEVER_MEMBER_TOOLS.has(t));
+		const seen = new Set(inherited);
+		const out = [...inherited];
+
+		if (this.mcpManager && this.mcpManager.getToolDefinitions().length > 0) {
+			if (!seen.has("mcp")) {
+				seen.add("mcp");
+				out.push("mcp");
+			}
+		}
+
+		for (const t of requested ?? []) {
+			if (NEVER_MEMBER_TOOLS.has(t)) continue;
+			if (seen.has(t)) continue;
+			seen.add(t);
+			out.push(t);
+		}
+
+		for (const required of ["memory", "message"] as const) {
+			if (!seen.has(required)) {
+				seen.add(required);
+				out.push(required);
+			}
+		}
+
+		return out;
+	}
+
 	private buildMemberCustomTools(
 		memberName: MemberName,
 		assignedTools: string[],
@@ -1014,9 +1048,29 @@ export class TeamManager implements TeamManagerLike {
 			createMessageTool({ teamRef: { current: this }, selfName: memberName }),
 			...buildMemberToolDefinitions(assignedTools, this.cwd),
 		];
-		if (assignedMcps.length > 0 && this.mcpManager) {
-			const memberMcp = this.mcpManager.getAuthorizedToolDefinition(assignedMcps);
-			if (memberMcp) tools.push(memberMcp);
+
+		if (assignedTools.includes("background_output")) {
+			tools.push(createBackgroundOutputTool({ registry: taskRegistry }));
+		}
+		if (assignedTools.includes("background_cancel")) {
+			tools.push(createBackgroundCancelTool({ registry: taskRegistry }));
+		}
+
+		// Team-guarded bash/write block direct writes into .openagent/team/.
+		if (assignedTools.includes("bash")) {
+			tools.push(createTeamGuardedBashTool(this.cwd));
+		}
+		if (assignedTools.includes("write")) {
+			tools.push(createTeamGuardedWriteTool(this.cwd));
+		}
+
+		if (assignedTools.includes("mcp") && this.mcpManager) {
+			if (assignedMcps.length > 0) {
+				const memberMcp = this.mcpManager.getAuthorizedToolDefinition(assignedMcps);
+				if (memberMcp) tools.push(memberMcp);
+			} else {
+				tools.push(...this.mcpManager.getToolDefinitions());
+			}
 		}
 		return tools;
 	}
