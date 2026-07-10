@@ -86,6 +86,15 @@ export class HttpClient implements AgentClient {
 		return (await res.json()) as T;
 	}
 
+	private async putJson(path: string, body?: unknown): Promise<unknown> {
+		const res = await fetch(`${this.baseUrl}${path}`, {
+			method: "PUT",
+			headers: { "Content-Type": "application/json" },
+			body: body ? JSON.stringify(body) : "{}",
+		});
+		return res.json();
+	}
+
 	async prompt(text: string): Promise<void> {
 		await this.postJson("/prompt", { text });
 	}
@@ -111,7 +120,7 @@ export class HttpClient implements AgentClient {
 	}
 
 	setSessionName(name: string): void {
-		this.postJson("/session/name", { name });
+		this.postJson("/session/name", { name }).catch(() => {});
 		this.cache.sessionName = name;
 	}
 
@@ -140,15 +149,18 @@ export class HttpClient implements AgentClient {
 	}
 
 	async cycleModel(): Promise<CycleModelResult | undefined> {
-		throw new NotSupportedError("cycleModel");
+		const data = (await this.postJson("/model/cycle")) as {
+			result: CycleModelResult | null;
+		};
+		return data.result ?? undefined;
 	}
 
-	setActiveToolsByName(_tools: string[]): void {
-		throw new NotSupportedError("setActiveToolsByName");
+	setActiveToolsByName(tools: string[]): void {
+		this.postJson("/tools/active", { tools }).catch(() => {});
 	}
 
 	setAgentMode(mode: AgentMode): void {
-		this.postJson("/mode", { mode });
+		this.postJson("/mode", { mode }).catch(() => {});
 	}
 
 	async listSessions(): Promise<SessionInfo[]> {
@@ -221,12 +233,51 @@ export class HttpClient implements AgentClient {
 		throw new NotSupportedError("getRuntime");
 	}
 
-	async executeCommand(_name: string, _args: string, _ctx: CommandContext): Promise<boolean> {
-		throw new NotSupportedError("executeCommand");
+	async executeCommand(name: string, args: string, _ctx: CommandContext): Promise<boolean> {
+		const data = (await this.postJson("/command", { name, args })) as { ok: boolean };
+		return data.ok ?? false;
 	}
 
-	subscribeTeam(_handler: (event: TeamEvent) => void): Unsubscribe {
-		throw new NotSupportedError("subscribeTeam");
+	subscribeTeam(handler: (event: TeamEvent) => void): Unsubscribe {
+		let closed = false;
+		const controller = new AbortController();
+
+		(async () => {
+			try {
+				const res = await fetch(`${this.baseUrl}/team/events`, {
+					signal: controller.signal,
+					headers: { Accept: "text/event-stream" },
+				});
+				if (!res.body) return;
+				const reader = res.body.getReader();
+				const decoder = new TextDecoder();
+				let buffer = "";
+
+				while (!closed) {
+					const { done, value } = await reader.read();
+					if (done) break;
+					buffer += decoder.decode(value, { stream: true });
+					const lines = buffer.split("\n\n");
+					buffer = lines.pop() ?? "";
+					for (const line of lines) {
+						const data = line.replace(/^data: /, "").trim();
+						if (!data) continue;
+						try {
+							handler(JSON.parse(data) as TeamEvent);
+						} catch {
+							// skip malformed SSE data
+						}
+					}
+				}
+			} catch {
+				// connection closed or aborted
+			}
+		})();
+
+		return () => {
+			closed = true;
+			controller.abort();
+		};
 	}
 
 	async createMember(opts: Parameters<AgentClient["createMember"]>[0]): Promise<MemberState> {
@@ -283,32 +334,24 @@ export class HttpClient implements AgentClient {
 		return (data as { task: TaskState }).task;
 	}
 
-	pauseMember(_name: MemberName): void {
-		throw new NotSupportedError(
-			"pauseMember (sync) — use HTTP PUT /team/members/:name/pause instead",
-		);
+	pauseMember(name: MemberName): void {
+		this.putJson(`/team/members/${name}/pause`).catch(() => {});
 	}
 
-	resumeMember(_name: MemberName): void {
-		throw new NotSupportedError(
-			"resumeMember (sync) — use HTTP PUT /team/members/:name/resume instead",
-		);
+	resumeMember(name: MemberName): void {
+		this.putJson(`/team/members/${name}/resume`).catch(() => {});
 	}
 
-	cancelMember(_name: MemberName): void {
-		throw new NotSupportedError(
-			"cancelMember (sync) — use HTTP PUT /team/members/:name/cancel instead",
-		);
+	cancelMember(name: MemberName): void {
+		this.putJson(`/team/members/${name}/cancel`).catch(() => {});
 	}
 
 	directMember(
-		_name: MemberName,
-		_kind: "directive" | "context" | "redirect",
-		_payload: string,
+		name: MemberName,
+		kind: "directive" | "context" | "redirect",
+		payload: string,
 	): void {
-		throw new NotSupportedError(
-			"directMember (sync) — use HTTP POST /team/members/:name/direct instead",
-		);
+		this.postJson(`/team/members/${name}/direct`, { kind, payload }).catch(() => {});
 	}
 
 	async sendMessage(opts: {

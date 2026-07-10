@@ -1,4 +1,5 @@
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
+import type { CommandContext } from "../commands/registry.js";
 import { getNotificationBus } from "../notifications/event-bus.js";
 import type { AgentServer } from "./index.js";
 
@@ -77,6 +78,67 @@ async function handleRequest(server: AgentServer, req: IncomingMessage, res: Ser
 		const body = await readBody<{ mode: "standard" | "planner" | "team" | "orchestrator" }>(req);
 		server.handleSetAgentMode(body.mode);
 		return sendJson(res, { ok: true });
+	}
+
+	if (method === "POST" && path === "/model/cycle") {
+		const result = await server.handleCycleModel();
+		return sendJson(res, { result: result ?? null });
+	}
+
+	if (method === "POST" && path === "/tools/active") {
+		const body = await readBody<{ tools: string[] }>(req);
+		if (!Array.isArray(body.tools)) {
+			return sendJson(res, { error: "tools must be a string array" }, 400);
+		}
+		server.handleSetActiveToolsByName(body.tools);
+		return sendJson(res, { ok: true });
+	}
+
+	if (method === "POST" && path === "/command") {
+		const body = await readBody<{ name: string; args?: string }>(req);
+		if (!body.name) {
+			return sendJson(res, { error: "name required" }, 400);
+		}
+		const ctx: CommandContext = {
+			client: {} as never,
+			messages: [],
+			setMessages: () => {},
+			setIsRunning: () => {},
+			setContextUsage: () => {},
+			setThinkingCollapsed: () => {},
+			cwd: process.cwd(),
+			setShowSettings: () => {},
+			setShowWorkers: () => {},
+			getConfig: () => ({}) as never,
+			setConfig: () => {},
+			openSessionPicker: () => {},
+			agentMode: "standard",
+			setAgentMode: () => {},
+			setInputText: () => {},
+			isRunning: false,
+		};
+		try {
+			const ok = await server.handleExecuteCommand(body.name, body.args ?? "", ctx);
+			return sendJson(res, { ok });
+		} catch (err) {
+			return sendJson(res, { error: String(err) }, 400);
+		}
+	}
+
+	if (method === "GET" && path === "/team/events") {
+		res.writeHead(200, {
+			"Content-Type": "text/event-stream",
+			"Cache-Control": "no-cache",
+			Connection: "keep-alive",
+		});
+		const teamUnsub = server.handleSubscribeTeam((event) => {
+			res.write(`data: ${JSON.stringify(event)}\n\n`);
+		});
+		req.on("close", () => {
+			teamUnsub();
+			res.end();
+		});
+		return;
 	}
 
 	if (method === "GET" && path === "/session/id") {
