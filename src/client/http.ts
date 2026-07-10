@@ -17,9 +17,15 @@ import type {
 	ContextUsage,
 	CycleModelResult,
 	EventHandler,
+	ExtendedModelInfo,
+	LoadSkillResult,
 	ModelInfo,
+	NavigateResult,
 	NewSessionResult,
+	SkillDirectories,
+	SkillListResult,
 	Unsubscribe,
+	UserMessageSummary,
 } from "./types.js";
 
 class NotSupportedError extends Error {
@@ -198,27 +204,111 @@ export class HttpClient implements AgentClient {
 		};
 	}
 
-	onSessionChange(
-		_handler: (session: import("../agent/session.js").AgentSession) => Promise<void>,
-	): void {}
+	onSessionChange(_handler: (sessionId: string) => Promise<void>): void {}
 
-	getSettingsManager(): import("@earendil-works/pi-coding-agent").SettingsManager {
-		throw new NotSupportedError("getSettingsManager");
+	async setModel(provider: string, id: string): Promise<void> {
+		await this.postJson("/model", { provider, id });
 	}
-	getModelRegistry(): import("@earendil-works/pi-coding-agent").ModelRegistry {
-		throw new NotSupportedError("getModelRegistry");
+
+	getAvailableThinkingLevels(): readonly string[] {
+		throw new NotSupportedError(
+			"getAvailableThinkingLevels (sync) — use fetchThinkingLevels() instead",
+		);
 	}
-	getAuthStorage(): import("@earendil-works/pi-coding-agent").AuthStorage {
-		throw new NotSupportedError("getAuthStorage");
+
+	async fetchThinkingLevels(): Promise<readonly string[]> {
+		const data = await this.getJson<{ levels: string[] }>("/model/thinking-levels");
+		return data.levels ?? [];
 	}
-	getSkillManager(): import("../skills/manager.js").SkillManager {
-		throw new NotSupportedError("getSkillManager");
+
+	setThinkingLevel(level: string): void {
+		this.postJson("/model/thinking-level", { level });
 	}
-	getSession(): import("../agent/session.js").AgentSession {
-		throw new NotSupportedError("getSession");
+
+	getUserMessagesForForking(): UserMessageSummary[] {
+		throw new NotSupportedError(
+			"getUserMessagesForForking (sync) — use fetchUserMessagesForForking() instead",
+		);
 	}
-	getRuntime(): import("../agent/session.js").AgentSessionRuntime {
-		throw new NotSupportedError("getRuntime");
+
+	async fetchUserMessagesForForking(): Promise<UserMessageSummary[]> {
+		const data = await this.getJson<{ messages: UserMessageSummary[] }>("/session/fork-messages");
+		return data.messages ?? [];
+	}
+
+	getEntryParentId(_entryId: string): string | undefined {
+		throw new NotSupportedError("getEntryParentId (sync) — use fetchEntryParentId() instead");
+	}
+
+	async fetchEntryParentId(entryId: string): Promise<string | undefined> {
+		const data = await this.getJson<{ parentId?: string }>(`/session/entry-parent/${entryId}`);
+		return data.parentId;
+	}
+
+	async navigateTree(parentId: string): Promise<NavigateResult> {
+		return this.postJson("/session/navigate", { parentId }) as Promise<NavigateResult>;
+	}
+
+	listSkills(): SkillListResult {
+		throw new NotSupportedError("listSkills (sync) — use fetchSkills() instead");
+	}
+
+	async fetchSkills(): Promise<SkillListResult> {
+		return this.getJson<SkillListResult>("/skills");
+	}
+
+	getSkillDirectories(): SkillDirectories {
+		throw new NotSupportedError("getSkillDirectories (sync) — use fetchSkillDirectories() instead");
+	}
+
+	async fetchSkillDirectories(): Promise<SkillDirectories> {
+		return this.getJson<SkillDirectories>("/skills/directories");
+	}
+
+	async loadDynamicSkill(path: string): Promise<LoadSkillResult> {
+		return this.postJson("/skills/load", { path }) as Promise<LoadSkillResult>;
+	}
+
+	async unloadDynamicSkill(name: string): Promise<boolean> {
+		const res = (await this.postJson("/skills/unload", { name })) as { removed: boolean };
+		return res.removed;
+	}
+
+	setCompactionEnabled(enabled: boolean): void {
+		this.postJson("/settings/compaction", { enabled });
+	}
+
+	listModels(): ExtendedModelInfo[] {
+		throw new NotSupportedError("listModels (sync) — use fetchModels() instead");
+	}
+
+	async fetchModels(): Promise<ExtendedModelInfo[]> {
+		const data = await this.getJson<{ models: ExtendedModelInfo[] }>("/models");
+		return data.models ?? [];
+	}
+
+	findModel(_provider: string, _id: string): ExtendedModelInfo | undefined {
+		throw new NotSupportedError("findModel (sync) — use fetchModel() instead");
+	}
+
+	async fetchModel(provider: string, id: string): Promise<ExtendedModelInfo | undefined> {
+		const res = await fetch(`${this.baseUrl}/models/${provider}/${id}`);
+		if (res.status === 404) return undefined;
+		const data = await res.json();
+		return (data as { model: ExtendedModelInfo }).model;
+	}
+
+	hasAuthProvider(_provider: string): boolean {
+		throw new NotSupportedError("hasAuthProvider (sync) — use fetchHasAuthProvider() instead");
+	}
+
+	async fetchHasAuthProvider(provider: string): Promise<boolean> {
+		const data = await this.getJson<{ has: boolean }>(`/auth/has/${provider}`);
+		return data.has;
+	}
+
+	setRuntimeApiKey(provider: string, key: string): void {
+		this.postJson("/auth/api-key", { provider, key });
 	}
 
 	async executeCommand(_name: string, _args: string, _ctx: CommandContext): Promise<boolean> {

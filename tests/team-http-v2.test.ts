@@ -38,12 +38,6 @@ function createMockServer() {
 			return () => handlers.delete(handler);
 		}),
 		handleOnSessionChange: mock(() => {}),
-		handleGetSettingsManager: mock(() => ({}) as never),
-		handleGetModelRegistry: mock(() => ({}) as never),
-		handleGetAuthStorage: mock(() => ({}) as never),
-		handleGetSkillManager: mock(() => ({}) as never),
-		handleGetSession: mock(() => ({}) as never),
-		handleGetRuntime: mock(() => ({}) as never),
 		handleExecuteCommand: mock(async () => true),
 
 		// V2 member handlers

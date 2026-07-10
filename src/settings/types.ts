@@ -1,18 +1,10 @@
-import type {
-	AgentSession,
-	AuthStorage,
-	ModelRegistry,
-	SettingsManager,
-} from "@earendil-works/pi-coding-agent";
+import type { AgentClient } from "../client/types.js";
 import type { Config } from "../config.js";
 
 export type SettingCategory = "ui" | "session" | "notifications" | "teams";
 
 export interface SettingContext {
-	session: AgentSession;
-	authStorage: AuthStorage;
-	modelRegistry: ModelRegistry;
-	settingsManager: SettingsManager;
+	client: AgentClient;
 	setUi: {
 		thinkingCollapsed(v: boolean): void;
 		toastDismissMs(v: number): void;

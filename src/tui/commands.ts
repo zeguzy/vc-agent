@@ -2,6 +2,7 @@ import { existsSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { activeToolsFor, buildAgentModeCycle, getBaseMode } from "../agent/session.js";
+import type { SkillListEntry } from "../client/types.js";
 import { type CommandContext, commandRegistry } from "../commands/registry.js";
 import { getDefaultConfigTemplate, writeConfig } from "../config.js";
 import {
@@ -20,7 +21,6 @@ import {
 	type Message,
 } from "../message.js";
 import { modelSetting } from "../settings/definitions.js";
-import type { SkillManager } from "../skills/manager.js";
 import { extractTodoItems } from "../tools/todo.js";
 import { formatError } from "../utils/formatError.js";
 
@@ -318,14 +318,13 @@ export function registerBuiltinCommands(): void {
 		description: "List all loaded skills (auto + dynamic)",
 		usage: "/skills",
 		handler: (_args: string, ctx: CommandContext) => {
-			const skillManager = ctx.client.getSkillManager();
-			const result = skillManager.listSkills();
+			const result = ctx.client.listSkills();
 			if (result.skills.length === 0) {
 				ctx.setMessages((prev) => [...prev, createAssistantMessage("No skills loaded.")]);
 				return;
 			}
 
-			const dirs = skillManager.getDefaultDirectories();
+			const dirs = ctx.client.getSkillDirectories();
 			const header = [
 				"Loaded skills:",
 				`  Global dir: ${dirs.global}`,
@@ -370,8 +369,7 @@ export function registerBuiltinCommands(): void {
 				return;
 			}
 			try {
-				const result = await ctx.client.getSkillManager().loadDynamicSkill(path);
-				const skill = result.skill;
+				const skill = await ctx.client.loadDynamicSkill(path);
 				ctx.setMessages((prev) => [
 					...prev,
 					createAssistantMessage(
@@ -394,7 +392,7 @@ export function registerBuiltinCommands(): void {
 		name: "unload-skill",
 		description: "Unload a dynamically loaded skill",
 		usage: "/unload-skill <name>",
-		handler: (args: string, ctx: CommandContext) => {
+		handler: async (args: string, ctx: CommandContext) => {
 			const name = args.trim();
 			if (!name) {
 				ctx.setMessages((prev) => [
@@ -405,7 +403,7 @@ export function registerBuiltinCommands(): void {
 				]);
 				return;
 			}
-			const removed = ctx.client.getSkillManager().unloadDynamicSkill(name);
+			const removed = await ctx.client.unloadDynamicSkill(name);
 			if (removed) {
 				ctx.setMessages((prev) => [
 					...prev,
@@ -435,14 +433,13 @@ export function registerBuiltinCommands(): void {
 				return;
 			}
 			try {
-				const session = ctx.client.getSession();
-				const userMsgs = session.getUserMessagesForForking();
+				const userMsgs = ctx.client.getUserMessagesForForking();
 				if (userMsgs.length === 0) {
 					ctx.setMessages((prev) => [...prev, createAssistantMessage("没有可撤销的对话。")]);
 					return;
 				}
 				const lastUser = userMsgs[userMsgs.length - 1];
-				const parentId = session.sessionManager.getEntry(lastUser.entryId)?.parentId;
+				const parentId = ctx.client.getEntryParentId(lastUser.entryId);
 				if (!parentId) {
 					ctx.setMessages((prev) => [
 						...prev,
@@ -450,7 +447,7 @@ export function registerBuiltinCommands(): void {
 					]);
 					return;
 				}
-				const result = await session.navigateTree(parentId);
+				const result = await ctx.client.navigateTree(parentId);
 				if (result.cancelled) {
 					ctx.setMessages((prev) => [...prev, createAssistantMessage("已取消撤销。")]);
 					return;
@@ -834,7 +831,7 @@ export function matchCommands(input: string): ReturnType<typeof commandRegistry.
  */
 export function matchSuggestions(
 	input: string,
-	skillManager: SkillManager | null,
+	skills: readonly SkillListEntry[] | null,
 ): SuggestionItem[] {
 	const commands = matchCommands(input);
 	const items: SuggestionItem[] = commands.map((c) => ({
@@ -843,9 +840,8 @@ export function matchSuggestions(
 		type: "command" as const,
 	}));
 
-	if (skillManager) {
+	if (skills) {
 		const trimmed = input.replace(/^\//, "");
-		const skills = skillManager.listSkills().skills;
 		for (const s of skills) {
 			const fullName = `skill:${s.name}`;
 			if (!trimmed || fullName.startsWith(trimmed)) {

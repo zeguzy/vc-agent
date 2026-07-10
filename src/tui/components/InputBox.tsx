@@ -1,9 +1,9 @@
 import type { KeyEvent, KeyBinding as TextareaKeyBinding, TextareaRenderable } from "@opentui/core";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { AgentMode } from "../../agent/session.js";
+import type { SkillListEntry } from "../../client/types.js";
 import type { PollManager } from "../../poll/manager.js";
 import { usePollState } from "../../poll/usePollState.js";
-import type { SkillManager } from "../../skills/manager.js";
 import type { MemberState, TaskState } from "../../teams/types-v2.js";
 import { matchSuggestions, type SuggestionItem } from "../commands.js";
 import type { Mode } from "../keymap.js";
@@ -17,7 +17,7 @@ interface InputBoxProps {
 	model: string;
 	cwd: string;
 	pollManager: PollManager;
-	skillManager: SkillManager | null;
+	skills: readonly SkillListEntry[] | null;
 	onSubmit: (text: string) => void;
 	sentMessages: string[];
 	pendingInput?: { text: string; nonce: number } | null;
@@ -33,7 +33,7 @@ export function InputBox({
 	model,
 	cwd,
 	pollManager,
-	skillManager,
+	skills,
 	onSubmit,
 	sentMessages,
 	pendingInput,
@@ -73,8 +73,8 @@ export function InputBox({
 
 	const isSlashMode = currentText.startsWith("/");
 	const suggestions = useMemo<SuggestionItem[]>(
-		() => (isSlashMode ? matchSuggestions(currentText, skillManager) : []),
-		[isSlashMode, currentText, skillManager],
+		() => (isSlashMode ? matchSuggestions(currentText, skills) : []),
+		[isSlashMode, currentText, skills],
 	);
 	const showSuggestions = isSlashMode && suggestions.length > 0 && mode === "insert";
 

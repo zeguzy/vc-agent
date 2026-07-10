@@ -30,14 +30,14 @@ export function ModelPicker({ config, ctx, onApply, onCancel }: ModelPickerProps
 
 	const providers = useMemo(() => {
 		const set = new Set<string>();
-		for (const m of ctx.modelRegistry.getAll()) set.add(m.provider);
+		for (const m of ctx.client.listModels()) set.add(m.provider);
 		return Array.from(set).sort((a, b) => {
-			const ka = ctx.authStorage.hasAuth(a) ? 0 : 1;
-			const kb = ctx.authStorage.hasAuth(b) ? 0 : 1;
+			const ka = ctx.client.hasAuthProvider(a) ? 0 : 1;
+			const kb = ctx.client.hasAuthProvider(b) ? 0 : 1;
 			if (ka !== kb) return ka - kb;
 			return a.localeCompare(b);
 		});
-	}, [ctx.modelRegistry, ctx.authStorage.hasAuth]);
+	}, [ctx.client]);
 
 	const providerFiltered = useMemo(() => {
 		const q = query.toLowerCase();
@@ -47,16 +47,16 @@ export function ModelPicker({ config, ctx, onApply, onCancel }: ModelPickerProps
 	const models = useMemo(() => {
 		if (!provider) return [];
 		const q = query.toLowerCase();
-		return ctx.modelRegistry
-			.getAll()
+		return ctx.client
+			.listModels()
 			.filter(
 				(m) =>
 					m.provider === provider &&
-					(m.id.toLowerCase().includes(q) || m.name.toLowerCase().includes(q)),
+					(m.id.toLowerCase().includes(q) || (m.name?.toLowerCase().includes(q) ?? false)),
 			);
-	}, [ctx.modelRegistry, provider, query]);
+	}, [ctx.client, provider, query]);
 
-	const hasKey = (p: string) => ctx.authStorage.hasAuth(p);
+	const hasKey = (p: string) => ctx.client.hasAuthProvider(p);
 
 	const syncQuery = () => {
 		setQuery(searchRef.current?.plainText ?? "");
@@ -67,7 +67,7 @@ export function ModelPicker({ config, ctx, onApply, onCancel }: ModelPickerProps
 		if (!provider) return;
 		const trimmed = (apiKeyRef.current?.plainText ?? "").trim();
 		if (!trimmed) return;
-		ctx.authStorage.setRuntimeApiKey(provider, trimmed);
+		ctx.client.setRuntimeApiKey(provider, trimmed);
 		const prev = configRef.current.providers?.[provider] ?? {};
 		const newConfig: Config = {
 			...configRef.current,
