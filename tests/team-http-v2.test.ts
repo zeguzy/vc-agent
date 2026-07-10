@@ -100,6 +100,14 @@ function createMockServer() {
 			teamHandlers.add(handler);
 			return () => teamHandlers.delete(handler);
 		}),
+		handlePauseMember: mock((_name: string) => {}),
+		handleResumeMember: mock((_name: string) => {}),
+		handleCancelMember: mock((_name: string) => {}),
+		handleDirectMember: mock((_name: string, _kind: string, _payload: string) => {}),
+		handleSendMessage: mock(() => ({ message: {}, delivery: "inbox" })),
+		handleBroadcastMessage: mock(() => []),
+		handleReadInbox: mock(() => []),
+		handleMarkInboxRead: mock(() => 0),
 
 		_emit: (event: AgentSessionEvent) => {
 			for (const h of handlers) h(event);
@@ -288,6 +296,107 @@ describe("Team V2 HTTP API", () => {
 			expect(server.handleSetAgentMode).toHaveBeenCalledWith("orchestrator");
 		});
 	});
+
+	describe("POST /model/cycle", () => {
+		it("calls handleCycleModel and returns result", async () => {
+			const res = await fetch(`${baseUrl}/model/cycle`, {
+				method: "POST",
+				headers: { "Content-Type": "application/json" },
+			});
+			expect(res.status).toBe(200);
+			const data = (await res.json()) as { result: unknown };
+			expect(data).toHaveProperty("result");
+			expect(server.handleCycleModel).toHaveBeenCalledTimes(1);
+		});
+	});
+
+	describe("POST /tools/active", () => {
+		it("calls handleSetActiveToolsByName", async () => {
+			const res = await fetch(`${baseUrl}/tools/active`, {
+				method: "POST",
+				headers: { "Content-Type": "application/json" },
+				body: JSON.stringify({ tools: ["read", "write"] }),
+			});
+			expect(res.status).toBe(200);
+			expect(server.handleSetActiveToolsByName).toHaveBeenCalledWith(["read", "write"]);
+		});
+
+		it("returns 400 if tools is not an array", async () => {
+			const res = await fetch(`${baseUrl}/tools/active`, {
+				method: "POST",
+				headers: { "Content-Type": "application/json" },
+				body: JSON.stringify({ tools: "not-array" }),
+			});
+			expect(res.status).toBe(400);
+		});
+	});
+
+	describe("POST /command", () => {
+		it("calls handleExecuteCommand and returns ok", async () => {
+			const res = await fetch(`${baseUrl}/command`, {
+				method: "POST",
+				headers: { "Content-Type": "application/json" },
+				body: JSON.stringify({ name: "help", args: "" }),
+			});
+			expect(res.status).toBe(200);
+			const data = (await res.json()) as { ok: boolean };
+			expect(data.ok).toBe(true);
+		});
+
+		it("returns 400 if name is missing", async () => {
+			const res = await fetch(`${baseUrl}/command`, {
+				method: "POST",
+				headers: { "Content-Type": "application/json" },
+				body: JSON.stringify({}),
+			});
+			expect(res.status).toBe(400);
+		});
+	});
+
+	describe("PUT /team/members/:name/pause", () => {
+		it("calls handlePauseMember", async () => {
+			const res = await fetch(`${baseUrl}/team/members/tester/pause`, { method: "PUT" });
+			expect(res.status).toBe(200);
+			expect(server.handlePauseMember).toHaveBeenCalledWith("tester");
+		});
+	});
+
+	describe("PUT /team/members/:name/resume", () => {
+		it("calls handleResumeMember", async () => {
+			const res = await fetch(`${baseUrl}/team/members/tester/resume`, { method: "PUT" });
+			expect(res.status).toBe(200);
+			expect(server.handleResumeMember).toHaveBeenCalledWith("tester");
+		});
+	});
+
+	describe("PUT /team/members/:name/cancel", () => {
+		it("calls handleCancelMember", async () => {
+			const res = await fetch(`${baseUrl}/team/members/tester/cancel`, { method: "PUT" });
+			expect(res.status).toBe(200);
+			expect(server.handleCancelMember).toHaveBeenCalledWith("tester");
+		});
+	});
+
+	describe("POST /team/members/:name/direct", () => {
+		it("calls handleDirectMember", async () => {
+			const res = await fetch(`${baseUrl}/team/members/tester/direct`, {
+				method: "POST",
+				headers: { "Content-Type": "application/json" },
+				body: JSON.stringify({ kind: "directive", payload: "do this" }),
+			});
+			expect(res.status).toBe(200);
+			expect(server.handleDirectMember).toHaveBeenCalledWith("tester", "directive", "do this");
+		});
+
+		it("returns 400 if kind or payload missing", async () => {
+			const res = await fetch(`${baseUrl}/team/members/tester/direct`, {
+				method: "POST",
+				headers: { "Content-Type": "application/json" },
+				body: JSON.stringify({ kind: "directive" }),
+			});
+			expect(res.status).toBe(400);
+		});
+	});
 });
 
 describe("HttpClient V2 methods", () => {
@@ -364,5 +473,12 @@ describe("HttpClient V2 methods", () => {
 		expect(() => client.getMember("x")).toThrow();
 		expect(() => client.listTasks()).toThrow();
 		expect(() => client.taskStatus("x")).toThrow();
+	});
+
+	it("fire-and-forget V2 methods do not throw", () => {
+		expect(() => client.pauseMember("x")).not.toThrow();
+		expect(() => client.resumeMember("x")).not.toThrow();
+		expect(() => client.cancelMember("x")).not.toThrow();
+		expect(() => client.directMember("x", "directive", "test")).not.toThrow();
 	});
 });

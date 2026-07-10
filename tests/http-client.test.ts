@@ -9,7 +9,10 @@ import type { MemberState, TaskState } from "../src/teams/types-v2.js";
 type EventHandler = (event: AgentSessionEvent) => void;
 type TeamEventHandler = (event: unknown) => void;
 
-function createMockServer(): AgentServer & { _emit: (e: AgentSessionEvent) => void } {
+function createMockServer(): AgentServer & {
+	_emit: (e: AgentSessionEvent) => void;
+	_emitTeam: (e: unknown) => void;
+} {
 	const handlers = new Set<EventHandler>();
 	const teamHandlers = new Set<TeamEventHandler>();
 	return {
@@ -59,10 +62,24 @@ function createMockServer(): AgentServer & { _emit: (e: AgentSessionEvent) => vo
 		),
 		handleListTasks: mock(() => [] as TaskState[]),
 		handleTaskStatus: mock((_id: string) => undefined as TaskState | undefined),
+		handlePauseMember: mock((_name: string) => {}),
+		handleResumeMember: mock((_name: string) => {}),
+		handleCancelMember: mock((_name: string) => {}),
+		handleDirectMember: mock((_name: string, _kind: string, _payload: string) => {}),
+		handleSendMessage: mock(() => ({ message: {}, delivery: "inbox" })),
+		handleBroadcastMessage: mock(() => []),
+		handleReadInbox: mock(() => []),
+		handleMarkInboxRead: mock(() => 0),
 		_emit: (event: AgentSessionEvent) => {
 			for (const h of handlers) h(event);
 		},
-	} as unknown as AgentServer & { _emit: (e: AgentSessionEvent) => void };
+		_emitTeam: (event: unknown) => {
+			for (const h of teamHandlers) h(event);
+		},
+	} as unknown as AgentServer & {
+		_emit: (e: AgentSessionEvent) => void;
+		_emitTeam: (e: unknown) => void;
+	};
 }
 
 describe("HttpClient", () => {
@@ -156,10 +173,6 @@ describe("HttpClient", () => {
 		it("getSession throws", () => {
 			expect(() => client.getSession()).toThrow();
 		});
-
-		it("executeCommand throws", async () => {
-			expect(client.executeCommand("test", "", {} as never)).rejects.toThrow();
-		});
 	});
 
 	describe("subscribe via SSE", () => {
@@ -176,6 +189,61 @@ describe("HttpClient", () => {
 
 			expect(received).toContain("agent_start");
 			unsub();
+		});
+	});
+
+	describe("B类 methods (newly implemented)", () => {
+		it("cycleModel calls POST /model/cycle", async () => {
+			const result = await client.cycleModel();
+			expect(result).toBeUndefined();
+			expect(mockServer.handleCycleModel).toHaveBeenCalledTimes(1);
+		});
+
+		it("setActiveToolsByName calls POST /tools/active", async () => {
+			client.setActiveToolsByName(["read", "write"]);
+			await new Promise((r) => setTimeout(r, 50));
+			expect(mockServer.handleSetActiveToolsByName).toHaveBeenCalledWith(["read", "write"]);
+		});
+
+		it("executeCommand calls POST /command", async () => {
+			const ok = await client.executeCommand("help", "", {} as never);
+			expect(ok).toBe(true);
+			expect(mockServer.handleExecuteCommand).toHaveBeenCalledTimes(1);
+		});
+
+		it("subscribeTeam receives team events via SSE", async () => {
+			const received: unknown[] = [];
+			const unsub = client.subscribeTeam((event) => {
+				received.push(event);
+			});
+
+			await new Promise((r) => setTimeout(r, 50));
+
+			const testEvent = { type: "member_created", memberName: "test" };
+			mockServer._emitTeam(testEvent);
+			await new Promise((r) => setTimeout(r, 50));
+
+			expect(received.length).toBeGreaterThanOrEqual(1);
+			expect((received[0] as Record<string, unknown>).type).toBe("member_created");
+			unsub();
+		});
+	});
+
+	describe("A类 fire-and-forget methods", () => {
+		it("pauseMember does not throw", () => {
+			expect(() => client.pauseMember("test-member")).not.toThrow();
+		});
+
+		it("resumeMember does not throw", () => {
+			expect(() => client.resumeMember("test-member")).not.toThrow();
+		});
+
+		it("cancelMember does not throw", () => {
+			expect(() => client.cancelMember("test-member")).not.toThrow();
+		});
+
+		it("directMember does not throw", () => {
+			expect(() => client.directMember("test-member", "directive", "do something")).not.toThrow();
 		});
 	});
 });
