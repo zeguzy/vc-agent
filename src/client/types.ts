@@ -1,5 +1,4 @@
-import type { AuthStorage, ModelRegistry, SettingsManager } from "@earendil-works/pi-coding-agent";
-import type { AgentSession, AgentSessionEvent } from "../agent/session.js";
+import type { AgentSessionEvent } from "../agent/session.js";
 import type { CommandContext } from "../commands/registry.js";
 import type { Message } from "../message.js";
 import type { SessionInfo } from "../session/list.js";
@@ -41,6 +40,49 @@ export interface NewSessionResult {
 	cancelled: boolean;
 }
 
+export interface UserMessageSummary {
+	entryId: string;
+	text: string;
+}
+
+export interface NavigateResult {
+	cancelled: boolean;
+	lastUserText?: string;
+}
+
+export interface SkillListEntry {
+	name: string;
+	description: string;
+	source: "auto" | "dynamic";
+	disableModelInvocation: boolean;
+	filePath?: string;
+}
+
+export interface SkillListResult {
+	skills: SkillListEntry[];
+	diagnostics: Array<{ message: string }>;
+}
+
+export interface SkillDirectories {
+	global: string;
+	project: string;
+}
+
+export interface LoadSkillResult {
+	name: string;
+	description: string;
+	filePath: string;
+	disableModelInvocation: boolean;
+}
+
+export interface ExtendedModelInfo extends ModelInfo {
+	id: string;
+	name: string;
+	provider: string;
+	reasoning?: boolean;
+	input?: string[];
+}
+
 export interface AgentClient {
 	prompt(text: string): Promise<void>;
 	followUp(text: string): Promise<void>;
@@ -67,14 +109,27 @@ export interface AgentClient {
 
 	subscribe(handler: EventHandler): Unsubscribe;
 
-	onSessionChange(handler: (session: AgentSession) => Promise<void>): void;
+	onSessionChange(handler: (sessionId: string) => Promise<void>): void;
 
-	getSettingsManager(): SettingsManager;
-	getModelRegistry(): ModelRegistry;
-	getAuthStorage(): AuthStorage;
-	getSkillManager(): import("../skills/manager.js").SkillManager;
-	getSession(): AgentSession;
-	getRuntime(): import("../agent/session.js").AgentSessionRuntime;
+	setModel(provider: string, id: string): Promise<void>;
+	getAvailableThinkingLevels(): readonly string[];
+	setThinkingLevel(level: string): void;
+	getUserMessagesForForking(): UserMessageSummary[];
+	getEntryParentId(entryId: string): string | undefined;
+	navigateTree(parentId: string): Promise<NavigateResult>;
+
+	listSkills(): SkillListResult;
+	getSkillDirectories(): SkillDirectories;
+	loadDynamicSkill(path: string): Promise<LoadSkillResult>;
+	unloadDynamicSkill(name: string): Promise<boolean>;
+
+	setCompactionEnabled(enabled: boolean): void;
+
+	listModels(): ExtendedModelInfo[];
+	findModel(provider: string, id: string): ExtendedModelInfo | undefined;
+
+	hasAuthProvider(provider: string): boolean;
+	setRuntimeApiKey(provider: string, key: string): void;
 
 	executeCommand(name: string, args: string, ctx: CommandContext): Promise<boolean>;
 

@@ -34,7 +34,7 @@ export const compactionEnabledSetting: Setting<boolean> = {
 		return v ? "on" : "off";
 	},
 	apply(value, ctx) {
-		ctx.settingsManager.setCompactionEnabled(value);
+		ctx.client.setCompactionEnabled(value);
 	},
 	persist(config, value) {
 		return { ...config, compaction: { ...config.compaction, enabled: value } };
@@ -56,12 +56,13 @@ export const modelSetting: Setting<string> = {
 	apply(value, ctx) {
 		const trimmed = value.trim();
 		if (!trimmed) return;
-		const registry = ctx.modelRegistry;
-		const model = trimmed.includes(":")
-			? registry.find(trimmed.split(":", 2)[0], trimmed.split(":", 2)[1])
-			: registry.getAll().find((m) => m.id === trimmed);
+		const colonIdx = trimmed.indexOf(":");
+		const model =
+			colonIdx > 0
+				? ctx.client.findModel(trimmed.slice(0, colonIdx), trimmed.slice(colonIdx + 1))
+				: ctx.client.listModels().find((m) => m.id === trimmed);
 		if (model) {
-			ctx.session.setModel(model).catch(() => {});
+			ctx.client.setModel(model.provider, model.id ?? "").catch(() => {});
 		}
 	},
 	persist(config, value) {
@@ -76,7 +77,7 @@ export const thinkingLevelSetting: Setting<string> = {
 	defaultValue: "off",
 	editor: {
 		type: "selectDynamic",
-		options: (ctx) => ctx.session.getAvailableThinkingLevels() as readonly string[],
+		options: (ctx) => ctx.client.getAvailableThinkingLevels() as readonly string[],
 	},
 	read(config) {
 		return config.thinking?.level ?? "off";
@@ -85,7 +86,7 @@ export const thinkingLevelSetting: Setting<string> = {
 		return v;
 	},
 	apply(value, ctx) {
-		ctx.session.setThinkingLevel(value as never);
+		ctx.client.setThinkingLevel(value);
 	},
 	persist(config, value) {
 		return { ...config, thinking: { ...config.thinking, level: value } };

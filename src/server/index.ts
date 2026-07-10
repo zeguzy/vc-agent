@@ -5,9 +5,15 @@ import type {
 	ContextUsage,
 	CycleModelResult,
 	EventHandler,
+	ExtendedModelInfo,
+	LoadSkillResult,
 	ModelInfo,
+	NavigateResult,
 	NewSessionResult,
+	SkillDirectories,
+	SkillListResult,
 	Unsubscribe,
+	UserMessageSummary,
 } from "../client/types.js";
 import type { CommandContext } from "../commands/registry.js";
 import { commandRegistry } from "../commands/registry.js";
@@ -45,7 +51,7 @@ export class AgentServer {
 	private readonly cwd: string;
 	private readonly eventHandlers = new Set<EventHandler>();
 	private readonly teamEventHandlers = new Set<(event: TeamEvent) => void>();
-	private readonly sessionChangeHandlers = new Set<(session: AgentSession) => Promise<void>>();
+	private readonly sessionChangeHandlers = new Set<(sessionId: string) => Promise<void>>();
 	private currentUnsub: Unsubscribe | null = null;
 	private readonly notificationRouter: NotificationRouter;
 	teamManager: TeamManager;
@@ -104,7 +110,7 @@ export class AgentServer {
 				});
 			}
 			for (const handler of this.sessionChangeHandlers) {
-				await handler(newSession);
+				await handler(newSession.sessionId);
 			}
 		});
 
@@ -301,32 +307,118 @@ export class AgentServer {
 		};
 	}
 
-	handleOnSessionChange(handler: (session: AgentSession) => Promise<void>): void {
+	handleOnSessionChange(handler: (sessionId: string) => Promise<void>): void {
 		this.sessionChangeHandlers.add(handler);
 	}
 
-	handleGetSettingsManager() {
-		return this.session.settingsManager;
+	handleSetModel(provider: string, id: string): Promise<void> {
+		const model = this.session.modelRegistry.find(provider, id);
+		if (model) {
+			return this.session.setModel(model);
+		}
+		return Promise.resolve();
 	}
 
-	handleGetModelRegistry() {
-		return this.session.modelRegistry;
+	handleGetAvailableThinkingLevels(): readonly string[] {
+		return this.session.getAvailableThinkingLevels() as readonly string[];
 	}
 
-	handleGetAuthStorage() {
-		return this.session.modelRegistry.authStorage;
+	handleSetThinkingLevel(level: string): void {
+		this.session.setThinkingLevel(level as never);
 	}
 
-	handleGetSkillManager(): SkillManager {
-		return this.skillManager;
+	handleGetUserMessagesForForking(): UserMessageSummary[] {
+		return this.session.getUserMessagesForForking().map((m) => ({
+			entryId: m.entryId,
+			text: m.text,
+		}));
 	}
 
-	handleGetSession(): AgentSession {
-		return this.runtime.session;
+	handleGetEntryParentId(entryId: string): string | undefined {
+		return this.session.sessionManager.getEntry(entryId)?.parentId ?? undefined;
 	}
 
-	handleGetRuntime(): AgentSessionRuntime {
-		return this.runtime;
+	async handleNavigateTree(parentId: string): Promise<NavigateResult> {
+		const result = await this.session.navigateTree(parentId);
+		return {
+			cancelled: result.cancelled,
+			...(result.editorText ? { lastUserText: result.editorText } : {}),
+		};
+	}
+
+	handleListSkills(): SkillListResult {
+		const result = this.skillManager.listSkills();
+		return {
+			skills: result.skills.map((s) => ({
+				name: s.name,
+				description: s.description,
+				source: s.source,
+				disableModelInvocation: s.disableModelInvocation,
+				...(s.filePath ? { filePath: s.filePath } : {}),
+			})),
+			diagnostics: result.diagnostics.map((d) => ({ message: d.message })),
+		};
+	}
+
+	handleGetSkillDirectories(): SkillDirectories {
+		return this.skillManager.getDefaultDirectories();
+	}
+
+	async handleLoadDynamicSkill(path: string): Promise<LoadSkillResult> {
+		const { resolve } = await import("node:path");
+		const { sep } = await import("node:path");
+		const resolved = resolve(path);
+		const dirs = this.skillManager.getDefaultDirectories();
+		const allowed = [dirs.global, dirs.project].map((d) => resolve(d));
+		if (!allowed.some((d) => resolved.startsWith(d + sep))) {
+			throw new Error(`Skill path outside allowed directories: ${path}`);
+		}
+		const result = await this.skillManager.loadDynamicSkill(path);
+		const skill = result.skill;
+		return {
+			name: skill.name,
+			description: skill.description,
+			filePath: skill.filePath,
+			disableModelInvocation: skill.disableModelInvocation,
+		};
+	}
+
+	async handleUnloadDynamicSkill(name: string): Promise<boolean> {
+		return this.skillManager.unloadDynamicSkill(name);
+	}
+
+	handleSetCompactionEnabled(enabled: boolean): void {
+		this.session.settingsManager.setCompactionEnabled(enabled);
+	}
+
+	handleListModels(): ExtendedModelInfo[] {
+		return this.session.modelRegistry.getAll().map((m) => ({
+			id: m.id,
+			name: m.name,
+			provider: m.provider,
+			reasoning: m.reasoning,
+			input: m.input,
+		}));
+	}
+
+	handleFindModel(provider: string, id: string): ExtendedModelInfo | undefined {
+		const m = this.session.modelRegistry.find(provider, id);
+		if (!m) return undefined;
+		return {
+			id: m.id,
+			name: m.name,
+			provider: m.provider,
+			reasoning: m.reasoning,
+			input: m.input,
+		};
+	}
+
+	handleHasAuthProvider(provider: string): boolean {
+		return this.session.modelRegistry.authStorage.hasAuth(provider);
+	}
+
+	handleSetRuntimeApiKey(provider: string, key: string): void {
+		this.session.modelRegistry.authStorage.setRuntimeApiKey(provider, key);
 	}
 
 	handleExecuteCommand(name: string, args: string, ctx: CommandContext): Promise<boolean> {

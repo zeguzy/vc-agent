@@ -20,11 +20,7 @@ export function createHttpServer(opts: HttpServerOptions) {
 		}
 	});
 
-	if (host) {
-		httpServer.listen(port, host);
-	} else {
-		httpServer.listen(port);
-	}
+	httpServer.listen(port, host ?? "127.0.0.1");
 	return httpServer;
 }
 
@@ -93,6 +89,95 @@ async function handleRequest(server: AgentServer, req: IncomingMessage, res: Ser
 
 	if (method === "GET" && path === "/model") {
 		return sendJson(res, { model: server.handleGetModel() });
+	}
+
+	if (method === "POST" && path === "/model") {
+		const body = await readBody<{ provider: string; id: string }>(req);
+		await server.handleSetModel(body.provider, body.id);
+		return sendJson(res, { ok: true });
+	}
+
+	if (method === "GET" && path === "/model/thinking-levels") {
+		return sendJson(res, { levels: server.handleGetAvailableThinkingLevels() });
+	}
+
+	if (method === "POST" && path === "/model/thinking-level") {
+		const body = await readBody<{ level: string }>(req);
+		server.handleSetThinkingLevel(body.level);
+		return sendJson(res, { ok: true });
+	}
+
+	if (method === "GET" && path === "/session/fork-messages") {
+		return sendJson(res, { messages: server.handleGetUserMessagesForForking() });
+	}
+
+	if (method === "GET" && path.startsWith("/session/entry-parent/")) {
+		const entryId = path.slice("/session/entry-parent/".length);
+		const parentId = server.handleGetEntryParentId(entryId);
+		return sendJson(res, { parentId });
+	}
+
+	if (method === "POST" && path === "/session/navigate") {
+		const body = await readBody<{ parentId: string }>(req);
+		const result = await server.handleNavigateTree(body.parentId);
+		return sendJson(res, result);
+	}
+
+	if (method === "GET" && path === "/skills") {
+		return sendJson(res, server.handleListSkills());
+	}
+
+	if (method === "GET" && path === "/skills/directories") {
+		return sendJson(res, server.handleGetSkillDirectories());
+	}
+
+	if (method === "POST" && path === "/skills/load") {
+		const body = await readBody<{ path: string }>(req);
+		try {
+			const result = await server.handleLoadDynamicSkill(body.path);
+			return sendJson(res, result);
+		} catch (err) {
+			return sendJson(res, { error: String(err) }, 400);
+		}
+	}
+
+	if (method === "POST" && path === "/skills/unload") {
+		const body = await readBody<{ name: string }>(req);
+		const removed = await server.handleUnloadDynamicSkill(body.name);
+		return sendJson(res, { removed });
+	}
+
+	if (method === "POST" && path === "/settings/compaction") {
+		const body = await readBody<{ enabled: boolean }>(req);
+		server.handleSetCompactionEnabled(body.enabled);
+		return sendJson(res, { ok: true });
+	}
+
+	if (method === "GET" && path === "/models") {
+		return sendJson(res, { models: server.handleListModels() });
+	}
+
+	if (method === "GET" && path.startsWith("/models/")) {
+		const rest = path.slice("/models/".length);
+		const sepIdx = rest.indexOf("/");
+		if (sepIdx > 0) {
+			const provider = rest.slice(0, sepIdx);
+			const id = rest.slice(sepIdx + 1);
+			const model = server.handleFindModel(provider, id);
+			if (!model) return sendJson(res, { error: "model not found" }, 404);
+			return sendJson(res, { model });
+		}
+	}
+
+	if (method === "GET" && path.startsWith("/auth/has/")) {
+		const provider = path.slice("/auth/has/".length);
+		return sendJson(res, { has: server.handleHasAuthProvider(provider) });
+	}
+
+	if (method === "POST" && path === "/auth/api-key") {
+		const body = await readBody<{ provider: string; key: string }>(req);
+		server.handleSetRuntimeApiKey(body.provider, body.key);
+		return sendJson(res, { ok: true });
 	}
 
 	if (method === "GET" && path === "/context") {

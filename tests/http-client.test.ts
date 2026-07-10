@@ -35,12 +35,6 @@ function createMockServer(): AgentServer & { _emit: (e: AgentSessionEvent) => vo
 			return () => handlers.delete(handler);
 		}),
 		handleOnSessionChange: mock(() => {}),
-		handleGetSettingsManager: mock(() => ({}) as never),
-		handleGetModelRegistry: mock(() => ({}) as never),
-		handleGetAuthStorage: mock(() => ({}) as never),
-		handleGetSkillManager: mock(() => ({}) as never),
-		handleGetSession: mock(() => ({}) as never),
-		handleGetRuntime: mock(() => ({}) as never),
 		handleExecuteCommand: mock(async () => true),
 		handleSubscribeTeam: mock((handler: TeamEventHandler) => {
 			teamHandlers.add(handler);
@@ -145,18 +139,6 @@ describe("HttpClient", () => {
 	});
 
 	describe("@internal methods throw", () => {
-		it("getSettingsManager throws", () => {
-			expect(() => client.getSettingsManager()).toThrow();
-		});
-
-		it("getModelRegistry throws", () => {
-			expect(() => client.getModelRegistry()).toThrow();
-		});
-
-		it("getSession throws", () => {
-			expect(() => client.getSession()).toThrow();
-		});
-
 		it("executeCommand throws", async () => {
 			expect(client.executeCommand("test", "", {} as never)).rejects.toThrow();
 		});

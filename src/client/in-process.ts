@@ -1,8 +1,5 @@
-import type { AuthStorage, ModelRegistry, SettingsManager } from "@earendil-works/pi-coding-agent";
-import type { AgentSession, AgentSessionRuntime } from "../agent/session.js";
 import type { CommandContext } from "../commands/registry.js";
 import type { AgentServer } from "../server/index.js";
-import type { SkillManager } from "../skills/manager.js";
 import type {
 	DeliveryMode,
 	MemberMessage,
@@ -18,9 +15,15 @@ import type {
 	ContextUsage,
 	CycleModelResult,
 	EventHandler,
+	ExtendedModelInfo,
+	LoadSkillResult,
 	ModelInfo,
+	NavigateResult,
 	NewSessionResult,
+	SkillDirectories,
+	SkillListResult,
 	Unsubscribe,
+	UserMessageSummary,
 } from "./types.js";
 
 export class InProcessClient implements AgentClient {
@@ -98,32 +101,68 @@ export class InProcessClient implements AgentClient {
 		return this.server.handleSubscribe(handler);
 	}
 
-	onSessionChange(handler: (session: AgentSession) => Promise<void>): void {
+	onSessionChange(handler: (sessionId: string) => Promise<void>): void {
 		this.server.handleOnSessionChange(handler);
 	}
 
-	getSettingsManager(): SettingsManager {
-		return this.server.handleGetSettingsManager();
+	async setModel(provider: string, id: string): Promise<void> {
+		return this.server.handleSetModel(provider, id);
 	}
 
-	getModelRegistry(): ModelRegistry {
-		return this.server.handleGetModelRegistry();
+	getAvailableThinkingLevels(): readonly string[] {
+		return this.server.handleGetAvailableThinkingLevels();
 	}
 
-	getAuthStorage(): AuthStorage {
-		return this.server.handleGetAuthStorage();
+	setThinkingLevel(level: string): void {
+		this.server.handleSetThinkingLevel(level);
 	}
 
-	getSkillManager(): SkillManager {
-		return this.server.handleGetSkillManager();
+	getUserMessagesForForking(): UserMessageSummary[] {
+		return this.server.handleGetUserMessagesForForking();
 	}
 
-	getSession(): AgentSession {
-		return this.server.handleGetSession();
+	getEntryParentId(entryId: string): string | undefined {
+		return this.server.handleGetEntryParentId(entryId);
 	}
 
-	getRuntime(): AgentSessionRuntime {
-		return this.server.handleGetRuntime();
+	async navigateTree(parentId: string): Promise<NavigateResult> {
+		return this.server.handleNavigateTree(parentId);
+	}
+
+	listSkills(): SkillListResult {
+		return this.server.handleListSkills();
+	}
+
+	getSkillDirectories(): SkillDirectories {
+		return this.server.handleGetSkillDirectories();
+	}
+
+	async loadDynamicSkill(path: string): Promise<LoadSkillResult> {
+		return this.server.handleLoadDynamicSkill(path);
+	}
+
+	async unloadDynamicSkill(name: string): Promise<boolean> {
+		return this.server.handleUnloadDynamicSkill(name);
+	}
+
+	setCompactionEnabled(enabled: boolean): void {
+		this.server.handleSetCompactionEnabled(enabled);
+	}
+
+	listModels(): ExtendedModelInfo[] {
+		return this.server.handleListModels();
+	}
+
+	findModel(provider: string, id: string): ExtendedModelInfo | undefined {
+		return this.server.handleFindModel(provider, id);
+	}
+
+	hasAuthProvider(provider: string): boolean {
+		return this.server.handleHasAuthProvider(provider);
+	}
+
+	setRuntimeApiKey(provider: string, key: string): void {
+		this.server.handleSetRuntimeApiKey(provider, key);
 	}
 
 	async executeCommand(name: string, args: string, ctx: CommandContext): Promise<boolean> {

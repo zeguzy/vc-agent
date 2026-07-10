@@ -377,10 +377,7 @@ export function App({
 	}, [client, toolCallIdToMsgId]);
 
 	const settingCtx: SettingContext = {
-		session: client.getSession(),
-		settingsManager: client.getSettingsManager(),
-		modelRegistry: client.getModelRegistry(),
-		authStorage: client.getAuthStorage(),
+		client,
 		setUi: {
 			thinkingCollapsed: setThinkingCollapsed,
 			toastDismissMs: setToastDismissMs,
@@ -666,7 +663,7 @@ export function App({
 						model={modelDisplay}
 						cwd={cwd}
 						pollManager={pollManagerRef.current}
-						skillManager={client.getSkillManager()}
+						skills={client.listSkills().skills}
 						onSubmit={handlePrompt}
 						sentMessages={commandHistory}
 						pendingInput={pendingInput}

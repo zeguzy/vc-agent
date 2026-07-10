@@ -305,21 +305,21 @@ describe("InProcessClient — session hot-switch", () => {
 		expect(changeCount).toBe(1);
 	});
 
-	it("passes the new session to onSessionChange handler", async () => {
+	it("passes the new sessionId to onSessionChange handler", async () => {
 		const mockSession = createMockSession();
 		const runtime = createMockRuntime(mockSession);
 		const { client } = createTestClient(runtime);
 
-		let receivedSession: AgentSession | null = null;
-		client.onSessionChange(async (s) => {
-			receivedSession = s;
+		let receivedId: string | null = null;
+		client.onSessionChange(async (id) => {
+			receivedId = id;
 		});
 
 		const newSession = createMockSession({ sessionId: "switched-id" } as any);
 		await runtime._triggerRebind(newSession);
 
-		expect(receivedSession).not.toBeNull();
-		expect(receivedSession?.sessionId).toBe("switched-id");
+		expect(receivedId).not.toBeNull();
+		expect(receivedId).toBe("switched-id");
 	});
 
 	it("fires multiple onSessionChange handlers", async () => {
@@ -373,61 +373,6 @@ describe("InProcessClient — session hot-switch", () => {
 		newSession._emit({ type: "message_start", message: { role: "assistant" } } as any);
 
 		expect(count).toBe(1);
-	});
-});
-
-describe("InProcessClient — service accessors", () => {
-	it("returns skillManager from getSkillManager", () => {
-		const mockSession = createMockSession();
-		const runtime = createMockRuntime(mockSession);
-		const fakeSkillManager = { listSkills: () => {} } as any;
-		const { client } = createTestClient(runtime, fakeSkillManager);
-
-		expect(client.getSkillManager()).toBe(fakeSkillManager);
-	});
-
-	it("returns settingsManager from getSettingsManager", () => {
-		const fakeSettings = { get: () => {} } as any;
-		const mockSession = createMockSession({ settingsManager: fakeSettings } as any);
-		const runtime = createMockRuntime(mockSession);
-		const { client } = createTestClient(runtime);
-
-		expect(client.getSettingsManager()).toBe(fakeSettings);
-	});
-
-	it("returns modelRegistry from getModelRegistry", () => {
-		const fakeRegistry = { authStorage: { hasAuth: () => false } } as any;
-		const mockSession = createMockSession({ modelRegistry: fakeRegistry } as any);
-		const runtime = createMockRuntime(mockSession);
-		const { client } = createTestClient(runtime);
-
-		expect(client.getModelRegistry()).toBe(fakeRegistry);
-	});
-
-	it("returns authStorage from getAuthStorage via modelRegistry", () => {
-		const fakeAuth = { hasAuth: () => true } as any;
-		const fakeRegistry = { authStorage: fakeAuth } as any;
-		const mockSession = createMockSession({ modelRegistry: fakeRegistry } as any);
-		const runtime = createMockRuntime(mockSession);
-		const { client } = createTestClient(runtime);
-
-		expect(client.getAuthStorage()).toBe(fakeAuth);
-	});
-
-	it("exposes runtime via getRuntime", () => {
-		const mockSession = createMockSession();
-		const runtime = createMockRuntime(mockSession);
-		const { client } = createTestClient(runtime);
-
-		expect(client.getRuntime()).toBe(runtime);
-	});
-
-	it("exposes session via getSession", () => {
-		const mockSession = createMockSession();
-		const runtime = createMockRuntime(mockSession);
-		const { client } = createTestClient(runtime);
-
-		expect(client.getSession()).toBe(mockSession);
 	});
 });
 
