@@ -255,6 +255,10 @@ export class InProcessClient implements AgentClient {
 	markInboxRead(name: MemberName, ids?: string[]): number {
 		return this.server.handleMarkInboxRead(name, ids);
 	}
+
+	getDiffReviewManager() {
+		return this.server.getDiffReviewManager();
+	}
 }
 
 export function createClient(server: AgentServer): AgentClient {

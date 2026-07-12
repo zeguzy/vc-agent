@@ -52,6 +52,12 @@ export const keymap: readonly KeyBinding[] = [
 		action: "nextMember",
 		desc: "Next team member sub-session",
 	},
+	{
+		mode: "*",
+		key: { name: "r", ctrl: true },
+		action: "toggleReviewView",
+		desc: "Toggle diff review view",
+	},
 ] as const;
 
 export function matchKey(

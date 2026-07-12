@@ -109,7 +109,7 @@ export function syncMemberAllowlist(
 export function buildMemberToolDefinitions(assignedTools: string[], cwd: string): ToolDefinition[] {
 	const tools: ToolDefinition[] = [];
 	if (assignedTools.includes("edit")) {
-		tools.push(createEditTool(cwd)); // No bridge — members are headless, no confirm UI
+		tools.push(createEditTool(cwd)); // No bridge/reviewManager — members are headless
 	}
 	if (assignedTools.includes("glob")) {
 		tools.push(createGlobToolDefinition(cwd));

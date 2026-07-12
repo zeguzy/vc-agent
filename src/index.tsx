@@ -8,6 +8,7 @@ import { type AgentMode, createRuntime, getBaseMode, type SessionMode } from "./
 import { createHttpClient } from "./client/http.js";
 import { createClient } from "./client/index.js";
 import { readConfig } from "./config.js";
+import { DiffReviewManager } from "./diff-review/manager.js";
 import { HeadlessRunner } from "./headless/runner.js";
 import { createHttpServer } from "./server/http.js";
 import { createServer } from "./server/index.js";
@@ -213,6 +214,7 @@ async function runTui(argv: string[]): Promise<void> {
 
 		const questionBridge = createQuestionBridge();
 		const editBridge = createEditConfirmBridge();
+		const reviewManager = new DiffReviewManager();
 		const teamRef: TeamManagerRef = { current: null };
 
 		let result: Awaited<ReturnType<typeof createRuntime>>;
@@ -225,6 +227,7 @@ async function runTui(argv: string[]): Promise<void> {
 				agentMode,
 				bridge: questionBridge,
 				editBridge,
+				reviewManager,
 				teamRef,
 				...(args.sessionRef ? { sessionRef: args.sessionRef } : {}),
 				...(args.name ? { name: args.name } : {}),
@@ -236,7 +239,7 @@ async function runTui(argv: string[]): Promise<void> {
 		}
 
 		const { runtime, skillManager, mcpManager } = result;
-		const server = createServer({ runtime, skillManager, mcpManager, cwd, teamRef });
+		const server = createServer({ runtime, skillManager, mcpManager, cwd, teamRef, reviewManager });
 		const client = createClient(server);
 
 		const renderer = await createCliRenderer({ exitOnCtrlC: false });
@@ -251,6 +254,7 @@ async function runTui(argv: string[]): Promise<void> {
 				config={config}
 				bridge={questionBridge}
 				editBridge={editBridge}
+				reviewManager={reviewManager}
 				initialResumeList={args.resumeList}
 				initialAgentMode={agentMode}
 				mcpManager={mcpManager}

@@ -445,6 +445,10 @@ export class HttpClient implements AgentClient {
 		};
 		return res.count ?? 0;
 	}
+
+	getDiffReviewManager() {
+		return null;
+	}
 }
 
 export function createHttpClient(baseUrl: string): AgentClient {
