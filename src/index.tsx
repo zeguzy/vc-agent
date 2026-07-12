@@ -1,7 +1,7 @@
 #!/usr/bin/env bun
 import { appendFileSync, mkdirSync } from "node:fs";
 import { homedir } from "node:os";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import { createCliRenderer } from "@opentui/core";
 import { createRoot } from "@opentui/react";
 import { type AgentMode, createRuntime, getBaseMode, type SessionMode } from "./agent/session.js";
@@ -56,6 +56,7 @@ interface ParsedArgs {
 	sessionRef?: string;
 	name?: string;
 	plan: boolean;
+	path?: string;
 }
 
 function parseArgs(argv: string[]): ParsedArgs {
@@ -82,6 +83,10 @@ function parseArgs(argv: string[]): ParsedArgs {
 			args.name = arg.slice("--name=".length);
 		} else if (arg === "--plan") {
 			args.plan = true;
+		} else if (arg === "--path" || arg === "-p") {
+			args.path = argv[++i];
+		} else if (arg.startsWith("--path=")) {
+			args.path = arg.slice("--path=".length);
 		}
 	}
 	return args;
@@ -111,6 +116,7 @@ openagent — your terminal coding assistant
   -n, --name <name>       命名当前会话
   --plan                  planner 模式（只读）
   --port <port>           serve 模式端口（默认 4096）
+  --path, -p <dir>        指定工作目录
   --help, -h              显示帮助
 
 示例:
@@ -138,7 +144,7 @@ function parseSubcommand(argv: string[]): { sub?: string; rest: string[] } {
 
 async function runHeadless(promptText: string, argv: string[]): Promise<void> {
 	const args = parseArgs(argv);
-	const cwd = process.cwd();
+	const cwd = args.path ? resolve(args.path) : process.cwd();
 	const mode = resolveMode(args);
 	const config = readConfig(cwd);
 	const agentMode: AgentMode = args.plan ? "planner" : getBaseMode(config);
@@ -157,15 +163,20 @@ async function runHeadless(promptText: string, argv: string[]): Promise<void> {
 
 async function runServe(argv: string[]): Promise<void> {
 	let port = 4096;
+	let pathArg: string | undefined;
 	for (let i = 2; i < argv.length; i++) {
 		if (argv[i] === "--port") {
 			port = Number(argv[++i]) || 4096;
 		} else if (argv[i]?.startsWith("--port=")) {
 			port = Number(argv[i].slice("--port=".length)) || 4096;
+		} else if (argv[i] === "--path" || argv[i] === "-p") {
+			pathArg = argv[++i];
+		} else if (argv[i]?.startsWith("--path=")) {
+			pathArg = argv[i].slice("--path=".length);
 		}
 	}
 
-	const cwd = process.cwd();
+	const cwd = pathArg ? resolve(pathArg) : process.cwd();
 	const config = readConfig(cwd);
 	const teamRef: TeamManagerRef = { current: null };
 	const { runtime, skillManager, mcpManager } = await createRuntime({
@@ -206,7 +217,7 @@ async function runTui(argv: string[]): Promise<void> {
 	// init-phase console output to the startup log to avoid screen-bottom leaks.
 	const restoreConsole = suppressConsoleToFile();
 	try {
-		const cwd = process.cwd();
+		const cwd = args.path ? resolve(args.path) : process.cwd();
 		const config = readConfig(cwd);
 		const model = args.model ?? config.model;
 		const mode = resolveMode(args);
