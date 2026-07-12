@@ -242,6 +242,9 @@ async function initServices(opts: {
 	}
 
 	const model = resolveModel(modelRegistry, opts.modelStr);
+	if (opts.modelStr && !model) {
+		console.warn(`[config] 无法解析模型 "${opts.modelStr}"。请检查 providers 配置和 API key。`);
+	}
 	const settingsManager = SettingsManager.inMemory(convertConfigToSettings(opts.config));
 
 	const skillManager = new SkillManager();

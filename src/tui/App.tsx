@@ -593,7 +593,8 @@ export function App({
 		}
 	});
 
-	const modelDisplay = client.getModel()?.name || client.getModel()?.id || model;
+	const resolvedModel = client.getModel();
+	const modelDisplay = resolvedModel?.name || resolvedModel?.id || model || "default";
 	const queuedMsgs = messages.filter((m) => m.queued);
 	const isWelcome = messages.length === 1 && messages[0].id === WELCOME_MESSAGE.id;
 
