@@ -7,7 +7,6 @@ import type { AgentClient, AgentMode } from "../client/index.js";
 import { commandRegistry } from "../commands/registry.js";
 import type { Config } from "../config.js";
 import { readConfig } from "../config.js";
-import type { DiffReviewManager } from "../diff-review/manager.js";
 import type { McpManager } from "../mcp/manager.js";
 import { createAssistantMessage, createUserMessage, type Message } from "../message.js";
 import { resolveNotificationsConfig } from "../notifications/config.js";
@@ -16,15 +15,11 @@ import { PollManager } from "../poll/manager.js";
 import { mapSdkMessagesToTui } from "../session/render.js";
 import type { SettingContext } from "../settings/types.js";
 import type { MemberState } from "../teams/types-v2.js";
-import type { EditConfirmBridge } from "../tools/edit-confirm-bridge.js";
 import type { QuestionBridge, QuestionData } from "../tools/question-bridge.js";
 import { formatError } from "../utils/formatError.js";
 import { registerBuiltinCommands } from "./commands.js";
-import { DiffConfirmBox } from "./components/DiffConfirmBox.js";
-import { DiffReviewView } from "./components/DiffReviewView.js";
 import { InputBox } from "./components/InputBox.js";
 import { MessageList } from "./components/MessageList.js";
-import { PendingReviewBar } from "./components/PendingReviewBar.js";
 import { QuestionBox } from "./components/QuestionBox.js";
 import { SessionPicker } from "./components/SessionPicker.js";
 import { SettingsPanel } from "./components/SettingsPanel.js";
@@ -52,8 +47,6 @@ interface AppProps {
 	cwd: string;
 	config?: Config;
 	bridge?: QuestionBridge;
-	editBridge?: EditConfirmBridge;
-	reviewManager?: DiffReviewManager;
 	initialResumeList?: boolean;
 	initialAgentMode?: AgentMode;
 	mcpManager?: McpManager;
@@ -65,8 +58,6 @@ export function App({
 	cwd,
 	config,
 	bridge,
-	editBridge,
-	reviewManager,
 	initialResumeList,
 	initialAgentMode,
 	mcpManager,
@@ -95,9 +86,6 @@ export function App({
 	);
 	const [copyFeedback, setCopyFeedback] = useState<{ ts: number } | null>(null);
 	const [pendingQuestion, setPendingQuestion] = useState<QuestionData | null>(null);
-	const [pendingEditConfirm, setPendingEditConfirm] = useState(false);
-	const [showReviewView, setShowReviewView] = useState(false);
-	const [pendingReviewTick, setPendingReviewTick] = useState(0);
 	const [activeMemberName, setActiveMemberName] = useState<string | null>(null);
 	const [_memberTick, setMemberTick] = useState(0);
 	const activeMemberMsgMapRef = useRef<Map<string, Message>>(new Map());
@@ -125,19 +113,6 @@ export function App({
 			client.setAgentMode(expected);
 		}
 	}, [configState.teams?.enabled, client, agentMode]);
-
-	useEffect(() => {
-		if (!editBridge) return;
-		editBridge.onPending = () => setPendingEditConfirm(true);
-		return () => {
-			editBridge.onPending = undefined;
-		};
-	}, [editBridge]);
-
-	useEffect(() => {
-		if (!reviewManager) return;
-		return reviewManager.on(() => setPendingReviewTick(Date.now()));
-	}, [reviewManager]);
 
 	const modeRef = useRef<Mode>("insert");
 	modeRef.current = mode;
@@ -574,11 +549,6 @@ export function App({
 			case "nextMember":
 				handleMemberNav("next");
 				return;
-			case "toggleReviewView":
-				if (reviewManager?.hasPending) {
-					setShowReviewView((v) => !v);
-				}
-				return;
 			case "ctrlC": {
 				const now = Date.now();
 				if (now - lastCtrlCRef.current < 1000) process.exit(0);
@@ -652,27 +622,8 @@ export function App({
 				/>
 			)}
 			{showWorkers && <WorkersView client={client} onClose={() => setShowWorkers(false)} />}
-			{showReviewView && reviewManager ? (
-				<DiffReviewView manager={reviewManager} onClose={() => setShowReviewView(false)} />
-			) : null}
 			<box flexDirection="column" flexShrink={0} paddingLeft={1} paddingRight={1}>
-				{reviewManager && reviewManager.hasPending ? (
-					<PendingReviewBar
-						manager={reviewManager}
-						onOpenReview={() => setShowReviewView(true)}
-						onAcceptAll={() => reviewManager.acceptAll()}
-						onRejectAll={() => reviewManager.rejectAll()}
-					/>
-				) : null}
-				{pendingEditConfirm && editBridge ? (
-					<DiffConfirmBox
-						bridge={editBridge}
-						onDecision={(decision) => {
-							editBridge.resolve?.(decision);
-							setPendingEditConfirm(false);
-						}}
-					/>
-				) : pendingQuestion && bridge ? (
+				{pendingQuestion && bridge ? (
 					<QuestionBox
 						questionData={pendingQuestion}
 						onSubmit={(answers) => {

@@ -22,7 +22,6 @@ import {
 import type { Config, ProviderConfig } from "../config.js";
 import { ORCHESTRATOR_SYSTEM_PROMPT, TEAM_ORCHESTRATOR_PROMPT } from "../context-files.js";
 import { activateDcpExtension, prepareDcpExtension } from "../dcp/init.js";
-import type { DiffReviewManager } from "../diff-review/manager.js";
 import { createLspToolDefinitions, LspClient } from "../lsp/index.js";
 import { McpManager } from "../mcp/manager.js";
 import { installSqliteBackend } from "../session/install-sqlite-backend.js";
@@ -31,7 +30,6 @@ import { resolveSessionDir } from "../session/storage.js";
 import { SkillManager } from "../skills/manager.js";
 import type { TeamManagerRef } from "../teams/types-v2.js";
 import { createEditTool } from "../tools/edit.js";
-import { clearEditConfirmBridge, type EditConfirmBridge } from "../tools/edit-confirm-bridge.js";
 import { createGlobToolDefinition } from "../tools/glob.js";
 import { createMemoryTool } from "../tools/memory.js";
 import { createMessageTool } from "../tools/message.js";
@@ -165,8 +163,6 @@ export interface SessionOptions {
 	model?: string;
 	config?: Config;
 	bridge?: QuestionBridge;
-	editBridge?: EditConfirmBridge;
-	reviewManager?: DiffReviewManager;
 	teamRef?: TeamManagerRef;
 }
 
@@ -190,8 +186,6 @@ export interface RuntimeOptions {
 	agentMode?: AgentMode;
 	/** QuestionBridge for interactive question tool. Omit in non-interactive modes. */
 	bridge?: QuestionBridge;
-	editBridge?: EditConfirmBridge;
-	reviewManager?: DiffReviewManager;
 	teamRef?: TeamManagerRef;
 }
 
@@ -313,10 +307,7 @@ export async function createSession(options: SessionOptions): Promise<SessionRes
 		customTools: [
 			...createLspToolDefinitions({ client: svc.lspClient }),
 			createTodoTool(),
-			createEditTool(options.cwd, {
-				bridge: options.editBridge,
-				reviewManager: options.reviewManager,
-			}),
+			createEditTool(options.cwd),
 			createQuestionTool(options.bridge),
 			createNotifyTool(),
 			createWebfetchTool(),
@@ -367,7 +358,6 @@ export async function createRuntime(options: RuntimeOptions): Promise<RuntimeRes
 		sessionManager: fSessionManager,
 	}) => {
 		if (options.bridge) clearBridge(options.bridge);
-		if (options.editBridge) clearEditConfirmBridge(options.editBridge);
 		const isTeamMode = agentMode === "team";
 		const teamTools =
 			isTeamMode && options.teamRef && options.config?.teams?.enabled !== false
@@ -376,7 +366,7 @@ export async function createRuntime(options: RuntimeOptions): Promise<RuntimeRes
 		const customTools: import("@earendil-works/pi-coding-agent").ToolDefinition[] = [
 			...createLspToolDefinitions({ client: svc.lspClient }),
 			createTodoTool(),
-			createEditTool(fCwd, { bridge: options.editBridge, reviewManager: options.reviewManager }),
+			createEditTool(fCwd),
 			createQuestionTool(options.bridge),
 			createNotifyTool(),
 			createWebfetchTool(),
