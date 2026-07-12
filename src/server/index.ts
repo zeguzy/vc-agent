@@ -42,6 +42,7 @@ export interface AgentServerOptions {
 	mcpManager: McpManager;
 	cwd: string;
 	teamRef?: TeamManagerRef;
+	reviewManager?: import("../diff-review/manager.js").DiffReviewManager;
 }
 
 export class AgentServer {
@@ -64,6 +65,7 @@ export class AgentServer {
 		this.skillManager = opts.skillManager;
 		this.mcpManager = opts.mcpManager;
 		this.cwd = opts.cwd;
+		this._reviewManager = opts.reviewManager ?? null;
 
 		this.notificationRouter = new NotificationRouter({
 			config: readConfig(opts.cwd).notifications,
@@ -516,6 +518,12 @@ export class AgentServer {
 
 	handleMarkInboxRead(name: MemberName, ids?: string[]): number {
 		return this.teamManager.markInboxRead(name, ids);
+	}
+
+	private readonly _reviewManager: import("../diff-review/manager.js").DiffReviewManager | null;
+
+	getDiffReviewManager() {
+		return this._reviewManager;
 	}
 }
 

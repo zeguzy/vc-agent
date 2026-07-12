@@ -1,5 +1,6 @@
 import type { AgentSessionEvent } from "../agent/session.js";
 import type { CommandContext } from "../commands/registry.js";
+import type { DiffReviewManager } from "../diff-review/manager.js";
 import type { Message } from "../message.js";
 import type { SessionInfo } from "../session/list.js";
 import type {
@@ -176,4 +177,6 @@ export interface AgentClient {
 	}): Promise<Array<{ message: MemberMessage; delivery: DeliveryMode }>>;
 	readInbox(name: MemberName, opts?: ReadInboxOptions): MemberMessage[];
 	markInboxRead(name: MemberName, ids?: string[]): number;
+
+	getDiffReviewManager(): DiffReviewManager | null;
 }
