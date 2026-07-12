@@ -66,7 +66,6 @@ const UserMessageView = memo(function UserMessageView({
 }) {
 	return (
 		<box marginTop={index === 0 ? 0 : 1} flexShrink={0} flexDirection="column">
-			<box borderStyle="single" border={["top"]} borderColor={colors.borderDim} />
 			<box
 				backgroundColor={colors.backgroundInset}
 				paddingTop={1}
@@ -128,8 +127,8 @@ const AssistantMessageView = memo(function AssistantMessageView({
 							{message.thinking
 								?.split("\n")
 								.filter((l) => l.trim())
-								// biome-ignore lint/suspicious/noArrayIndexKey: split text lines have no stable IDs
 								.map((line, i) => (
+									// biome-ignore lint/suspicious/noArrayIndexKey: split text lines have no stable IDs
 									<text key={`think-${message.id}-${i}`} fg={colors.textSubtle}>
 										{line}
 									</text>
@@ -333,13 +332,6 @@ const ToolMessageView = memo(function ToolMessageView({ message }: { message: Me
 				? colors.error
 				: colors.success;
 
-	const borderColor =
-		message.toolStatus === "running"
-			? colors.borderActive
-			: message.toolStatus === "error"
-				? colors.error
-				: colors.borderDim;
-
 	const { label, lines } = formatToolDetail(message.toolName, message.toolArgs);
 	const editPatch = message.toolName === "edit" ? getEditPatch(message) : undefined;
 	const editFilePath =
@@ -356,9 +348,6 @@ const ToolMessageView = memo(function ToolMessageView({ message }: { message: Me
 
 	return (
 		<box
-			borderStyle="single"
-			border={["top"]}
-			borderColor={borderColor}
 			backgroundColor={colors.backgroundInset}
 			marginTop={1}
 			paddingTop={1}
@@ -375,23 +364,21 @@ const ToolMessageView = memo(function ToolMessageView({ message }: { message: Me
 			</box>
 			{lines.length > 0 && (
 				<box flexDirection="column" paddingLeft={2}>
-					{
+					{lines.map((line, i) => (
 						// biome-ignore lint/suspicious/noArrayIndexKey: diff lines have no stable IDs
-						lines.map((line, i) => (
-							<text
-								key={`diff-${i}`}
-								fg={
-									line.startsWith("-")
-										? colors.error
-										: line.startsWith("+")
-											? colors.success
-											: colors.textSubtle
-								}
-							>
-								{line}
-							</text>
-						))
-					}
+						<text
+							key={`diff-${i}`}
+							fg={
+								line.startsWith("-")
+									? colors.error
+									: line.startsWith("+")
+										? colors.success
+										: colors.textSubtle
+							}
+						>
+							{line}
+						</text>
+					))}
 				</box>
 			)}
 			{editPatch && (
@@ -401,17 +388,15 @@ const ToolMessageView = memo(function ToolMessageView({ message }: { message: Me
 			)}
 			{resultLines.length > 0 && (
 				<box flexDirection="column" paddingLeft={2} paddingBottom={1}>
-					{
+					{resultLines.map((line, i) => (
 						// biome-ignore lint/suspicious/noArrayIndexKey: tool result lines have no stable IDs
-						resultLines.map((line, i) => (
-							<text
-								key={`result-${i}`}
-								fg={message.toolStatus === "error" ? colors.error : colors.textMuted}
-							>
-								{line}
-							</text>
-						))
-					}
+						<text
+							key={`result-${i}`}
+							fg={message.toolStatus === "error" ? colors.error : colors.textMuted}
+						>
+							{line}
+						</text>
+					))}
 				</box>
 			)}
 			{subagentText && (
@@ -438,16 +423,11 @@ const ReadGroupView = memo(function ReadGroupView({ reads }: { reads: Message[] 
 	const allRunning = reads.every((r) => r.toolStatus === "running");
 	const hasError = reads.some((r) => r.toolStatus === "error");
 
-	const borderColor = allRunning ? colors.borderActive : hasError ? colors.error : colors.borderDim;
-
 	const headerIcon = allRunning ? icons.toolRunning : hasError ? icons.toolError : icons.toolDone;
 	const headerFg = allRunning ? colors.textMuted : hasError ? colors.error : colors.success;
 
 	return (
 		<box
-			borderStyle="single"
-			border={["top"]}
-			borderColor={borderColor}
 			backgroundColor={colors.backgroundInset}
 			marginTop={1}
 			paddingTop={1}
@@ -502,8 +482,6 @@ const TodoMessageView = memo(function TodoMessageView({ message }: { message: Me
 	const todos = args.todos ?? [];
 	return (
 		<box
-			border={["left"]}
-			borderColor={colors.borderSoft}
 			backgroundColor={colors.backgroundPanel}
 			marginTop={1}
 			paddingTop={1}
@@ -527,14 +505,6 @@ const TodoMessageView = memo(function TodoMessageView({ message }: { message: Me
 					);
 				})}
 			</box>
-		</box>
-	);
-});
-
-const SeparatorView = memo(function SeparatorView() {
-	return (
-		<box marginTop={1} flexShrink={0}>
-			<box border={["top"]} borderColor={colors.borderDim} />
 		</box>
 	);
 });
@@ -585,12 +555,6 @@ const WorkerMessageView = memo(function WorkerMessageView({ message }: { message
 	const statusColor = workerStatusColor(message.workerStatus);
 	const statusIcon = workerStatusIcon(message.workerStatus);
 	const isResult = message.workerStatus === "done" || message.workerStatus === "error";
-	const borderColor =
-		message.workerStatus === "error"
-			? colors.error
-			: isResult
-				? colors.borderDim
-				: colors.borderSoft;
 
 	const metaParts: string[] = [];
 	if (message.workerModel) metaParts.push(message.workerModel);
@@ -606,9 +570,7 @@ const WorkerMessageView = memo(function WorkerMessageView({ message }: { message
 
 	return (
 		<box
-			borderStyle="rounded"
-			border={["top", "right", "bottom", "left"]}
-			borderColor={borderColor}
+			backgroundColor={colors.backgroundInset}
 			marginTop={1}
 			paddingTop={1}
 			paddingBottom={1}
@@ -617,7 +579,7 @@ const WorkerMessageView = memo(function WorkerMessageView({ message }: { message
 			flexShrink={0}
 			flexDirection="column"
 		>
-			<box backgroundColor={colors.backgroundPanel} flexDirection="row">
+			<box flexDirection="row">
 				<text fg={statusColor}>{statusIcon} </text>
 				<text fg={colors.textMuted}>{message.workerId?.slice(0, 10)}</text>
 				<text fg={colors.textSubtle}>/{message.workerAgent} </text>
@@ -703,14 +665,13 @@ export function MessageList({
 		>
 			<box flexDirection="column" paddingLeft={2} paddingRight={2} paddingBottom={1}>
 				<box height={1} />
-				{items.map((item, i, arr) => {
+				{items.map((item) => {
 					if (item.type === "readGroup") {
 						return <ReadGroupView key={`rg-${item.startIndex}`} reads={item.messages} />;
 					}
 					const msg = item.message;
 					if (msg.role === "separator") {
-						if (i === arr.length - 1) return null;
-						return <SeparatorView key={msg.id} />;
+						return null;
 					}
 					if (msg.role === "user")
 						return <UserMessageView key={msg.id} message={msg} index={item.index} />;

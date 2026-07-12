@@ -1,6 +1,6 @@
 import { memo } from "react";
 import type { SubagentResult } from "../../agents/types.js";
-import type { Message, SubagentToolDetails } from "../../message.js";
+import type { Message } from "../../message.js";
 import { colors, icons } from "../utils/theme.js";
 
 const PREVIEW_CHARS = 200;
@@ -74,13 +74,6 @@ export const SubagentMessageView = memo(function SubagentMessageView({
 			: message.toolStatus === "error"
 				? colors.error
 				: colors.success;
-	const borderColor =
-		message.toolStatus === "running"
-			? colors.borderActive
-			: message.toolStatus === "error"
-				? colors.error
-				: colors.borderSoft;
-
 	const titleParts = [firstAgent];
 	if (showMode) titleParts.push(`· ${mode}`);
 	if (showCount) titleParts.push(`· ${taskCount} tasks`);
@@ -147,15 +140,16 @@ export const SubagentMessageView = memo(function SubagentMessageView({
 
 	return (
 		<box
-			borderStyle="rounded"
-			border={["top", "right", "bottom", "left"]}
-			borderColor={borderColor}
 			backgroundColor={colors.backgroundInset}
 			marginTop={1}
+			paddingTop={1}
+			paddingBottom={1}
+			paddingLeft={2}
+			paddingRight={2}
 			flexShrink={0}
 			flexDirection="column"
 		>
-			<box flexDirection="row" paddingLeft={1} paddingRight={1}>
+			<box flexDirection="row">
 				<text fg={statusFg}>{icon} </text>
 				<text fg={colors.secondary}>{titleParts.join(" ")}</text>
 				{description ? <text fg={colors.textSubtle}> {truncateStr(description, 50)}</text> : null}
