@@ -47,7 +47,10 @@ function buildMemberIdentitySection(
  * present, plus optional leader-provided role-specific constraints appended.
  * `constraints` text appears ONLY here (never in Identity).
  */
-export function buildMemberAntiPatternsSection(customConstraints?: string): string {
+export function buildMemberAntiPatternsSection(
+	customConstraints?: string,
+	isDiscussionParticipant?: boolean,
+): string {
 	const lines: string[] = [];
 	lines.push("## Anti-Patterns — Stop If You Catch Yourself Doing These");
 	lines.push("");
@@ -67,6 +70,19 @@ export function buildMemberAntiPatternsSection(customConstraints?: string): stri
 	lines.push(
 		'**Reading is not verification.** Looking at code and thinking "this looks right" is not the same as running it. Verify by executing: run the test, run the build, reproduce the bug. Claims without evidence are speculation.',
 	);
+	if (isDiscussionParticipant) {
+		lines.push("");
+		lines.push("**Discussion participant failures:**");
+		lines.push(
+			"- **Going off-topic**: stay on the discussion agenda. If you have a related but separate point, note it briefly and return to the current topic.",
+		);
+		lines.push(
+			"- **Monopolizing the floor**: contribute your perspective, then let others speak. Don't respond again immediately unless the supervisor directs you.",
+		);
+		lines.push(
+			"- **Ignoring redirects**: if the supervisor redirects you, follow the new direction immediately. Don't continue on your previous tangent.",
+		);
+	}
 	const trimmed = customConstraints?.trim();
 	if (trimmed) {
 		lines.push("");
@@ -110,11 +126,12 @@ export function buildContractLayer(opts: {
 	role: string;
 	goal: string;
 	constraints?: string;
+	isDiscussionParticipant?: boolean;
 }): string {
 	const hasConstraints = Boolean(opts.constraints?.trim());
 	const sections: string[] = [
 		buildMemberIdentitySection(opts.name, opts.role, opts.goal, hasConstraints),
-		buildMemberAntiPatternsSection(opts.constraints),
+		buildMemberAntiPatternsSection(opts.constraints, opts.isDiscussionParticipant),
 		MEMBER_ESCALATION_SECTION,
 		MEMBER_OUTPUT_PROTOCOL_SECTION,
 	];
@@ -268,6 +285,7 @@ export function buildMemberSystemPrompt(opts: {
 	assignedTools?: string[];
 	assignedSkills?: string[];
 	assignedMcps?: string[];
+	isDiscussionParticipant?: boolean;
 }): string[] {
 	const assignedTools = opts.assignedTools ?? ["read", "bash", "grep", "find", "memory", "message"];
 
@@ -276,6 +294,7 @@ export function buildMemberSystemPrompt(opts: {
 		role: opts.role,
 		goal: opts.goal,
 		constraints: opts.constraints,
+		isDiscussionParticipant: opts.isDiscussionParticipant,
 	});
 
 	const b = buildToolContractLayer({
@@ -314,12 +333,14 @@ export function buildCompactionReinject(opts: {
 	memberIndex: MemberIndexStructure;
 	teamMd: TeamMdStructure;
 	selfName: MemberName;
+	isDiscussionParticipant?: boolean;
 }): string {
 	const a = `[Contract Re-injected]\n${buildContractLayer({
 		name: opts.name,
 		role: opts.role,
 		goal: opts.goal,
 		constraints: opts.memberIndex.constraints,
+		isDiscussionParticipant: opts.isDiscussionParticipant,
 	})}`;
 
 	const c = `[Team Overview Re-injected]\n${buildTeamStaticLayer(opts.teamMd, opts.selfName)}`;

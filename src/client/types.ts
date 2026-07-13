@@ -157,6 +157,13 @@ export interface AgentClient {
 		priority?: "high" | "medium" | "low";
 		type?: TaskType;
 	}): Promise<TaskState>;
+	startDiscussion(opts: {
+		title: string;
+		description: string;
+		participants: MemberName[];
+		priority?: "high" | "medium" | "low";
+	}): Promise<TaskState>;
+	completeTask(taskId: string): void;
 	listTasks(): TaskState[];
 	taskStatus(taskId: string): TaskState | undefined;
 

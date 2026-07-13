@@ -296,7 +296,8 @@ function serializeTeamMd(data: TeamMdStructure): string {
 	for (const t of data.activeTasks) {
 		const check = t.done ? "x" : " ";
 		const assignee = t.memberName ? ` → @${t.memberName}` : "";
-		lines.push(`- [${check}] ${t.id}: ${t.title}${assignee}`);
+		const participants = t.participants ? ` [participants: ${t.participants.join(", ")}]` : "";
+		lines.push(`- [${check}] ${t.id}: ${t.title}${participants}${assignee}`);
 	}
 	lines.push("", "## Important Notes", data.importantNotes, "", "## Shared Memory Index");
 	for (const s of data.sharedMemoryIndex) {
@@ -339,14 +340,23 @@ function parseActiveTasks(raw: string): TaskState[] {
 			const title = assigneeMatch
 				? afterId.slice(0, -assigneeMatch[0].length).trim()
 				: afterId.trim();
+			const participantsMatch = title.match(/\s*\[participants:\s*([^\]]+)\]/);
+			const participants = participantsMatch
+				? participantsMatch[1].split(",").map((s) => s.trim())
+				: undefined;
+			const cleanTitle = participantsMatch
+				? title.slice(0, -participantsMatch[0].length).trim()
+				: title;
+			const isDiscussion = Boolean(participants);
 			return {
 				id,
-				title,
+				title: cleanTitle,
 				description: "",
 				memberName,
 				priority: "medium" as const,
-				type: "execution" as const,
+				type: (isDiscussion ? "discussion" : "execution") as TaskState["type"],
 				done,
+				...(participants ? { participants } : {}),
 			};
 		});
 }

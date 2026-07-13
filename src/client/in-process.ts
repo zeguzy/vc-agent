@@ -205,6 +205,19 @@ export class InProcessClient implements AgentClient {
 		return this.server.handleAssignTask(opts);
 	}
 
+	async startDiscussion(opts: {
+		title: string;
+		description: string;
+		participants: MemberName[];
+		priority?: "high" | "medium" | "low";
+	}): Promise<TaskState> {
+		return this.server.handleStartDiscussion(opts);
+	}
+
+	completeTask(taskId: string): void {
+		this.server.handleCompleteTask(taskId);
+	}
+
 	listTasks(): TaskState[] {
 		return this.server.handleListTasks();
 	}

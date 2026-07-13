@@ -30,7 +30,11 @@ import { createTodoTool } from "../tools/todo.js";
 import { createWebfetchTool } from "../tools/webfetch/index.js";
 import { handleCompactionEnd } from "./auto-memory.js";
 import { buildCompactionReinject, buildMemberSystemPrompt, buildTaskLayer } from "./context.js";
-import { collectRecentMessages, runCoordinator } from "./coordinator.js";
+import {
+	collectRecentMessages,
+	DiscussionSupervisor,
+	type SupervisorDecision,
+} from "./coordinator.js";
 import { TeamFiles } from "./files.js";
 import { logTeamEvent } from "./logger.js";
 import { validateName } from "./memory-types.js";
@@ -136,6 +140,7 @@ export class TeamManager implements TeamManagerLike {
 	private readonly broadcastWindow = new Map<MemberName, number[]>();
 	private readonly pairLastExchange = new Map<string, number[]>();
 	private readonly inFlightSteer = new Map<MemberName, number>();
+	private readonly supervisors = new Map<string, DiscussionSupervisor>();
 	private disposed = false;
 	private isRestoring = false;
 
@@ -535,6 +540,82 @@ export class TeamManager implements TeamManagerLike {
 		return task;
 	}
 
+	startDiscussion(opts: {
+		title: string;
+		description: string;
+		participants: MemberName[];
+		priority?: "high" | "medium" | "low";
+	}): TaskState {
+		for (const name of opts.participants) {
+			const state = this.members.get(name);
+			if (!state) throw new Error(`member "${name}" not found`);
+			if (state.status !== "active" && state.status !== "idle") {
+				throw new Error(`member "${name}" is ${state.status}, cannot join discussion`);
+			}
+		}
+
+		const teamMd = this.files.readTeamMd();
+		const taskId = `T${teamMd.activeTasks.length + 1}`;
+		const task: TaskState = {
+			id: taskId,
+			title: opts.title,
+			description: opts.description,
+			memberName: opts.participants[0] ?? null,
+			priority: opts.priority ?? "medium",
+			type: "discussion",
+			done: false,
+			participants: opts.participants,
+		};
+
+		teamMd.activeTasks.push(task);
+		for (const name of opts.participants) {
+			const memberRow = teamMd.members.find((m) => m.name === name);
+			if (memberRow) memberRow.currentTask = opts.title;
+		}
+		this.files.writeTeamMd(teamMd);
+
+		for (const name of opts.participants) {
+			const memberIndex = this.files.readMemberIndex(name);
+			if (memberIndex) {
+				memberIndex.activeContext = `[Discussion] ${opts.title}\n${opts.description}`;
+				this.files.writeMemberIndex(name, memberIndex);
+			}
+		}
+
+		const firstSpeaker = opts.participants[0];
+		if (firstSpeaker) {
+			const state = this.members.get(firstSpeaker);
+			if (!state) throw new Error(`member "${firstSpeaker}" not found`);
+			const taskPrompt = buildTaskLayer(task);
+			if (state.session.isStreaming) {
+				state.session.steer(taskPrompt);
+			} else {
+				void state.session.prompt(taskPrompt);
+			}
+			state.currentTaskId = taskId;
+			state.status = "active";
+			state.lastTaskPrompt = taskPrompt;
+		}
+
+		for (const name of opts.participants) {
+			const state = this.members.get(name);
+			if (!state) continue;
+			state.currentTaskId = taskId;
+			if (name !== firstSpeaker) {
+				state.status = "active";
+			}
+		}
+
+		this.emit({ type: "task_assigned", taskId, memberName: firstSpeaker ?? "" });
+		logTeamEvent("discussion_started", {
+			taskId,
+			participants: opts.participants,
+			title: opts.title,
+		});
+
+		return task;
+	}
+
 	completeTask(taskId: string): void {
 		const teamMd = this.files.readTeamMd();
 		const task = teamMd.activeTasks.find((t) => t.id === taskId);
@@ -655,6 +736,8 @@ export class TeamManager implements TeamManagerLike {
 
 			if (round > TeamManager.DISCUSSION_MAX_ROUNDS) {
 				this.discussionRound.delete(task.id);
+				this.supervisors.get(task.id)?.dispose();
+				this.supervisors.delete(task.id);
 				logTeamEvent("discussion_max_rounds_reached", { taskId: task.id, round });
 				if (task.id) this.completeTask(task.id);
 				return;
@@ -666,22 +749,31 @@ export class TeamManager implements TeamManagerLike {
 				teamMd.members.map((m) => m.name),
 			);
 
-			const decision = await runCoordinator({
-				input: {
+			const membersInfo = teamMd.members.map((m) => ({
+				name: m.name,
+				role: m.role,
+				status: m.status,
+				currentTaskId: this.members.get(m.name)?.currentTaskId ?? null,
+			}));
+
+			// Get or create supervisor for this task
+			let supervisor = this.supervisors.get(task.id);
+			if (!supervisor) {
+				supervisor = new DiscussionSupervisor({
 					task,
-					members: teamMd.members.map((m) => ({
-						name: m.name,
-						role: m.role,
-						status: m.status,
-						currentTaskId: this.members.get(m.name)?.currentTaskId ?? null,
-					})),
-					recentMessages,
-					round,
+					members: membersInfo,
 					maxRounds: TeamManager.DISCUSSION_MAX_ROUNDS,
-				},
-				cwd: this.files.paths.teamDir,
-				services: this.services,
-				parentModel: this.defaultParentModel,
+					cwd: this.files.paths.teamDir,
+					services: this.services,
+					parentModel: this.defaultParentModel,
+				});
+				this.supervisors.set(task.id, supervisor);
+			}
+
+			const decision: SupervisorDecision = await supervisor.evaluate({
+				task,
+				members: membersInfo,
+				recentMessages,
 			});
 
 			logTeamEvent("discussion_evaluated", {
@@ -693,11 +785,28 @@ export class TeamManager implements TeamManagerLike {
 
 			if (decision.action === "complete") {
 				this.discussionRound.delete(task.id);
+				supervisor.dispose();
+				this.supervisors.delete(task.id);
 				if (task.id) this.completeTask(task.id);
 				return;
 			}
 
-			const targetState = this.members.get(decision.nextSpeaker);
+			const nextSpeaker =
+				decision.action === "continue" ||
+				decision.action === "redirect" ||
+				decision.action === "summarize"
+					? decision.nextSpeaker
+					: null;
+
+			if (!nextSpeaker) {
+				this.discussionRound.delete(task.id);
+				supervisor.dispose();
+				this.supervisors.delete(task.id);
+				if (task.id) this.completeTask(task.id);
+				return;
+			}
+
+			const targetState = this.members.get(nextSpeaker);
 			if (
 				!targetState ||
 				targetState.status === "done" ||
@@ -706,20 +815,29 @@ export class TeamManager implements TeamManagerLike {
 			) {
 				logTeamEvent("discussion_speaker_unavailable", {
 					taskId: task.id,
-					speaker: decision.nextSpeaker,
+					speaker: nextSpeaker,
 				});
 				this.discussionRound.delete(task.id);
+				supervisor.dispose();
+				this.supervisors.delete(task.id);
 				if (task.id) this.completeTask(task.id);
 				return;
 			}
 
-			const instruction = `[⚡ COORDINATOR] ${decision.instruction}`;
 			targetState.currentTaskId = task.id;
-			if (targetState.status === "active" && targetState.session.isStreaming) {
-				targetState.session.steer(instruction);
+
+			if (decision.action === "redirect") {
+				// redirect: use directMember for stronger enforcement
+				this.directMember(nextSpeaker, "redirect", decision.instruction);
 			} else {
-				targetState.status = "active";
-				void targetState.session.prompt(instruction);
+				// continue / summarize: use steer like before
+				const instruction = `[⚡ COORDINATOR] ${decision.instruction}`;
+				if (targetState.status === "active" && targetState.session.isStreaming) {
+					targetState.session.steer(instruction);
+				} else {
+					targetState.status = "active";
+					void targetState.session.prompt(instruction);
+				}
 			}
 		} catch (err) {
 			logTeamEvent("discussion_error", {
@@ -727,6 +845,8 @@ export class TeamManager implements TeamManagerLike {
 				error: err instanceof Error ? err.message : String(err),
 			});
 			this.discussionRound.delete(task.id);
+			this.supervisors.get(task.id)?.dispose();
+			this.supervisors.delete(task.id);
 			try {
 				if (task.id) this.completeTask(task.id);
 			} catch {}
@@ -1176,6 +1296,10 @@ export class TeamManager implements TeamManagerLike {
 		this.sendWindow.clear();
 		this.broadcastWindow.clear();
 		this.pairLastExchange.clear();
+		for (const supervisor of this.supervisors.values()) {
+			supervisor.dispose();
+		}
+		this.supervisors.clear();
 		this.inFlightSteer.clear();
 		// Note: .openagent/team/ directory is preserved (memory files are persistent)
 	}
