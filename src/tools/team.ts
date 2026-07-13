@@ -17,6 +17,7 @@ const ActionSchema = Type.Union(
 		Type.Literal("create-batch"),
 		Type.Literal("assign"),
 		Type.Literal("assign-batch"),
+		Type.Literal("start-discussion"),
 		Type.Literal("direct"),
 		Type.Literal("direct-batch"),
 		Type.Literal("edit-member"),
@@ -96,10 +97,22 @@ const TeamParamsSchema = Type.Object({
 	taskPriority: Type.Optional(
 		Type.Union([Type.Literal("high"), Type.Literal("medium"), Type.Literal("low")]),
 	),
+	taskType: Type.Optional(
+		Type.Union([Type.Literal("execution"), Type.Literal("discussion")], {
+			description:
+				'Task type for the initial task (for create). "execution" = member works independently (default). "discussion" = multi-member discussion with supervisor coordination.',
+		}),
+	),
 	title: Type.Optional(Type.String({ description: "Task title (for assign)" })),
 	description: Type.Optional(Type.String({ description: "Task description (for assign)" })),
 	priority: Type.Optional(
 		Type.Union([Type.Literal("high"), Type.Literal("medium"), Type.Literal("low")]),
+	),
+	type: Type.Optional(
+		Type.Union([Type.Literal("execution"), Type.Literal("discussion")], {
+			description:
+				'Task type (for assign/assign-batch). "execution" = member works independently (default). "discussion" = multi-member discussion with supervisor coordination.',
+		}),
 	),
 	tasks: Type.Optional(
 		Type.Array(
@@ -110,10 +123,15 @@ const TeamParamsSchema = Type.Object({
 				priority: Type.Optional(
 					Type.Union([Type.Literal("high"), Type.Literal("medium"), Type.Literal("low")]),
 				),
+				type: Type.Optional(
+					Type.Union([Type.Literal("execution"), Type.Literal("discussion")], {
+						description: 'Task type. "execution" (default) or "discussion".',
+					}),
+				),
 			}),
 			{
 				description:
-					"Array of tasks to assign in one call (for assign-batch). Each item: {name, title, description?, priority?}. Soft limit: 20.",
+					"Array of tasks to assign in one call (for assign-batch). Each item: {name, title, description?, priority?, type?}. Soft limit: 20.",
 			},
 		),
 	),
@@ -141,6 +159,12 @@ const TeamParamsSchema = Type.Object({
 	),
 	section: Type.Optional(Type.Union([Type.Literal("goal"), Type.Literal("active-context")])),
 	content: Type.Optional(Type.String({ description: "New content (for edit-member)" })),
+	participants: Type.Optional(
+		Type.Array(Type.String(), {
+			description:
+				"Member names for the discussion (for start-discussion). All members must exist and be active/idle. The first member speaks first.",
+		}),
+	),
 	duration: Type.Optional(
 		Type.Integer({
 			description: "Wait duration in seconds (for wait). Default 30, max 300.",
@@ -171,6 +195,8 @@ export function createTeamTool(opts: TeamToolOptions): ToolDefinition {
 			'  Example: team(action="assign", name="sasha", title="Add validation", description="Validate email format before submit")\n' +
 			"- assign-batch: Assign tasks to multiple members in one call. Provide a `tasks` array; each item has {name, title} plus optional description/priority. Per-task failures (member not found, member not idle) are isolated and reported separately.\n" +
 			'  Example: team(action="assign-batch", tasks=[{name="sasha",title="Login validation"},{name="marcus",title="API schema",priority="high"}])\n' +
+			"- start-discussion: Start a multi-member discussion task. Provide title, description, and participants (array of member names). A Discussion Supervisor coordinates turns, tracks agenda, and detects off-topic contributions. The first participant speaks first.\n" +
+			'  Example: team(action="start-discussion", title="API design review", description="Review the REST API schema for consistency", participants=["sasha","marcus","chen"])\n' +
 			'- direct: Send a message to a member mid-task. kind="directive" (change approach), "context" (extra info), "redirect" (new priority).\n' +
 			'  Example: team(action="direct", name="sasha", kind="context", payload="The design file is at /docs/mockup.fig")\n' +
 			"- direct-batch: Send messages to multiple members in one call. Provide a `messages` array; each item has {name, kind, payload}. Messages are applied in array order; multiple redirects to the same member are applied sequentially (the last redirect wins). Per-message failures (member not found, member not active) are isolated.\n" +
@@ -178,7 +204,7 @@ export function createTeamTool(opts: TeamToolOptions): ToolDefinition {
 			"- edit-member: Update a member's goal or active-context.\n" +
 			"- complete: Mark a task as done by its ID.\n" +
 			"- remove: Remove a member from the team. Only use this when the user explicitly asks to remove someone — finished members stay idle and available for new tasks.\n" +
-			"- wait: Block for N seconds (default 30, max 300), then resume to check team status. Use this instead of repeatedly calling read while members work. The agent loop is suspended during the wait.\n" +
+			"- wait: Block for N seconds (default 30, max 300). Use sparingly — prefer waiting for system notifications rather than polling. Only use when you need to pause before a deliberate follow-up action. The agent loop is suspended during the wait.\n" +
 			'  Example: team(action="wait", duration=60)',
 		parameters: TeamParamsSchema,
 		async execute(_toolCallId, params, signal, _onUpdate, _ctx) {
@@ -208,6 +234,7 @@ export function createTeamTool(opts: TeamToolOptions): ToolDefinition {
 				title?: string;
 				description?: string;
 				priority?: string;
+				participants?: string[];
 				tasks?: Array<{
 					name: string;
 					title: string;
@@ -241,6 +268,8 @@ export function createTeamTool(opts: TeamToolOptions): ToolDefinition {
 						return handleAssign(manager, args);
 					case "assign-batch":
 						return handleAssignBatch(manager, args);
+					case "start-discussion":
+						return handleStartDiscussion(manager, args);
 					case "direct":
 						return handleDirect(manager, args);
 					case "direct-batch":
@@ -329,6 +358,7 @@ async function handleCreate(manager: TeamManagerLike, args: Record<string, unkno
 			description: (args.taskDescription as string) ?? "",
 			memberName: name,
 			priority: (args.taskPriority as "high" | "medium" | "low" | undefined) ?? "medium",
+			type: (args.taskType as "execution" | "discussion" | undefined) ?? "execution",
 		});
 		return ok(
 			`Member "${name}" (${role}) created and working on "${taskTitle}" [${task.id}]. Status: active`,
@@ -474,8 +504,27 @@ function handleAssign(manager: TeamManagerLike, args: Record<string, unknown>) {
 		description: (args.description as string) ?? "",
 		memberName: name,
 		priority: (args.priority as "high" | "medium" | "low" | undefined) ?? "medium",
+		type: (args.type as "execution" | "discussion" | undefined) ?? "execution",
 	});
 	return ok(`Task ${task.id} "${title}" assigned to @${name}. Member is now active.`);
+}
+
+function handleStartDiscussion(manager: TeamManagerLike, args: Record<string, unknown>) {
+	const title = args.title as string | undefined;
+	const participants = args.participants as string[] | undefined;
+	if (!title) return err("title is required for start-discussion");
+	if (!participants || participants.length < 2) {
+		return err("participants is required for start-discussion and must have at least 2 members");
+	}
+	const task = manager.startDiscussion({
+		title,
+		description: (args.description as string) ?? "",
+		participants,
+		priority: (args.priority as "high" | "medium" | "low" | undefined) ?? "medium",
+	});
+	return ok(
+		`Discussion ${task.id} "${title}" started with participants: ${participants.map((p) => `@${p}`).join(", ")}. Supervisor will coordinate turns.`,
+	);
 }
 
 function handleAssignBatch(manager: TeamManagerLike, args: Record<string, unknown>) {
@@ -485,6 +534,7 @@ function handleAssignBatch(manager: TeamManagerLike, args: Record<string, unknow
 				title: string;
 				description?: string;
 				priority?: "high" | "medium" | "low";
+				type?: "execution" | "discussion";
 		  }>
 		| undefined;
 	if (!tasks || tasks.length === 0) {
@@ -506,6 +556,7 @@ function handleAssignBatch(manager: TeamManagerLike, args: Record<string, unknow
 				description: t.description ?? "",
 				memberName: t.name,
 				priority: t.priority ?? "medium",
+				type: t.type ?? "execution",
 			});
 			succeeded.push({ name: t.name, taskId: task.id, title: t.title });
 		} catch (e) {

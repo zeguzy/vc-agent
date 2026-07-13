@@ -192,16 +192,18 @@ export class AgentServer {
 							? this.teamManager.listTasks().find((t) => t.id === state.currentTaskId)
 							: undefined;
 						const taskTitle = task?.title ? ` — ${task.title}` : "";
-						const note = `[Team Member ${event.memberName}${taskTitle} ${state.status}${costStr}]\n${event.summary}`;
+						const body = `[Team Member ${event.memberName}${taskTitle} ${state.status}${costStr}]\n${event.summary}`;
 						if (this.session.isStreaming) {
+							const note = `[SYSTEM NOTIFICATION — DO NOT ACT unless there's a problem]\n${body}\n[END NOTIFICATION — continue waiting for user or next event]`;
 							this.session.steer(note);
-						} else {
-							void this.session.prompt(note);
 						}
+						// When not streaming: do NOT actively prompt Leader.
+						// Leader will see the update via team(action="read") when user triggers next interaction.
 					}
 				}
 
 				if (event.type === "member_error") {
+					// Errors always actively inject — Leader must handle them immediately
 					const note = `[Team Member ${event.memberName} error]\n${event.error}`;
 					if (this.session.isStreaming) {
 						this.session.steer(note);
@@ -464,6 +466,19 @@ export class AgentServer {
 		type?: TaskType;
 	}): Promise<TaskState> {
 		return this.teamManager.assignTask(opts);
+	}
+
+	async handleStartDiscussion(opts: {
+		title: string;
+		description: string;
+		participants: MemberName[];
+		priority?: "high" | "medium" | "low";
+	}): Promise<TaskState> {
+		return this.teamManager.startDiscussion(opts);
+	}
+
+	handleCompleteTask(taskId: string): void {
+		this.teamManager.completeTask(taskId);
 	}
 
 	handleListTasks(): TaskState[] {

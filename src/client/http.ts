@@ -341,6 +341,15 @@ export class HttpClient implements AgentClient {
 		return res as TaskState;
 	}
 
+	async startDiscussion(opts: Parameters<AgentClient["startDiscussion"]>[0]): Promise<TaskState> {
+		const res = await this.postJson("/team/discussions", opts);
+		return res as TaskState;
+	}
+
+	completeTask(_taskId: string): void {
+		throw new NotSupportedError("completeTask (sync) — use fetchTasks() to verify");
+	}
+
 	listTasks(): TaskState[] {
 		throw new NotSupportedError("listTasks (sync) — use fetchTasks() instead");
 	}

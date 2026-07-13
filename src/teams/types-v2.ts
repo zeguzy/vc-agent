@@ -58,6 +58,7 @@ export interface TaskState {
 	priority: "high" | "medium" | "low";
 	type: TaskType;
 	done: boolean;
+	participants?: MemberName[];
 }
 
 // ─── Parsed TEAM.md Structure ───────────────────────────────
@@ -170,6 +171,13 @@ export interface TeamManagerLike {
 		title: string;
 		description: string;
 		memberName: MemberName;
+		priority?: "high" | "medium" | "low";
+		type?: TaskType;
+	}): TaskState;
+	startDiscussion(opts: {
+		title: string;
+		description: string;
+		participants: MemberName[];
 		priority?: "high" | "medium" | "low";
 	}): TaskState;
 	completeTask(taskId: string): void;
