@@ -292,39 +292,37 @@ export function createTeamTool(opts: TeamToolOptions): ToolDefinition {
 	};
 }
 
-function handleRead(manager: TeamManagerLike) {
-	const teamMd = manager.readTeamMd();
-	const lines: string[] = [];
-	if (teamMd.mission) lines.push(`Mission: ${teamMd.mission}`);
-	if (teamMd.members.length > 0) {
-		lines.push("");
-		lines.push("Members:");
-		for (const m of teamMd.members) {
-			lines.push(`  ${m.name} (${m.role}) — ${m.status} — ${m.currentTask}`);
+	function handleRead(manager: TeamManagerLike) {
+		const teamMd = manager.readTeamMd();
+		const lines: string[] = [];
+		if (teamMd.mission?.trim()) lines.push(`Mission: ${teamMd.mission.trim()}`);
+		if (teamMd.members.length > 0) {
+			lines.push("Members:");
+			for (const m of teamMd.members) {
+				const parts = [`${m.name} (${m.role})`, m.status];
+				if (m.currentTask) parts.push(m.currentTask);
+				lines.push(`  ${parts.join(" · ")}`);
+			}
 		}
-	}
-	if (teamMd.activeTasks.length > 0) {
-		lines.push("");
-		lines.push("Active Tasks:");
-		for (const t of teamMd.activeTasks) {
-			const check = t.done ? "✓" : "○";
-			const assignee = t.memberName ? `@${t.memberName}` : "unassigned";
-			lines.push(`  ${check} ${t.id}: ${t.title} → ${assignee}`);
+		if (teamMd.activeTasks.length > 0) {
+			lines.push("Active Tasks:");
+			for (const t of teamMd.activeTasks) {
+				const check = t.done ? "✓" : "○";
+				const assignee = t.memberName ? `@${t.memberName}` : "unassigned";
+				lines.push(`  ${check} ${t.id}: ${t.title} → ${assignee}`);
+			}
 		}
-	}
-	if (teamMd.importantNotes) {
-		lines.push("");
-		lines.push(`Important: ${teamMd.importantNotes}`);
-	}
-	if (teamMd.sharedMemoryIndex.length > 0) {
-		lines.push("");
-		lines.push("Shared Memory:");
-		for (const s of teamMd.sharedMemoryIndex) {
-			lines.push(`  ${s.path} — ${s.description}`);
+		if (teamMd.importantNotes?.trim()) {
+			lines.push(`Important: ${teamMd.importantNotes.trim()}`);
 		}
+		if (teamMd.sharedMemoryIndex.length > 0) {
+			lines.push("Shared Memory:");
+			for (const s of teamMd.sharedMemoryIndex) {
+				lines.push(`  ${s.path} — ${s.description}`);
+			}
+		}
+		return ok(lines.join("\n") || "Team is empty — no members or tasks yet.");
 	}
-	return ok(lines.join("\n") || "Team is empty — no members or tasks yet.");
-}
 
 async function handleCreate(manager: TeamManagerLike, args: Record<string, unknown>) {
 	const name = args.name as string | undefined;

@@ -90,6 +90,7 @@ export interface SupervisorSummarize {
 export interface SupervisorComplete {
 	action: "complete";
 	reason: string;
+	conclusion: string;
 	agendaUpdates?: Partial<AgendaItem>[];
 }
 
@@ -285,7 +286,9 @@ export function buildSupervisorPrompt(opts: {
 	);
 	lines.push("```");
 	lines.push("```json");
-	lines.push('{ "action": "complete", "reason": "<why done>", "agendaUpdates": [] }');
+	lines.push(
+		'{ "action": "complete", "reason": "<why done>", "conclusion": "<3-5 sentence summary of the discussion outcome and key decisions>", "agendaUpdates": [] }',
+	);
 	lines.push("```");
 	lines.push("");
 	lines.push("Guidelines:");
@@ -303,6 +306,7 @@ export function buildSupervisorPrompt(opts: {
 	);
 	lines.push(
 		"- If all agenda items are 'covered' or 'skipped', or there's clear consensus, **complete**.",
+		"- When you choose **complete**, you MUST provide a `conclusion`: a 3-5 sentence summary of the discussion outcome, key decisions, and any unresolved points. This conclusion is sent directly to the team leader.",
 	);
 	lines.push(
 		"- Never let the discussion exceed the max rounds. If round >= maxRounds - 1, strongly prefer complete.",
@@ -347,7 +351,11 @@ export function parseCoordinatorDecision(raw: string): CoordinatorDecision {
 export function parseSupervisorDecision(raw: string): SupervisorDecision {
 	const jsonMatch = raw.match(/```json\s*([\s\S]*?)```/) ?? raw.match(/\{[\s\S]*\}/);
 	if (!jsonMatch) {
-		return { action: "complete", reason: "supervisor output could not be parsed" };
+		return {
+			action: "complete",
+			reason: "supervisor output could not be parsed",
+			conclusion: "(supervisor output could not be parsed)",
+		};
 	}
 
 	const jsonStr = jsonMatch[1] ?? jsonMatch[0];
@@ -395,11 +403,20 @@ export function parseSupervisorDecision(raw: string): SupervisorDecision {
 			};
 		}
 		if (parsed.action === "complete") {
-			return { action: "complete", reason: parsed.reason ?? "discussion complete", agendaUpdates };
+			return {
+				action: "complete",
+				reason: parsed.reason ?? "discussion complete",
+				conclusion: parsed.conclusion ?? `(no conclusion provided; reason: ${parsed.reason ?? "unknown"})`,
+				agendaUpdates,
+			};
 		}
-		return { action: "complete", reason: `unexpected supervisor action: ${parsed.action}` };
+		return {
+			action: "complete",
+			reason: `unexpected supervisor action: ${parsed.action}`,
+			conclusion: `(supervisor returned unexpected action: ${parsed.action})`,
+		};
 	} catch {
-		return { action: "complete", reason: "supervisor JSON parse failed" };
+		return { action: "complete", reason: "supervisor JSON parse failed", conclusion: "(supervisor output could not be parsed)" };
 	}
 }
 
@@ -489,6 +506,7 @@ export class DiscussionSupervisor {
 	private session: AgentSession | null = null;
 	private plan: DiscussionPlan;
 	private round = 0;
+	private initialized = false;
 	private readonly maxRounds: number;
 	private readonly cwd: string;
 	private readonly services: SubagentServices;
@@ -578,6 +596,7 @@ export class DiscussionSupervisor {
 			return {
 				action: "complete",
 				reason: `supervisor error: ${err instanceof Error ? err.message : String(err)}`,
+				conclusion: `(discussion ended due to supervisor error: ${err instanceof Error ? err.message : String(err)})`,
 			};
 		}
 

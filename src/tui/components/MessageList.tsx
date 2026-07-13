@@ -399,7 +399,11 @@ const ToolMessageView = memo(function ToolMessageView({ message }: { message: Me
 				</box>
 			)}
 			{subagentText && (
-				<scrollbox maxHeight={RESULT_BLOCK_MAX_HEIGHT} scrollY focused={false}>
+				<scrollbox
+					maxHeight={RESULT_BLOCK_MAX_HEIGHT}
+					scrollY
+					focused={false}
+				>
 					<markdown
 						id={`md-subagent-${message.id}`}
 						syntaxStyle={syntaxStyle}
@@ -552,10 +556,10 @@ const WorkerMessageView = memo(function WorkerMessageView({ message }: { message
 
 	const metaParts: string[] = [];
 	if (message.workerModel) metaParts.push(message.workerModel);
-	if (message.workerTurns != null)
-		metaParts.push(`${message.workerTurns} turn${message.workerTurns === 1 ? "" : "s"}`);
 
 	const usageParts: string[] = [];
+	if (message.workerTurns != null)
+		usageParts.push(`${message.workerTurns} turn${message.workerTurns === 1 ? "" : "s"}`);
 	if (message.workerCost) usageParts.push(`$${message.workerCost.toFixed(4)}`);
 	if (message.workerTokensIn != null) usageParts.push(`${formatTokens(message.workerTokensIn)}↑`);
 	if (message.workerTokensOut != null) usageParts.push(`${formatTokens(message.workerTokensOut)}↓`);
@@ -610,7 +614,13 @@ const WorkerMessageView = memo(function WorkerMessageView({ message }: { message
 				</>
 			) : (
 				message.content && (
-					<scrollbox maxHeight={8} scrollY stickyScroll stickyStart="bottom" focused={false}>
+						<scrollbox
+							maxHeight={RESULT_BLOCK_MAX_HEIGHT}
+							scrollY
+							stickyScroll
+							stickyStart="bottom"
+							focused={false}
+						>
 						<markdown
 							id={`md-${message.id}`}
 							syntaxStyle={syntaxStyle}

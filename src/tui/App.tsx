@@ -90,6 +90,8 @@ export function App({
 	const [_memberTick, setMemberTick] = useState(0);
 	const activeMemberMsgMapRef = useRef<Map<string, Message>>(new Map());
 	const [members, setMembers] = useState<MemberState[]>(() => client.listMembers());
+	const membersRef = useRef<MemberState[]>(members);
+	membersRef.current = members;
 	const scrollRef = useRef<ScrollBoxRenderable>(null);
 	const vimOverlayRef = useRef<VimOverlay | null>(null);
 	const pollManagerRef = useRef(new PollManager());
@@ -404,7 +406,7 @@ export function App({
 	const handleMemberNav = useCallback(
 		(direction: "prev" | "next") => {
 			if (agentModeRef.current !== "team") return;
-			const list = [null, ...members.map((m) => m.name)];
+			const list = [null, ...membersRef.current.map((m) => m.name)];
 			const currentIdx = list.indexOf(activeMemberNameRef.current);
 			const nextIdx =
 				direction === "next"
@@ -412,7 +414,7 @@ export function App({
 					: (currentIdx - 1 + list.length) % list.length;
 			setActiveMemberName(list[nextIdx]);
 		},
-		[members],
+		[],
 	);
 
 	const handlePrompt = useCallback(

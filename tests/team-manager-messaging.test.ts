@@ -99,13 +99,12 @@ describe("TeamManager messaging", () => {
 		expect(events.some((e) => e.type === "member_message_sent")).toBe(true);
 	});
 
-	it("sendMessage rejects when recipient is idle", () => {
+	it("sendMessage delivers persist-only when recipient is idle", () => {
 		const { manager, inject } = rig();
 		inject("carol", "idle");
 		inject("dave", "active");
-		expect(() => manager.sendMessage({ from: "dave", to: "carol", content: "ping" })).toThrow(
-			/will not see/,
-		);
+		const result = manager.sendMessage({ from: "dave", to: "carol", content: "ping" });
+		expect(result.delivery).toBe("persist-only");
 	});
 
 	it("sendMessage rejects self-send", () => {

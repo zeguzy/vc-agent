@@ -29,7 +29,12 @@ import { createMessageTool } from "../tools/message.js";
 import { createTodoTool } from "../tools/todo.js";
 import { createWebfetchTool } from "../tools/webfetch/index.js";
 import { handleCompactionEnd } from "./auto-memory.js";
-import { buildCompactionReinject, buildMemberSystemPrompt, buildTaskLayer } from "./context.js";
+import {
+	buildCompactionReinject,
+	buildDiscussionPrompt,
+	buildMemberSystemPrompt,
+	buildTaskLayer,
+} from "./context.js";
 import {
 	collectRecentMessages,
 	DiscussionSupervisor,
@@ -586,7 +591,7 @@ export class TeamManager implements TeamManagerLike {
 		if (firstSpeaker) {
 			const state = this.members.get(firstSpeaker);
 			if (!state) throw new Error(`member "${firstSpeaker}" not found`);
-			const taskPrompt = buildTaskLayer(task);
+			const taskPrompt = buildDiscussionPrompt(task, opts.participants, true);
 			if (state.session.isStreaming) {
 				state.session.steer(taskPrompt);
 			} else {
@@ -616,7 +621,7 @@ export class TeamManager implements TeamManagerLike {
 		return task;
 	}
 
-	completeTask(taskId: string): void {
+	completeTask(taskId: string, opts?: { conclusion?: string }): void {
 		const teamMd = this.files.readTeamMd();
 		const task = teamMd.activeTasks.find((t) => t.id === taskId);
 		if (!task) return;
@@ -638,7 +643,12 @@ export class TeamManager implements TeamManagerLike {
 			}
 		}
 
-		this.emit({ type: "task_completed", taskId, memberName: task.memberName ?? "" });
+		this.emit({
+			type: "task_completed",
+			taskId,
+			memberName: task.memberName ?? "",
+			conclusion: opts?.conclusion,
+		});
 	}
 
 	listTasks(): TaskState[] {
@@ -739,7 +749,10 @@ export class TeamManager implements TeamManagerLike {
 				this.supervisors.get(task.id)?.dispose();
 				this.supervisors.delete(task.id);
 				logTeamEvent("discussion_max_rounds_reached", { taskId: task.id, round });
-				if (task.id) this.completeTask(task.id);
+				if (task.id)
+					this.completeTask(task.id, {
+						conclusion: `(discussion ended: reached max rounds (${TeamManager.DISCUSSION_MAX_ROUNDS}))`,
+					});
 				return;
 			}
 
@@ -787,7 +800,7 @@ export class TeamManager implements TeamManagerLike {
 				this.discussionRound.delete(task.id);
 				supervisor.dispose();
 				this.supervisors.delete(task.id);
-				if (task.id) this.completeTask(task.id);
+				if (task.id) this.completeTask(task.id, { conclusion: decision.conclusion });
 				return;
 			}
 
@@ -802,7 +815,10 @@ export class TeamManager implements TeamManagerLike {
 				this.discussionRound.delete(task.id);
 				supervisor.dispose();
 				this.supervisors.delete(task.id);
-				if (task.id) this.completeTask(task.id);
+				if (task.id)
+					this.completeTask(task.id, {
+						conclusion: `(discussion ended: supervisor returned no next speaker)`,
+					});
 				return;
 			}
 
@@ -820,18 +836,24 @@ export class TeamManager implements TeamManagerLike {
 				this.discussionRound.delete(task.id);
 				supervisor.dispose();
 				this.supervisors.delete(task.id);
-				if (task.id) this.completeTask(task.id);
+				if (task.id)
+					this.completeTask(task.id, {
+						conclusion: `(discussion ended: next speaker "${nextSpeaker}" is unavailable)`,
+					});
 				return;
 			}
 
 			targetState.currentTaskId = task.id;
 
+			const discussionHint =
+				"\n\n(Use the `message` tool to share your response — send to `broadcast` so all participants see it. Read your inbox first with `message` action=read if you haven't.)";
+
 			if (decision.action === "redirect") {
 				// redirect: use directMember for stronger enforcement
-				this.directMember(nextSpeaker, "redirect", decision.instruction);
+				this.directMember(nextSpeaker, "redirect", decision.instruction + discussionHint);
 			} else {
 				// continue / summarize: use steer like before
-				const instruction = `[⚡ COORDINATOR] ${decision.instruction}`;
+				const instruction = `[⚡ COORDINATOR] ${decision.instruction}${discussionHint}`;
 				if (targetState.status === "active" && targetState.session.isStreaming) {
 					targetState.session.steer(instruction);
 				} else {
@@ -848,37 +870,49 @@ export class TeamManager implements TeamManagerLike {
 			this.supervisors.get(task.id)?.dispose();
 			this.supervisors.delete(task.id);
 			try {
-				if (task.id) this.completeTask(task.id);
+				if (task.id)
+					this.completeTask(task.id, {
+						conclusion: `(discussion ended due to error: ${err instanceof Error ? err.message : String(err)})`,
+					});
 			} catch {}
 		}
 	}
 
 	directMember(
-		name: MemberName,
-		kind: "directive" | "context" | "redirect",
-		payload: string,
-	): void {
-		const state = this.members.get(name);
-		if (!state) throw new Error(`member "${name}" not found`);
-		if (state.status !== "active")
-			throw new Error(`member "${name}" is ${state.status}, cannot receive directives`);
+			name: MemberName,
+			kind: "directive" | "context" | "redirect",
+			payload: string,
+		): void {
+			const state = this.members.get(name);
+			if (!state) throw new Error(`member "${name}" not found`);
+			if (state.status !== "active" && state.status !== "idle")
+				throw new Error(`member "${name}" is ${state.status}, cannot receive directives`);
 
-		const prefix =
-			kind === "directive"
-				? "[⚡ LEADER DIRECTIVE]"
-				: kind === "context"
-					? "[⚡ LEADER CONTEXT]"
-					: "[⚡ LEADER REDIRECT]";
-		const message = `${prefix} ${payload}`;
+			const prefix =
+				kind === "directive"
+					? "[⚡ LEADER DIRECTIVE]"
+					: kind === "context"
+						? "[⚡ LEADER CONTEXT]"
+						: "[⚡ LEADER REDIRECT]";
+			const message = `${prefix} ${payload}`;
 
-		if (state.session.isStreaming) {
-			state.session.steer(message);
-		} else {
-			void state.session.prompt(message);
+			if (state.status === "idle") {
+				state.status = "active";
+				const teamMd = this.files.readTeamMd();
+				const memberRow = teamMd.members.find((m) => m.name === name);
+				if (memberRow) memberRow.status = "active";
+				this.files.writeTeamMd(teamMd);
+				this.emit({ type: "member_resumed", memberName: name });
+			}
+
+			if (state.session.isStreaming) {
+				state.session.steer(message);
+			} else {
+				void state.session.prompt(message);
+			}
+
+			logTeamEvent("member_direct", { memberName: name, kind, payload: payload.slice(0, 80) });
 		}
-
-		logTeamEvent("member_direct", { memberName: name, kind, payload: payload.slice(0, 80) });
-	}
 
 	// ─── Member-to-Member Messaging ────────────────────────
 
@@ -999,21 +1033,11 @@ export class TeamManager implements TeamManagerLike {
 		if (!inbox) throw new Error(`inbox for "${recipient.name}" not found`);
 		inbox.append(message);
 
-		// cancelled members cannot receive; persist-only for idle/paused/error;
-		// active members get steer if below the in-flight cap.
-		if (recipient.status === "cancelled") {
-			throw new Error(`recipient "${recipient.name}" is cancelled`);
+		// cancelled/done members cannot receive at all; idle/paused/error get persist-only.
+		if (recipient.status === "cancelled" || recipient.status === "done") {
+			throw new Error(`recipient "${recipient.name}" is ${recipient.status} and cannot receive messages`);
 		}
-		if (recipient.status === "done" || recipient.status === "idle") {
-			const reason = `recipient "${recipient.name}" is ${recipient.status} and will not see your message`;
-			logTeamEvent("member_message_rejected", {
-				to: recipient.name,
-				messageId: message.id,
-				reason: `status=${recipient.status}`,
-			});
-			throw new Error(reason);
-		}
-		if (recipient.status !== "active") {
+		if (recipient.status === "idle" || recipient.status === "paused" || recipient.status === "error") {
 			logTeamEvent("member_message_delivered", {
 				to: recipient.name,
 				messageId: message.id,

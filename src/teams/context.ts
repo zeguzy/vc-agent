@@ -271,6 +271,54 @@ export function buildTaskLayer(task: TaskState): string {
 	return buildRuntimeLayer({ currentTask: task });
 }
 
+/**
+ * Build discussion-specific prompt for a participant. Unlike buildTaskLayer
+ * (which only outputs task metadata), this tells the member:
+ * - This is a discussion, not a solo execution task
+ * - Who the other participants are
+ * - To use the `message` tool to communicate
+ * - Whether they should open the discussion or respond to it
+ */
+export function buildDiscussionPrompt(
+	task: TaskState,
+	participants: MemberName[],
+	isFirstSpeaker: boolean,
+): string {
+	const lines: string[] = [];
+	lines.push("[Discussion Task]");
+	lines.push(`Topic: ${task.title}`);
+	if (task.description) lines.push(`Description: ${task.description}`);
+	lines.push("");
+	lines.push(`Participants: ${participants.map((p) => `@${p}`).join(", ")}`);
+	lines.push("");
+	lines.push(
+		"This is a group discussion. Share your perspective using the `message` tool — send to `broadcast` so all participants can read it, or target a specific member.",
+	);
+	lines.push(
+		"Read your inbox with the `message` tool (action=read) before responding to catch up on what others have said.",
+	);
+	lines.push("");
+	lines.push("How the discussion works:");
+	lines.push(
+		"1. Send your contribution via `message(action=\"broadcast\", content=\"...\")`.",
+	);
+	lines.push("2. Stop — end your turn. Do NOT try to wait or poll for replies.");
+	lines.push(
+		"3. A supervisor will read what everyone said and direct the next speaker. You will be prompted again when it's your turn.",
+	);
+	lines.push("");
+	if (isFirstSpeaker) {
+		lines.push(
+			"You are the first speaker. Open the discussion with 2-3 key points on this topic. Be concise but substantive — others will build on your contribution.",
+		);
+	} else {
+		lines.push(
+			"The discussion is already in progress. Read your inbox, then contribute your perspective — add new information, disagree with specifics, or ask a clarifying question.",
+		);
+	}
+	return lines.join("\n");
+}
+
 // ─── Full System Prompt Builder ──────────────────────────────
 
 /** Build the full system prompt for a member session [A, B, C, D, E]. */

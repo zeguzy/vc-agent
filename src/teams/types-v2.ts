@@ -180,7 +180,7 @@ export interface TeamManagerLike {
 		participants: MemberName[];
 		priority?: "high" | "medium" | "low";
 	}): TaskState;
-	completeTask(taskId: string): void;
+	completeTask(taskId: string, opts?: { conclusion?: string }): void;
 	listTasks(): TaskState[];
 
 	// Memory operations
@@ -233,7 +233,7 @@ export type TeamEvent =
 	| { type: "member_created"; memberName: MemberName }
 	| { type: "member_removed"; memberName: MemberName }
 	| { type: "task_assigned"; taskId: string; memberName: MemberName }
-	| { type: "task_completed"; taskId: string; memberName: MemberName }
+	| { type: "task_completed"; taskId: string; memberName: MemberName; conclusion?: string }
 	| {
 			type: "member_done";
 			memberName: MemberName;

@@ -209,6 +209,18 @@ export class AgentServer {
 						void this.session.prompt(note);
 					}
 				}
+
+				if (event.type === "task_completed" && event.conclusion) {
+					const task = this.teamManager.listTasks().find((t) => t.id === event.taskId);
+					const title = task?.title ?? event.taskId;
+					const body = `[Discussion "${title}" completed]\nConclusion: ${event.conclusion}`;
+					if (this.session.isStreaming) {
+						const note = `[SYSTEM NOTIFICATION — DO NOT ACT unless there's a problem]\n${body}\n[END NOTIFICATION — continue waiting for user or next event]`;
+						this.session.steer(note);
+					} else {
+						void this.session.prompt(body);
+					}
+				}
 			});
 		}
 	}
