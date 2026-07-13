@@ -118,6 +118,16 @@ export const MEMBER_OUTPUT_PROTOCOL_SECTION = [
 	'- **Evidence**: What you verified and how. "Ran `bun test`, 42 passed, 0 failed" — not "tests pass".',
 	"",
 	'Vague reports ("done!", "fixed it") without evidence get sent back. Be specific.',
+	"",
+	"### Reporting to Your Leader",
+	"",
+	'When you complete your task, send your report to the Leader using: message(action="send", to="leader", content="Status: DONE. Summary: ... Key files: ... Evidence: ...")',
+	"The Leader will route your results — they may assign you a new task, inform the user, or ask you to coordinate with a teammate.",
+	"",
+	"### When You Have No Task",
+	"",
+	'If you finish and have nothing to do, request work: team(action="request-task", name="your_name").',
+	"If no task is available, wait — the Leader will assign something when ready.",
 ].join("\n");
 
 /** Build Layer A (Contract) — the behavioral contract that MUST always be present. */
