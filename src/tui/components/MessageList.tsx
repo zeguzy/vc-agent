@@ -88,7 +88,6 @@ const SPINNER_FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", 
 const SPINNER_INTERVAL_MS = 80;
 
 const RESULT_BLOCK_MAX_HEIGHT = 15;
-const RESULT_BLOCK_MIN_HEIGHT = 3;
 
 const ThinkingSpinner = memo(function ThinkingSpinner({ fg }: { fg: string }) {
 	const [frame, setFrame] = useState(0);
@@ -400,12 +399,7 @@ const ToolMessageView = memo(function ToolMessageView({ message }: { message: Me
 				</box>
 			)}
 			{subagentText && (
-				<scrollbox
-					minHeight={RESULT_BLOCK_MIN_HEIGHT}
-					maxHeight={RESULT_BLOCK_MAX_HEIGHT}
-					scrollY
-					focused={false}
-				>
+				<scrollbox maxHeight={RESULT_BLOCK_MAX_HEIGHT} scrollY focused={false}>
 					<markdown
 						id={`md-subagent-${message.id}`}
 						syntaxStyle={syntaxStyle}
@@ -593,12 +587,7 @@ const WorkerMessageView = memo(function WorkerMessageView({ message }: { message
 						</box>
 					)}
 					{message.workerSummary && (
-						<scrollbox
-							minHeight={RESULT_BLOCK_MIN_HEIGHT}
-							maxHeight={RESULT_BLOCK_MAX_HEIGHT}
-							scrollY
-							focused={false}
-						>
+						<box paddingLeft={2} flexShrink={0}>
 							<markdown
 								id={`md-${message.id}`}
 								syntaxStyle={syntaxStyle}
@@ -606,7 +595,7 @@ const WorkerMessageView = memo(function WorkerMessageView({ message }: { message
 								fg={colors.markdownText}
 								bg={colors.background}
 							/>
-						</scrollbox>
+						</box>
 					)}
 					{usageParts.length > 0 && (
 						<box paddingLeft={2} flexDirection="row">
@@ -621,14 +610,7 @@ const WorkerMessageView = memo(function WorkerMessageView({ message }: { message
 				</>
 			) : (
 				message.content && (
-					<scrollbox
-						minHeight={RESULT_BLOCK_MIN_HEIGHT}
-						maxHeight={RESULT_BLOCK_MAX_HEIGHT}
-						scrollY
-						stickyScroll
-						stickyStart="bottom"
-						focused={false}
-					>
+					<scrollbox maxHeight={8} scrollY stickyScroll stickyStart="bottom" focused={false}>
 						<markdown
 							id={`md-${message.id}`}
 							syntaxStyle={syntaxStyle}
