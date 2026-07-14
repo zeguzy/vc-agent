@@ -275,6 +275,37 @@ function formatToolDetail(toolName: string, args: unknown): { label: string; lin
 			const action = String(a.action ?? "");
 			return { label: "todo", lines: [action] };
 		}
+		case "team": {
+			const action = String(a.action ?? "");
+			const parts: string[] = [action];
+			if (action === "wait") {
+				const dur = a.duration as number | undefined;
+				parts[0] = dur ? `waiting ${dur}s` : "waiting";
+			} else if (action === "read") {
+				parts[0] = "status check";
+			} else {
+				if (a.name) parts.push(`@${a.name}`);
+				if (a.title) parts.push(String(a.title));
+				if (a.goalId) parts.push(a.goalId as string);
+				if (a.taskId) parts.push(a.taskId as string);
+			}
+			return { label: "team", lines: [parts.join(" ")] };
+		}
+		case "message": {
+			const action = String(a.action ?? "");
+			const parts: string[] = [action];
+			if (a.to) parts.push(`→ @${a.to}`);
+			const content = a.content as string | undefined;
+			if (content) {
+				parts.push(content.length > 60 ? `${content.slice(0, 57)}...` : content);
+			}
+			return { label: "message", lines: [parts.join(" ")] };
+		}
+		case "memory": {
+			const action = String(a.action ?? "");
+			const topic = a.topic as string | undefined;
+			return { label: "memory", lines: topic ? [`${action}: ${topic}`] : [action] };
+		}
 		default:
 			return { label: toolName, lines: [] };
 	}
