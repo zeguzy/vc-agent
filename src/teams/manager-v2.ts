@@ -1195,11 +1195,7 @@ export class TeamManager implements TeamManagerLike {
 		const { from, to, content } = opts;
 		if (!content.trim()) throw new Error("content is required");
 		if (from === to) throw new Error("cannot send a message to yourself");
-		const recipient = this.members.get(to);
-		if (!recipient) throw new Error(`recipient "${to}" not found`);
-
 		this.assertSendRateLimit(from);
-		this.assertPairCooldown(from, to);
 
 		const message: MemberMessage = {
 			id: generateMessageId(),
@@ -1210,8 +1206,20 @@ export class TeamManager implements TeamManagerLike {
 			read: false,
 		};
 
-		const delivery = this.deliver(recipient, message);
-		this.recordPairExchange(from, to);
+		let delivery: DeliveryMode;
+
+		if (to === LEADER_NAME) {
+			const leaderInbox = this.inboxes.get(LEADER_NAME);
+			if (!leaderInbox) throw new Error(`recipient "${to}" not found`);
+			leaderInbox.append(message);
+			delivery = "persist-only";
+		} else {
+			const recipient = this.members.get(to);
+			if (!recipient) throw new Error(`recipient "${to}" not found`);
+			this.assertPairCooldown(from, to);
+			delivery = this.deliver(recipient, message);
+			this.recordPairExchange(from, to);
+		}
 
 		this.emit({
 			type: "member_message_sent",
@@ -1269,6 +1277,22 @@ export class TeamManager implements TeamManagerLike {
 					recipient: recipient.name,
 					error: err instanceof Error ? err.message : String(err),
 				});
+			}
+		}
+
+		if (from !== LEADER_NAME) {
+			const leaderInbox = this.inboxes.get(LEADER_NAME);
+			if (leaderInbox) {
+				const leaderMsg: MemberMessage = {
+					id: generateMessageId(),
+					from,
+					to: BROADCAST_RECIPIENT,
+					content,
+					timestamp: Date.now(),
+					read: false,
+				};
+				leaderInbox.append(leaderMsg);
+				results.push({ message: leaderMsg, delivery: "persist-only" });
 			}
 		}
 
