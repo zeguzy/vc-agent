@@ -431,6 +431,47 @@ export function createTeamTool(opts: TeamToolOptions): ToolDefinition {
 				lines.push(`  ${check} ${t.id}: ${t.title} → ${assignee}`);
 			}
 		}
+
+		const recentMsgs: Array<{
+			from: string;
+			to: string;
+			content: string;
+			timestamp: number;
+		}> = [];
+		for (const m of teamMd.members) {
+			try {
+				for (const msg of manager.readInbox(m.name, { limit: 5 })) {
+					recentMsgs.push(msg);
+				}
+			} catch {}
+		}
+		try {
+			for (const msg of manager.readInbox("leader", { limit: 5 })) {
+				recentMsgs.push(msg);
+			}
+		} catch {}
+		const seenIds = new Set<string>();
+		const uniqueMsgs = recentMsgs
+			.filter((m) => {
+				const k = `${m.from}-${m.to}-${m.timestamp}`;
+				if (seenIds.has(k)) return false;
+				seenIds.add(k);
+				return true;
+			})
+			.sort((a, b) => a.timestamp - b.timestamp)
+			.slice(-10);
+		if (uniqueMsgs.length > 0) {
+			lines.push("Recent Messages:");
+			for (const msg of uniqueMsgs) {
+				const fromTag = msg.from === "leader" ? "Leader" : `@${msg.from}`;
+				const toTag = msg.to === "broadcast" ? "all" : `@${msg.to}`;
+				const snippet =
+					msg.content.length > 100 ? `${msg.content.slice(0, 100)}...` : msg.content;
+				const time = new Date(msg.timestamp).toISOString().slice(11, 19);
+				lines.push(`  [${time}] ${fromTag} → ${toTag}: ${snippet}`);
+			}
+		}
+
 		if (teamMd.importantNotes?.trim()) {
 			lines.push(`Important: ${teamMd.importantNotes.trim()}`);
 		}
