@@ -279,6 +279,12 @@ export interface TeamManagerLike {
 
 	getMaxWorkers(): number;
 
+	// Background wait timer (non-blocking)
+	startWait(durationSec: number): void;
+	cancelWait(): void;
+	isWaiting(): boolean;
+	getWaitRemaining(): number | null;
+
 	// Member identity (for tool permission checks)
 	isSelfMember(name: MemberName): boolean;
 	getSelfMemberName(): MemberName | undefined;
@@ -298,6 +304,7 @@ export type TeamEvent =
 	| { type: "goal_created"; goalId: string; title: string }
 	| { type: "goal_updated"; goalId: string; status: GoalStatus }
 	| { type: "goal_decomposed"; goalId: string; subGoalIds: string[] }
+	| { type: "wait_completed" }
 	| {
 			type: "member_done";
 			memberName: MemberName;

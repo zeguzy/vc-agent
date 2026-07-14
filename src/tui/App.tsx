@@ -454,17 +454,24 @@ export function App({
 				});
 				return;
 			}
-			if (isRunningRef.current) {
-				const msg = createUserMessage(text);
-				msg.queued = true;
-				setMessages((prev) => [...prev, msg]);
-				setCommandHistory((prev) => [...prev, text]);
-				saveHistory(text);
-				client.followUp(text).catch((err) => {
-					setMessages((prev) => [...prev, createAssistantMessage(`Error: ${formatError(err)}`)]);
+		if (isRunningRef.current) {
+			const msg = createUserMessage(text);
+			msg.queued = true;
+			setMessages((prev) => [...prev, msg]);
+			setCommandHistory((prev) => [...prev, text]);
+			saveHistory(text);
+			const sendMsg = () => {
+				client.prompt(text).catch((err) => {
+					setMessages((prev) => [
+						...prev,
+						createAssistantMessage(`Error: ${formatError(err)}`),
+					]);
+					setIsRunning(false);
 				});
-				return;
-			}
+			};
+			client.abort().then(sendMsg, sendMsg);
+			return;
+		}
 			setMessages((prev) => [...prev, createUserMessage(text)]);
 			setCommandHistory((prev) => [...prev, text]);
 			saveHistory(text);

@@ -355,7 +355,7 @@ export function createTeamTool(opts: TeamToolOptions): ToolDefinition {
 				case "remove":
 					return await handleRemove(manager, args);
 				case "wait":
-					return await handleWait(args, signal, manager);
+					return handleWait(args, manager);
 				case "goal-create":
 					return handleGoalCreate(manager, args);
 				case "goal-list":
@@ -380,6 +380,11 @@ export function createTeamTool(opts: TeamToolOptions): ToolDefinition {
 		const teamMd = manager.readTeamMd();
 		const lines: string[] = [];
 		if (teamMd.mission?.trim()) lines.push(`Mission: ${teamMd.mission.trim()}`);
+
+		if (manager.isWaiting()) {
+			const remaining = manager.getWaitRemaining();
+			lines.push(`⏳ Waiting: ${remaining}s remaining`);
+		}
 
 		if (teamMd.goals.length > 0) {
 			lines.push("Goals:");
@@ -841,26 +846,12 @@ async function handleRemove(manager: TeamManagerLike, args: Record<string, unkno
 	return ok(`Member "${name}" removed and archived.`);
 }
 
-async function handleWait(
-	args: { duration?: number },
-	signal: AbortSignal | undefined,
-	manager: TeamManagerLike,
-) {
+function handleWait(args: { duration?: number }, manager: TeamManagerLike) {
 	const seconds = Math.max(5, Math.min(300, args.duration ?? 30));
-	await new Promise<void>((resolve, reject) => {
-		const timer = setTimeout(() => resolve(), seconds * 1000);
-		if (signal) {
-			signal.addEventListener(
-				"abort",
-				() => {
-					clearTimeout(timer);
-					reject(signal.reason ?? new Error("Aborted"));
-				},
-				{ once: true },
-			);
-		}
-	});
-	return handleRead(manager);
+	manager.startWait(seconds);
+	return ok(
+		`Waiting ${seconds}s in background. You can continue working — I'll be notified when the timer expires. Use team(action="read") to check status anytime.`,
+	);
 }
 
 function handleGoalCreate(manager: TeamManagerLike, args: Record<string, unknown>) {

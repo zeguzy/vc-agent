@@ -149,6 +149,8 @@ export class TeamManager implements TeamManagerLike {
 	private readonly pairLastExchange = new Map<string, number[]>();
 	private readonly inFlightSteer = new Map<MemberName, number>();
 	private readonly supervisors = new Map<string, DiscussionSupervisor>();
+	private waitTimer: ReturnType<typeof setTimeout> | null = null;
+	private waitDeadline: number | null = null;
 	private disposed = false;
 	private isRestoring = false;
 
@@ -1625,8 +1627,39 @@ export class TeamManager implements TeamManagerLike {
 			supervisor.dispose();
 		}
 		this.supervisors.clear();
+		this.cancelWait();
 		this.inFlightSteer.clear();
 		// Note: .openagent/team/ directory is preserved (memory files are persistent)
+	}
+
+	startWait(durationSec: number): void {
+		this.cancelWait();
+		this.waitDeadline = Date.now() + durationSec * 1000;
+		this.waitTimer = setTimeout(() => {
+			this.waitTimer = null;
+			this.waitDeadline = null;
+			this.emit({ type: "wait_completed" });
+			logTeamEvent("wait_completed", {});
+		}, durationSec * 1000);
+		logTeamEvent("wait_started", { durationSec });
+	}
+
+	cancelWait(): void {
+		if (this.waitTimer) {
+			clearTimeout(this.waitTimer);
+			this.waitTimer = null;
+			this.waitDeadline = null;
+			logTeamEvent("wait_cancelled", {});
+		}
+	}
+
+	isWaiting(): boolean {
+		return this.waitTimer !== null;
+	}
+
+	getWaitRemaining(): number | null {
+		if (!this.waitDeadline) return null;
+		return Math.max(0, Math.ceil((this.waitDeadline - Date.now()) / 1000));
 	}
 
 	subscribe(listener: (event: TeamEvent) => void): () => void {

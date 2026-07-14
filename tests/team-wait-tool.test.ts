@@ -1,17 +1,21 @@
 import { describe, expect, it } from "bun:test";
 import type { TeamManagerLike } from "../src/teams/types-v2.js";
+import type { Goal, GoalPriority, GoalStatus, TaskState } from "../src/teams/types-v2.js";
 import { createTeamTool } from "../src/tools/team.js";
 
-/**
- * Minimal mock TeamManagerLike — wait action does not call any manager method,
- * but execute() has a top-level `if (!manager)` guard (team.ts:181) that all
- * actions share, so a non-null manager is required to reach handleWait.
- */
-function createMockManager(): TeamManagerLike {
+function createMockManager(): TeamManagerLike & {
+	waitStarted: boolean;
+	waitDuration: number;
+	waitCancelled: boolean;
+} {
 	const stub = () => {
 		throw new Error("not used in wait tests");
 	};
+	const state = { waitStarted: false, waitDuration: 0, waitCancelled: false };
+	let waitTimer: ReturnType<typeof setTimeout> | null = null;
+
 	return {
+		...state,
 		listMembers: () => [],
 		getMaxWorkers: () => 4,
 		createMember: stub,
@@ -48,95 +52,78 @@ function createMockManager(): TeamManagerLike {
 		markInboxRead: () => 0,
 		isSelfMember: () => false,
 		getSelfMemberName: () => undefined,
+		startWait(durationSec: number) {
+			this.waitStarted = true;
+			this.waitDuration = durationSec;
+			this.waitCancelled = false;
+		},
+		cancelWait() {
+			this.waitCancelled = true;
+			this.waitStarted = false;
+		},
+		isWaiting() {
+			return this.waitStarted && !this.waitCancelled;
+		},
+		getWaitRemaining() {
+			if (!this.waitStarted || this.waitCancelled) return null;
+			return this.waitDuration;
+		},
 		dispose: async () => {},
 		subscribe: () => () => {},
-	} as TeamManagerLike;
-}
-
-function buildTool(manager: TeamManagerLike) {
-	return createTeamTool({ teamRef: { current: manager } });
+	} as TeamManagerLike & typeof state;
 }
 
 async function runExecute(
 	manager: TeamManagerLike,
 	params: Record<string, unknown>,
-	signal?: AbortSignal,
 ): Promise<{ text: string; isError: boolean }> {
-	const tool = buildTool(manager);
-	const res = await tool.execute("test-id", params, signal, undefined, undefined);
+	const tool = createTeamTool({ teamRef: { current: manager } });
+	const res = await tool.execute("test-id", params, undefined, undefined, undefined);
 	const first = res.content[0] as { text: string };
 	return { text: first.text, isError: res.isError === true };
 }
 
-describe("team tool — wait action", () => {
-	it("blocks for ~duration seconds then resolves with success", async () => {
+describe("team tool — wait action (non-blocking)", () => {
+	it("returns immediately without blocking", async () => {
+		const manager = createMockManager();
 		const start = Date.now();
-		const res = await runExecute(createMockManager(), { action: "wait", duration: 5 });
+		const res = await runExecute(manager, { action: "wait", duration: 60 });
 		const elapsed = Date.now() - start;
 
-		// Real timer: allow tolerance for event-loop scheduling
-		expect(elapsed).toBeGreaterThanOrEqual(4500);
-		expect(elapsed).toBeLessThan(7000);
+		expect(elapsed).toBeLessThan(100);
 		expect(res.isError).toBe(false);
-		expect(res.text).toContain("Team is empty");
-	}, 10000);
-
-	it("aborts immediately on signal abort (clearTimeout prevents leak)", async () => {
-		const controller = new AbortController();
-		const start = Date.now();
-
-		// Kick off the 60s wait; timer + abort listener are registered synchronously
-		// before the first await yields, so abort() fires before any real delay.
-		const resP = runExecute(
-			createMockManager(),
-			{ action: "wait", duration: 60 },
-			controller.signal,
-		);
-		controller.abort();
-		const res = await resP;
-		const elapsed = Date.now() - start;
-
-		// Should return near-instantly, not wait 60s
-		expect(elapsed).toBeLessThan(500);
-		expect(res.isError).toBe(true);
+		expect(res.text).toContain("background");
 	});
 
-	it("clamps duration below minimum (1 → 5s)", async () => {
-		const start = Date.now();
-		const res = await runExecute(createMockManager(), { action: "wait", duration: 1 });
-		const elapsed = Date.now() - start;
-
-		expect(elapsed).toBeGreaterThanOrEqual(4500);
-		expect(elapsed).toBeLessThan(7000);
-		expect(res.text).toContain("Team is empty");
-	}, 10000);
-
-	// Note: max clamp (999→300s) and default (undefined→30s) are not exercised
-	// here because the real wait would take 300s/30s respectively. The clamp
-	// expression `Math.max(5, Math.min(300, n ?? 30))` is obviously correct and
-	// covered by code review; min clamp above proves the lower bound works.
-
-	it("sequential awaits: a later tool call only runs after wait resolves", async () => {
-		// Simulates pi-coding-agent's executeToolCalls which awaits each
-		// execute() sequentially (even in "parallel" batch mode, each
-		// executePreparedToolCall is awaited in turn — agent-loop.js:323).
-		// Locks the behavior so a future execution-model change isn't
-		// mis-attributed to the wait rewrite.
+	it("calls manager.startWait with clamped duration", async () => {
 		const manager = createMockManager();
-		const tool = buildTool(manager);
-		const start = Date.now();
+		await runExecute(manager, { action: "wait", duration: 1 });
+		expect(manager.waitStarted).toBe(true);
+		expect(manager.waitDuration).toBe(5);
 
-		await tool.execute("w", { action: "wait", duration: 5 }, undefined, undefined, undefined);
-		const afterWait = Date.now();
+		const manager2 = createMockManager();
+		await runExecute(manager2, { action: "wait", duration: 999 });
+		expect(manager2.waitDuration).toBe(300);
+	});
 
-		const readRes = await tool.execute("r", { action: "read" }, undefined, undefined, undefined);
-		const end = Date.now();
+	it("defaults to 30s when duration omitted", async () => {
+		const manager = createMockManager();
+		await runExecute(manager, { action: "wait" });
+		expect(manager.waitDuration).toBe(30);
+	});
 
-		// wait blocked for ~5s before read could start
-		expect(afterWait - start).toBeGreaterThanOrEqual(4500);
-		// read resolved quickly after wait returned
-		expect(end - afterWait).toBeLessThan(1000);
-		// read produced a team status (not an error)
-		expect((readRes.content[0] as { text: string }).text).toContain("Team is empty");
-	}, 10000);
+	it("read shows waiting status when timer active", async () => {
+		const manager = createMockManager();
+		await runExecute(manager, { action: "wait", duration: 60 });
+
+		const res = await runExecute(manager, { action: "read" });
+		expect(res.text).toContain("Waiting");
+		expect(res.text).toContain("60s remaining");
+	});
+
+	it("read does not show waiting status when no timer", async () => {
+		const manager = createMockManager();
+		const res = await runExecute(manager, { action: "read" });
+		expect(res.text).not.toContain("Waiting");
+	});
 });
