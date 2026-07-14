@@ -221,6 +221,13 @@ export class AgentServer {
 						void this.session.prompt(body);
 					}
 				}
+
+				if (event.type === "wait_completed") {
+					if (this.session.isStreaming) {
+						const note = `[SYSTEM NOTIFICATION — Wait timer expired]\nUse team(action="read") to check the latest team status.\n[END NOTIFICATION — continue waiting for user or next event]`;
+						this.session.steer(note);
+					}
+				}
 			});
 		}
 	}

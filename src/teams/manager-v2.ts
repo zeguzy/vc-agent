@@ -47,6 +47,9 @@ import { generateMessageId, MemberInbox } from "./messages.js";
 import type { ResolvedModel, ResolvedTeamConfig } from "./types.js";
 import type {
 	DeliveryMode,
+	Goal,
+	GoalPriority,
+	GoalStatus,
 	MemberIndexStructure,
 	MemberMessage,
 	MemberName,
@@ -146,6 +149,8 @@ export class TeamManager implements TeamManagerLike {
 	private readonly pairLastExchange = new Map<string, number[]>();
 	private readonly inFlightSteer = new Map<MemberName, number>();
 	private readonly supervisors = new Map<string, DiscussionSupervisor>();
+	private waitTimer: ReturnType<typeof setTimeout> | null = null;
+	private waitDeadline: number | null = null;
 	private disposed = false;
 	private isRestoring = false;
 
@@ -655,6 +660,275 @@ export class TeamManager implements TeamManagerLike {
 		return this.files.readTeamMd().activeTasks;
 	}
 
+	// ─── Goal Management ────────────────────────────────────
+
+	createGoal(opts: {
+		title: string;
+		description: string;
+		priority?: GoalPriority;
+		parentGoalId?: string;
+		successCriteria?: string;
+		assignee?: MemberName;
+	}): Goal {
+		const teamMd = this.files.readTeamMd();
+
+		let id: string;
+		if (opts.parentGoalId) {
+			const parent = teamMd.goals.find((g) => g.id === opts.parentGoalId);
+			if (!parent) throw new Error(`parent goal "${opts.parentGoalId}" not found`);
+			const siblings = teamMd.goals.filter((g) => g.parentGoalId === opts.parentGoalId);
+			id = `${opts.parentGoalId}.${siblings.length + 1}`;
+			if (parent.status === "pending") {
+				parent.status = "in_progress";
+				parent.updatedAt = new Date().toISOString();
+			}
+		} else {
+			const topLevel = teamMd.goals.filter((g) => g.parentGoalId === null);
+			id = `G${topLevel.length + 1}`;
+		}
+
+		const now = new Date().toISOString();
+		const goal: Goal = {
+			id,
+			title: opts.title,
+			description: opts.description,
+			status: "pending",
+			priority: opts.priority ?? "medium",
+			parentGoalId: opts.parentGoalId ?? null,
+			taskIds: [],
+			assignee: opts.assignee ?? null,
+			successCriteria: opts.successCriteria ?? "",
+			blockers: "",
+			createdAt: now,
+			updatedAt: now,
+		};
+
+		teamMd.goals.push(goal);
+		this.files.writeTeamMd(teamMd);
+
+		this.emit({ type: "goal_created", goalId: id, title: opts.title });
+		logTeamEvent("goal_created", { goalId: id, title: opts.title });
+
+		return goal;
+	}
+
+	listGoals(filter?: {
+		status?: GoalStatus;
+		parentGoalId?: string | null;
+		assignee?: MemberName;
+	}): Goal[] {
+		const goals = this.files.readTeamMd().goals;
+		if (!filter) return goals;
+		return goals.filter((g) => {
+			if (filter.status && g.status !== filter.status) return false;
+			if (filter.parentGoalId !== undefined && g.parentGoalId !== filter.parentGoalId)
+				return false;
+			if (filter.assignee && g.assignee !== filter.assignee) return false;
+			return true;
+		});
+	}
+
+	updateGoal(
+		goalId: string,
+		updates: {
+			title?: string;
+			description?: string;
+			status?: GoalStatus;
+			priority?: GoalPriority;
+			assignee?: MemberName | null;
+			successCriteria?: string;
+			blockers?: string;
+		},
+	): Goal {
+		const teamMd = this.files.readTeamMd();
+		const goal = teamMd.goals.find((g) => g.id === goalId);
+		if (!goal) throw new Error(`goal "${goalId}" not found`);
+
+		if (updates.title !== undefined) goal.title = updates.title;
+		if (updates.description !== undefined) goal.description = updates.description;
+		if (updates.status !== undefined) goal.status = updates.status;
+		if (updates.priority !== undefined) goal.priority = updates.priority;
+		if (updates.assignee !== undefined) goal.assignee = updates.assignee;
+		if (updates.successCriteria !== undefined) goal.successCriteria = updates.successCriteria;
+		if (updates.blockers !== undefined) goal.blockers = updates.blockers;
+		goal.updatedAt = new Date().toISOString();
+
+		this.files.writeTeamMd(teamMd);
+
+		if (updates.status === "completed") {
+			this.checkParentGoalCompletion(goal.parentGoalId, teamMd);
+		}
+
+		this.emit({ type: "goal_updated", goalId, status: goal.status });
+		logTeamEvent("goal_updated", { goalId, status: goal.status });
+
+		return goal;
+	}
+
+	decomposeGoal(
+		goalId: string,
+		subGoals: Array<{
+			title: string;
+			description: string;
+			successCriteria?: string;
+			priority?: GoalPriority;
+		}>,
+	): Goal[] {
+		const teamMd = this.files.readTeamMd();
+		const goal = teamMd.goals.find((g) => g.id === goalId);
+		if (!goal) throw new Error(`goal "${goalId}" not found`);
+
+		if (goal.status === "pending") {
+			goal.status = "in_progress";
+			goal.updatedAt = new Date().toISOString();
+		}
+
+		const created: Goal[] = [];
+		for (const sub of subGoals) {
+			const siblings = teamMd.goals.filter((g) => g.parentGoalId === goalId);
+			const subId = `${goalId}.${siblings.length + 1}`;
+			const now = new Date().toISOString();
+			const subGoal: Goal = {
+				id: subId,
+				title: sub.title,
+				description: sub.description,
+				status: "pending",
+				priority: sub.priority ?? goal.priority,
+				parentGoalId: goalId,
+				taskIds: [],
+				assignee: null,
+				successCriteria: sub.successCriteria ?? "",
+				blockers: "",
+				createdAt: now,
+				updatedAt: now,
+			};
+			teamMd.goals.push(subGoal);
+			created.push(subGoal);
+		}
+
+		this.files.writeTeamMd(teamMd);
+
+		this.emit({
+			type: "goal_decomposed",
+			goalId,
+			subGoalIds: created.map((g) => g.id),
+		});
+		logTeamEvent("goal_decomposed", {
+			goalId,
+			subGoalIds: created.map((g) => g.id),
+		});
+
+		return created;
+	}
+
+	linkTaskToGoal(goalId: string, taskId: string): void {
+		const teamMd = this.files.readTeamMd();
+		const goal = teamMd.goals.find((g) => g.id === goalId);
+		if (!goal) throw new Error(`goal "${goalId}" not found`);
+
+		if (!goal.taskIds.includes(taskId)) {
+			goal.taskIds.push(taskId);
+			goal.updatedAt = new Date().toISOString();
+			this.files.writeTeamMd(teamMd);
+		}
+		logTeamEvent("task_linked_to_goal", { goalId, taskId });
+	}
+
+	requestTask(memberName: MemberName, _capabilities?: string[]): TaskState | null {
+		const member = this.members.get(memberName);
+		if (!member) throw new Error(`member "${memberName}" not found`);
+		if (member.status !== "idle" && member.status !== "active") return null;
+
+		const teamMd = this.files.readTeamMd();
+
+		const assignableGoals = teamMd.goals
+			.filter((g) => g.status === "pending" || g.status === "in_progress")
+			.filter((g) => !g.assignee || g.assignee === memberName)
+			.filter((g) =>
+				g.taskIds.every((tid) => {
+					const task = teamMd.activeTasks.find((t) => t.id === tid);
+					return task && (task.done || task.memberName !== memberName);
+				}),
+			)
+			.sort((a, b) => {
+				const order: Record<GoalPriority, number> = { high: 0, medium: 1, low: 2 };
+				return order[a.priority] - order[b.priority];
+			});
+
+		if (assignableGoals.length === 0) return null;
+
+		const goal = assignableGoals[0];
+		const taskId = `T${teamMd.activeTasks.length + 1}`;
+		const task: TaskState = {
+			id: taskId,
+			title: goal.title,
+			description: goal.description || goal.successCriteria || goal.title,
+			memberName,
+			priority: goal.priority,
+			type: "execution",
+			done: false,
+		};
+
+		teamMd.activeTasks.push(task);
+		goal.taskIds.push(taskId);
+		if (goal.status === "pending") goal.status = "in_progress";
+		goal.updatedAt = new Date().toISOString();
+
+		const memberRow = teamMd.members.find((m) => m.name === memberName);
+		if (memberRow) memberRow.currentTask = goal.title;
+		this.files.writeTeamMd(teamMd);
+
+		const memberIndex = this.files.readMemberIndex(memberName);
+		if (memberIndex) {
+			memberIndex.activeContext = `${goal.title}\n${task.description}`;
+			this.files.writeMemberIndex(memberName, memberIndex);
+		}
+
+		const taskPrompt = buildTaskLayer(task);
+		if (member.session.isStreaming) {
+			member.session.steer(taskPrompt);
+		} else {
+			void member.session.prompt(taskPrompt);
+		}
+
+		member.currentTaskId = taskId;
+		member.status = "active";
+		member.lastTaskPrompt = taskPrompt;
+
+		this.emit({ type: "task_assigned", taskId, memberName });
+		logTeamEvent("task_requested_and_assigned", {
+			memberName,
+			taskId,
+			goalId: goal.id,
+		});
+
+		return task;
+	}
+
+	private checkParentGoalCompletion(
+		parentGoalId: string | null,
+		teamMd: TeamMdStructure,
+	): void {
+		if (!parentGoalId) return;
+		const parent = teamMd.goals.find((g) => g.id === parentGoalId);
+		if (!parent) return;
+
+		const children = teamMd.goals.filter((g) => g.parentGoalId === parentGoalId);
+		if (children.length === 0) return;
+
+		const allDone = children.every(
+			(c) => c.status === "completed" || c.status === "cancelled",
+		);
+		if (allDone && parent.status !== "completed") {
+			parent.status = "completed";
+			parent.updatedAt = new Date().toISOString();
+			this.files.writeTeamMd(teamMd);
+			this.emit({ type: "goal_updated", goalId: parentGoalId, status: "completed" });
+			logTeamEvent("goal_auto_completed", { goalId: parentGoalId });
+			this.checkParentGoalCompletion(parent.parentGoalId, teamMd);
+		}
+	}
+
 	// ─── Member Lifecycle Control ──────────────────────────
 
 	pauseMember(name: MemberName): void {
@@ -923,11 +1197,7 @@ export class TeamManager implements TeamManagerLike {
 		const { from, to, content } = opts;
 		if (!content.trim()) throw new Error("content is required");
 		if (from === to) throw new Error("cannot send a message to yourself");
-		const recipient = this.members.get(to);
-		if (!recipient) throw new Error(`recipient "${to}" not found`);
-
 		this.assertSendRateLimit(from);
-		this.assertPairCooldown(from, to);
 
 		const message: MemberMessage = {
 			id: generateMessageId(),
@@ -938,14 +1208,27 @@ export class TeamManager implements TeamManagerLike {
 			read: false,
 		};
 
-		const delivery = this.deliver(recipient, message);
-		this.recordPairExchange(from, to);
+		let delivery: DeliveryMode;
+
+		if (to === LEADER_NAME) {
+			const leaderInbox = this.inboxes.get(LEADER_NAME);
+			if (!leaderInbox) throw new Error(`recipient "${to}" not found`);
+			leaderInbox.append(message);
+			delivery = "persist-only";
+		} else {
+			const recipient = this.members.get(to);
+			if (!recipient) throw new Error(`recipient "${to}" not found`);
+			this.assertPairCooldown(from, to);
+			delivery = this.deliver(recipient, message);
+			this.recordPairExchange(from, to);
+		}
 
 		this.emit({
 			type: "member_message_sent",
 			from,
 			to,
 			messageId: message.id,
+			content,
 			delivery,
 		});
 		logTeamEvent("member_message_sent", {
@@ -967,7 +1250,6 @@ export class TeamManager implements TeamManagerLike {
 		if (!content.trim()) throw new Error("content is required");
 		this.assertBroadcastRateLimit(from);
 
-		// Snapshot to survive concurrent removeMember
 		const recipients = this.listMembers().filter((m) => m.name !== from);
 
 		const results: Array<{ message: MemberMessage; delivery: DeliveryMode }> = [];
@@ -983,13 +1265,6 @@ export class TeamManager implements TeamManagerLike {
 				};
 				const delivery = this.deliver(recipient, message);
 				results.push({ message, delivery });
-				this.emit({
-					type: "member_message_sent",
-					from,
-					to: BROADCAST_RECIPIENT,
-					messageId: message.id,
-					delivery,
-				});
 				logTeamEvent("member_message_sent", {
 					from,
 					to: BROADCAST_RECIPIENT,
@@ -1006,6 +1281,34 @@ export class TeamManager implements TeamManagerLike {
 				});
 			}
 		}
+
+		if (from !== LEADER_NAME) {
+			const leaderInbox = this.inboxes.get(LEADER_NAME);
+			if (leaderInbox) {
+				const leaderMsg: MemberMessage = {
+					id: generateMessageId(),
+					from,
+					to: BROADCAST_RECIPIENT,
+					content,
+					timestamp: Date.now(),
+					read: false,
+				};
+				leaderInbox.append(leaderMsg);
+				results.push({ message: leaderMsg, delivery: "persist-only" });
+			}
+		}
+
+		if (results.length > 0) {
+			this.emit({
+				type: "member_message_sent",
+				from,
+				to: BROADCAST_RECIPIENT,
+				messageId: results[0].message.id,
+				content,
+				delivery: results[0].delivery,
+			});
+		}
+
 		return results;
 	}
 
@@ -1324,8 +1627,39 @@ export class TeamManager implements TeamManagerLike {
 			supervisor.dispose();
 		}
 		this.supervisors.clear();
+		this.cancelWait();
 		this.inFlightSteer.clear();
 		// Note: .openagent/team/ directory is preserved (memory files are persistent)
+	}
+
+	startWait(durationSec: number): void {
+		this.cancelWait();
+		this.waitDeadline = Date.now() + durationSec * 1000;
+		this.waitTimer = setTimeout(() => {
+			this.waitTimer = null;
+			this.waitDeadline = null;
+			this.emit({ type: "wait_completed" });
+			logTeamEvent("wait_completed", {});
+		}, durationSec * 1000);
+		logTeamEvent("wait_started", { durationSec });
+	}
+
+	cancelWait(): void {
+		if (this.waitTimer) {
+			clearTimeout(this.waitTimer);
+			this.waitTimer = null;
+			this.waitDeadline = null;
+			logTeamEvent("wait_cancelled", {});
+		}
+	}
+
+	isWaiting(): boolean {
+		return this.waitTimer !== null;
+	}
+
+	getWaitRemaining(): number | null {
+		if (!this.waitDeadline) return null;
+		return Math.max(0, Math.ceil((this.waitDeadline - Date.now()) / 1000));
 	}
 
 	subscribe(listener: (event: TeamEvent) => void): () => void {

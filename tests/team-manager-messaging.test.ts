@@ -176,13 +176,15 @@ describe("TeamManager messaging", () => {
 		inject("quinn", "active");
 		inject("riley", "active");
 		const results = manager.broadcastMessage({ from: "pat", content: "team" });
-		expect(results.length).toBe(2);
+		expect(results.length).toBe(3);
 		const inboxQuinn = manager.readInbox("quinn");
 		const inboxRiley = manager.readInbox("riley");
 		const inboxPat = manager.readInbox("pat");
+		const inboxLeader = manager.readInbox("leader");
 		expect(inboxQuinn.length).toBe(1);
 		expect(inboxRiley.length).toBe(1);
 		expect(inboxPat.length).toBe(0);
+		expect(inboxLeader.length).toBe(1);
 	});
 
 	it("readInbox returns persisted messages with filters", () => {

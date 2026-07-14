@@ -1,5 +1,5 @@
 import type { ScrollBoxRenderable } from "@opentui/core";
-import { memo, useEffect, useState } from "react";
+import { memo, useEffect, useRef, useState } from "react";
 import type { Message } from "../../message.js";
 import { syntaxStyle } from "../utils/syntax.js";
 import { colors, icons } from "../utils/theme.js";
@@ -275,6 +275,37 @@ function formatToolDetail(toolName: string, args: unknown): { label: string; lin
 			const action = String(a.action ?? "");
 			return { label: "todo", lines: [action] };
 		}
+		case "team": {
+			const action = String(a.action ?? "");
+			const parts: string[] = [action];
+			if (action === "wait") {
+				const dur = a.duration as number | undefined;
+				parts[0] = dur ? `waiting ${dur}s` : "waiting";
+			} else if (action === "read") {
+				parts[0] = "status check";
+			} else {
+				if (a.name) parts.push(`@${a.name}`);
+				if (a.title) parts.push(String(a.title));
+				if (a.goalId) parts.push(a.goalId as string);
+				if (a.taskId) parts.push(a.taskId as string);
+			}
+			return { label: "team", lines: [parts.join(" ")] };
+		}
+		case "message": {
+			const action = String(a.action ?? "");
+			const parts: string[] = [action];
+			if (a.to) parts.push(`→ @${a.to}`);
+			const content = a.content as string | undefined;
+			if (content) {
+				parts.push(content.length > 60 ? `${content.slice(0, 57)}...` : content);
+			}
+			return { label: "message", lines: [parts.join(" ")] };
+		}
+		case "memory": {
+			const action = String(a.action ?? "");
+			const topic = a.topic as string | undefined;
+			return { label: "memory", lines: topic ? [`${action}: ${topic}`] : [action] };
+		}
 		default:
 			return { label: toolName, lines: [] };
 	}
@@ -314,6 +345,29 @@ function getEditPatch(message: Message): string | undefined {
 	const patch = (details as Record<string, unknown>).patch;
 	return typeof patch === "string" && patch.length > 0 ? patch : undefined;
 }
+
+const WaitTimer = memo(function WaitTimer({ duration }: { duration: number }) {
+	const [elapsed, setElapsed] = useState(0);
+	const startRef = useRef(Date.now());
+
+	useEffect(() => {
+		const timer = setInterval(() => {
+			setElapsed(Math.floor((Date.now() - startRef.current) / 1000));
+		}, 1000);
+		return () => clearInterval(timer);
+	}, []);
+
+	const remaining = Math.max(0, duration - elapsed);
+	const progress = Math.min(1, elapsed / duration);
+	const filled = Math.round(progress * 10);
+	const bar = "█".repeat(filled) + "░".repeat(10 - filled);
+
+	return (
+		<text fg={colors.textMuted}>
+			{bar} {remaining}s
+		</text>
+	);
+});
 
 const ToolMessageView = memo(function ToolMessageView({ message }: { message: Message }) {
 	if (!message.toolName) return null;
@@ -380,6 +434,17 @@ const ToolMessageView = memo(function ToolMessageView({ message }: { message: Me
 					))}
 				</box>
 			)}
+			{message.toolName === "team" &&
+				message.toolStatus === "running" &&
+				(message.toolArgs as Record<string, unknown>)?.action === "wait" && (
+					<box paddingLeft={2} paddingTop={1}>
+						<WaitTimer
+							duration={Number(
+								(message.toolArgs as Record<string, unknown>)?.duration ?? 30,
+							)}
+						/>
+					</box>
+				)}
 			{editPatch && (
 				<box paddingTop={1} paddingBottom={1}>
 					<EditDiffView patch={editPatch} filePath={editFilePath} />

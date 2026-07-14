@@ -17,6 +17,9 @@ import {
 	validateName,
 } from "./memory-types.js";
 import type {
+	Goal,
+	GoalPriority,
+	GoalStatus,
 	MemberIndexStructure,
 	MemberName,
 	MemoryType,
@@ -257,6 +260,7 @@ export class TeamFiles {
 	private emptyTeamMd(): TeamMdStructure {
 		return {
 			mission: "",
+			goals: [],
 			members: [],
 			activeTasks: [],
 			importantNotes: "",
@@ -271,6 +275,7 @@ function parseTeamMd(raw: string): TeamMdStructure {
 	const sections = splitSections(raw);
 	return {
 		mission: sections.get("Mission") ?? "",
+		goals: parseGoals(sections.get("Goals") ?? ""),
 		members: parseMembersTable(sections.get("Members") ?? ""),
 		activeTasks: parseActiveTasks(sections.get("Active Tasks") ?? ""),
 		importantNotes: sections.get("Important Notes") ?? "",
@@ -279,7 +284,13 @@ function parseTeamMd(raw: string): TeamMdStructure {
 }
 
 function serializeTeamMd(data: TeamMdStructure): string {
-	const lines: string[] = ["# Team", "", "## Mission", data.mission, "", "## Members"];
+	const lines: string[] = ["# Team", "", "## Mission", data.mission];
+
+	lines.push("", "## Goals");
+	const goalsText = serializeGoals(data.goals);
+	if (goalsText) lines.push(goalsText);
+
+	lines.push("", "## Members");
 	if (data.members.length === 0) {
 		lines.push("| Name | Role | Status | Current Task | Session |");
 		lines.push("|------|------|--------|--------------|---------|");
@@ -359,6 +370,117 @@ function parseActiveTasks(raw: string): TaskState[] {
 				...(participants ? { participants } : {}),
 			};
 		});
+}
+
+export function parseGoals(raw: string): Goal[] {
+	const goals: Goal[] = [];
+	const stack: { goal: Goal; depth: number }[] = [];
+	let lastGoal: Goal | null = null;
+
+	for (const line of raw.split("\n")) {
+		if (!line.trim()) continue;
+
+		const goalMatch = line.match(/^(\s*)- \[(\w+)\] (\S+): (.+)$/);
+		if (goalMatch) {
+			const indent = goalMatch[1].length;
+			const depth = Math.floor(indent / 2);
+			const status = goalMatch[2] as GoalStatus;
+			const id = goalMatch[3];
+			const rest = goalMatch[4];
+
+			const priorityMatch = rest.match(/\[(high|medium|low)\]/);
+			const priority = (priorityMatch?.[1] ?? "medium") as GoalPriority;
+			const assigneeMatch = rest.match(/@(\S+)/);
+			const assignee = assigneeMatch ? assigneeMatch[1] : null;
+			const taskIdsMatch = rest.match(/→\s*(\S+)/);
+			const taskIds = taskIdsMatch ? taskIdsMatch[1].split(",").filter(Boolean) : [];
+
+			let title = rest;
+			if (priorityMatch) title = title.replace(priorityMatch[0], "").trim();
+			if (assigneeMatch) title = title.replace(assigneeMatch[0], "").trim();
+			if (taskIdsMatch) title = title.replace(taskIdsMatch[0], "").trim();
+
+			while (stack.length > depth) stack.pop();
+			const parentGoalId = stack.length > 0 ? stack[stack.length - 1].goal.id : null;
+
+			const now = new Date().toISOString();
+			const goal: Goal = {
+				id,
+				title,
+				description: "",
+				status,
+				priority,
+				parentGoalId,
+				taskIds,
+				assignee,
+				successCriteria: "",
+				blockers: "",
+				createdAt: now,
+				updatedAt: now,
+			};
+
+			goals.push(goal);
+			stack.push({ goal, depth });
+			lastGoal = goal;
+			continue;
+		}
+
+		const descMatch = line.match(/^\s+Description: (.+)$/);
+		if (descMatch && lastGoal) {
+			lastGoal.description = descMatch[1].trim();
+			continue;
+		}
+
+		const successMatch = line.match(/^\s+Success: (.+)$/);
+		if (successMatch && lastGoal) {
+			lastGoal.successCriteria = successMatch[1].trim();
+			continue;
+		}
+
+		const blockedMatch = line.match(/^\s+Blocked: (.+)$/);
+		if (blockedMatch && lastGoal) {
+			lastGoal.blockers = blockedMatch[1].trim();
+			continue;
+		}
+	}
+
+	return goals;
+}
+
+export function serializeGoals(goals: Goal[]): string {
+	if (goals.length === 0) return "";
+
+	const byParent = new Map<string | null, Goal[]>();
+	for (const g of goals) {
+		const parent = g.parentGoalId;
+		if (!byParent.has(parent)) byParent.set(parent, []);
+		byParent.get(parent)!.push(g);
+	}
+
+	const lines: string[] = [];
+	function serializeLevel(parentId: string | null, depth: number): void {
+		const children = byParent.get(parentId) ?? [];
+		for (const g of children) {
+			const indent = "  ".repeat(depth);
+			const priority = `[${g.priority}]`;
+			const assignee = g.assignee ? ` @${g.assignee}` : "";
+			const taskLinks = g.taskIds.length > 0 ? ` → ${g.taskIds.join(",")}` : "";
+			lines.push(`${indent}- [${g.status}] ${g.id}: ${g.title} ${priority}${assignee}${taskLinks}`.trimEnd());
+			if (g.description) {
+				lines.push(`${indent}  Description: ${g.description}`);
+			}
+			if (g.successCriteria) {
+				lines.push(`${indent}  Success: ${g.successCriteria}`);
+			}
+			if (g.blockers) {
+				lines.push(`${indent}  Blocked: ${g.blockers}`);
+			}
+			serializeLevel(g.id, depth + 1);
+		}
+	}
+
+	serializeLevel(null, 0);
+	return lines.join("\n");
 }
 
 function parseSharedIndex(raw: string): TeamMdStructure["sharedMemoryIndex"] {

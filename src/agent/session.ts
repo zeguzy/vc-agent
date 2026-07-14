@@ -300,7 +300,7 @@ export async function createSession(options: SessionOptions): Promise<SessionRes
 		settingsManager: svc.settingsManager,
 		resourceLoader: svc.resourceLoader,
 		tools: [
-			...STANDARD_ACTIVE_TOOLS,
+			...(options.teamRef ? TEAM_ACTIVE_TOOLS : STANDARD_ACTIVE_TOOLS),
 			...(mcpToolDefs.length ? ["mcp"] : []),
 			...(dcpTool ? ["compress"] : []),
 		],

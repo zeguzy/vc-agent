@@ -61,10 +61,31 @@ export interface TaskState {
 	participants?: MemberName[];
 }
 
+// ─── Goal System ────────────────────────────────────────────
+
+export type GoalStatus = "pending" | "in_progress" | "completed" | "blocked" | "cancelled";
+export type GoalPriority = "high" | "medium" | "low";
+
+export interface Goal {
+	id: string;
+	title: string;
+	description: string;
+	status: GoalStatus;
+	priority: GoalPriority;
+	parentGoalId: string | null;
+	taskIds: string[];
+	assignee: MemberName | null;
+	successCriteria: string;
+	blockers: string;
+	createdAt: string;
+	updatedAt: string;
+}
+
 // ─── Parsed TEAM.md Structure ───────────────────────────────
 
 export interface TeamMdStructure {
 	mission: string;
+	goals: Goal[];
 	members: Array<{
 		name: MemberName;
 		role: string;
@@ -183,6 +204,46 @@ export interface TeamManagerLike {
 	completeTask(taskId: string, opts?: { conclusion?: string }): void;
 	listTasks(): TaskState[];
 
+	// Goal management
+	createGoal(opts: {
+		title: string;
+		description: string;
+		priority?: GoalPriority;
+		parentGoalId?: string;
+		successCriteria?: string;
+		assignee?: MemberName;
+	}): Goal;
+	listGoals(filter?: {
+		status?: GoalStatus;
+		parentGoalId?: string | null;
+		assignee?: MemberName;
+	}): Goal[];
+	updateGoal(
+		goalId: string,
+		updates: {
+			title?: string;
+			description?: string;
+			status?: GoalStatus;
+			priority?: GoalPriority;
+			assignee?: MemberName | null;
+			successCriteria?: string;
+			blockers?: string;
+		},
+	): Goal;
+	decomposeGoal(
+		goalId: string,
+		subGoals: Array<{
+			title: string;
+			description: string;
+			successCriteria?: string;
+			priority?: GoalPriority;
+		}>,
+	): Goal[];
+	linkTaskToGoal(goalId: string, taskId: string): void;
+
+	// Member proactive behavior
+	requestTask(memberName: MemberName, capabilities?: string[]): TaskState | null;
+
 	// Memory operations
 	writeMemory(opts: {
 		memberName: MemberName;
@@ -218,6 +279,12 @@ export interface TeamManagerLike {
 
 	getMaxWorkers(): number;
 
+	// Background wait timer (non-blocking)
+	startWait(durationSec: number): void;
+	cancelWait(): void;
+	isWaiting(): boolean;
+	getWaitRemaining(): number | null;
+
 	// Member identity (for tool permission checks)
 	isSelfMember(name: MemberName): boolean;
 	getSelfMemberName(): MemberName | undefined;
@@ -234,6 +301,10 @@ export type TeamEvent =
 	| { type: "member_removed"; memberName: MemberName }
 	| { type: "task_assigned"; taskId: string; memberName: MemberName }
 	| { type: "task_completed"; taskId: string; memberName: MemberName; conclusion?: string }
+	| { type: "goal_created"; goalId: string; title: string }
+	| { type: "goal_updated"; goalId: string; status: GoalStatus }
+	| { type: "goal_decomposed"; goalId: string; subGoalIds: string[] }
+	| { type: "wait_completed" }
 	| {
 			type: "member_done";
 			memberName: MemberName;
@@ -257,6 +328,7 @@ export type TeamEvent =
 			from: MemberName;
 			to: MemberName | typeof BROADCAST_RECIPIENT;
 			messageId: string;
+			content: string;
 			delivery: DeliveryMode;
 	  }
 	| { type: "member_message_read"; by: MemberName; count: number };
