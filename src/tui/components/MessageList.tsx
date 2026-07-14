@@ -1,5 +1,5 @@
 import type { ScrollBoxRenderable } from "@opentui/core";
-import { memo, useEffect, useState } from "react";
+import { memo, useEffect, useRef, useState } from "react";
 import type { Message } from "../../message.js";
 import { syntaxStyle } from "../utils/syntax.js";
 import { colors, icons } from "../utils/theme.js";
@@ -346,6 +346,29 @@ function getEditPatch(message: Message): string | undefined {
 	return typeof patch === "string" && patch.length > 0 ? patch : undefined;
 }
 
+const WaitTimer = memo(function WaitTimer({ duration }: { duration: number }) {
+	const [elapsed, setElapsed] = useState(0);
+	const startRef = useRef(Date.now());
+
+	useEffect(() => {
+		const timer = setInterval(() => {
+			setElapsed(Math.floor((Date.now() - startRef.current) / 1000));
+		}, 1000);
+		return () => clearInterval(timer);
+	}, []);
+
+	const remaining = Math.max(0, duration - elapsed);
+	const progress = Math.min(1, elapsed / duration);
+	const filled = Math.round(progress * 10);
+	const bar = "█".repeat(filled) + "░".repeat(10 - filled);
+
+	return (
+		<text fg={colors.textMuted}>
+			{bar} {remaining}s
+		</text>
+	);
+});
+
 const ToolMessageView = memo(function ToolMessageView({ message }: { message: Message }) {
 	if (!message.toolName) return null;
 
@@ -411,6 +434,17 @@ const ToolMessageView = memo(function ToolMessageView({ message }: { message: Me
 					))}
 				</box>
 			)}
+			{message.toolName === "team" &&
+				message.toolStatus === "running" &&
+				(message.toolArgs as Record<string, unknown>)?.action === "wait" && (
+					<box paddingLeft={2} paddingTop={1}>
+						<WaitTimer
+							duration={Number(
+								(message.toolArgs as Record<string, unknown>)?.duration ?? 30,
+							)}
+						/>
+					</box>
+				)}
 			{editPatch && (
 				<box paddingTop={1} paddingBottom={1}>
 					<EditDiffView patch={editPatch} filePath={editFilePath} />
