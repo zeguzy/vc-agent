@@ -221,6 +221,21 @@ export class AgentServer {
 						void this.session.prompt(body);
 					}
 				}
+
+				if (event.type === "member_message_sent" && event.from !== "leader") {
+					const fromTag = event.from === "leader" ? "Leader" : `@${event.from}`;
+					const toTag =
+						event.to === "broadcast" ? "all" : `@${event.to}`;
+					const snippet =
+						event.content.length > 200
+							? `${event.content.slice(0, 200)}...`
+							: event.content;
+					const body = `[Team Message ${fromTag} → ${toTag}] ${snippet}`;
+					if (this.session.isStreaming) {
+						const note = `[SYSTEM NOTIFICATION — DO NOT ACT unless there's a problem]\n${body}\n[END NOTIFICATION — continue waiting for user or next event]`;
+						this.session.steer(note);
+					}
+				}
 			});
 		}
 	}

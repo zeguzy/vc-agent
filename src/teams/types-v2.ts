@@ -321,6 +321,7 @@ export type TeamEvent =
 			from: MemberName;
 			to: MemberName | typeof BROADCAST_RECIPIENT;
 			messageId: string;
+			content: string;
 			delivery: DeliveryMode;
 	  }
 	| { type: "member_message_read"; by: MemberName; count: number };

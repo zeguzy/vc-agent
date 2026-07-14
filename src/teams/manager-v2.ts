@@ -1218,6 +1218,7 @@ export class TeamManager implements TeamManagerLike {
 			from,
 			to,
 			messageId: message.id,
+			content,
 			delivery,
 		});
 		logTeamEvent("member_message_sent", {
@@ -1239,7 +1240,6 @@ export class TeamManager implements TeamManagerLike {
 		if (!content.trim()) throw new Error("content is required");
 		this.assertBroadcastRateLimit(from);
 
-		// Snapshot to survive concurrent removeMember
 		const recipients = this.listMembers().filter((m) => m.name !== from);
 
 		const results: Array<{ message: MemberMessage; delivery: DeliveryMode }> = [];
@@ -1255,13 +1255,6 @@ export class TeamManager implements TeamManagerLike {
 				};
 				const delivery = this.deliver(recipient, message);
 				results.push({ message, delivery });
-				this.emit({
-					type: "member_message_sent",
-					from,
-					to: BROADCAST_RECIPIENT,
-					messageId: message.id,
-					delivery,
-				});
 				logTeamEvent("member_message_sent", {
 					from,
 					to: BROADCAST_RECIPIENT,
@@ -1278,6 +1271,18 @@ export class TeamManager implements TeamManagerLike {
 				});
 			}
 		}
+
+		if (results.length > 0) {
+			this.emit({
+				type: "member_message_sent",
+				from,
+				to: BROADCAST_RECIPIENT,
+				messageId: results[0].message.id,
+				content,
+				delivery: results[0].delivery,
+			});
+		}
+
 		return results;
 	}
 
