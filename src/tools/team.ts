@@ -355,7 +355,7 @@ export function createTeamTool(opts: TeamToolOptions): ToolDefinition {
 				case "remove":
 					return await handleRemove(manager, args);
 				case "wait":
-					return await handleWait(args, signal);
+					return await handleWait(args, signal, manager);
 				case "goal-create":
 					return handleGoalCreate(manager, args);
 				case "goal-list":
@@ -841,7 +841,11 @@ async function handleRemove(manager: TeamManagerLike, args: Record<string, unkno
 	return ok(`Member "${name}" removed and archived.`);
 }
 
-async function handleWait(args: { duration?: number }, signal: AbortSignal | undefined) {
+async function handleWait(
+	args: { duration?: number },
+	signal: AbortSignal | undefined,
+	manager: TeamManagerLike,
+) {
 	const seconds = Math.max(5, Math.min(300, args.duration ?? 30));
 	await new Promise<void>((resolve, reject) => {
 		const timer = setTimeout(() => resolve(), seconds * 1000);
@@ -856,7 +860,7 @@ async function handleWait(args: { duration?: number }, signal: AbortSignal | und
 			);
 		}
 	});
-	return ok(`Waited ${seconds}s. Checking team status now.`);
+	return handleRead(manager);
 }
 
 function handleGoalCreate(manager: TeamManagerLike, args: Record<string, unknown>) {

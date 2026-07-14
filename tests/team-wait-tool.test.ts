@@ -18,21 +18,34 @@ function createMockManager(): TeamManagerLike {
 		removeMember: stub,
 		getMember: () => undefined,
 		assignTask: stub,
+		startDiscussion: stub,
 		completeTask: stub,
 		listTasks: () => [],
+		createGoal: stub,
+		listGoals: () => [],
+		updateGoal: stub,
+		decomposeGoal: stub,
+		linkTaskToGoal: stub,
+		requestTask: () => null,
 		writeMemory: stub,
 		readMemberIndex: () => null,
 		readTopicFile: () => null,
 		readTeamMd: () => ({
 			mission: "",
+			goals: [],
 			members: [],
 			activeTasks: [],
 			importantNotes: "",
 			sharedMemoryIndex: [],
 		}),
+		readInbox: () => [],
 		pauseMember: stub,
 		resumeMember: stub,
 		cancelMember: stub,
+		directMember: stub,
+		sendMessage: stub,
+		broadcastMessage: () => [],
+		markInboxRead: () => 0,
 		isSelfMember: () => false,
 		getSelfMemberName: () => undefined,
 		dispose: async () => {},
@@ -65,7 +78,7 @@ describe("team tool — wait action", () => {
 		expect(elapsed).toBeGreaterThanOrEqual(4500);
 		expect(elapsed).toBeLessThan(7000);
 		expect(res.isError).toBe(false);
-		expect(res.text).toContain("Waited 5s");
+		expect(res.text).toContain("Team is empty");
 	}, 10000);
 
 	it("aborts immediately on signal abort (clearTimeout prevents leak)", async () => {
@@ -95,7 +108,7 @@ describe("team tool — wait action", () => {
 
 		expect(elapsed).toBeGreaterThanOrEqual(4500);
 		expect(elapsed).toBeLessThan(7000);
-		expect(res.text).toContain("Waited 5s");
+		expect(res.text).toContain("Team is empty");
 	}, 10000);
 
 	// Note: max clamp (999→300s) and default (undefined→30s) are not exercised
