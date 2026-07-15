@@ -721,8 +721,7 @@ export class TeamManager implements TeamManagerLike {
 		if (!filter) return goals;
 		return goals.filter((g) => {
 			if (filter.status && g.status !== filter.status) return false;
-			if (filter.parentGoalId !== undefined && g.parentGoalId !== filter.parentGoalId)
-				return false;
+			if (filter.parentGoalId !== undefined && g.parentGoalId !== filter.parentGoalId) return false;
 			if (filter.assignee && g.assignee !== filter.assignee) return false;
 			return true;
 		});
@@ -905,10 +904,7 @@ export class TeamManager implements TeamManagerLike {
 		return task;
 	}
 
-	private checkParentGoalCompletion(
-		parentGoalId: string | null,
-		teamMd: TeamMdStructure,
-	): void {
+	private checkParentGoalCompletion(parentGoalId: string | null, teamMd: TeamMdStructure): void {
 		if (!parentGoalId) return;
 		const parent = teamMd.goals.find((g) => g.id === parentGoalId);
 		if (!parent) return;
@@ -916,9 +912,7 @@ export class TeamManager implements TeamManagerLike {
 		const children = teamMd.goals.filter((g) => g.parentGoalId === parentGoalId);
 		if (children.length === 0) return;
 
-		const allDone = children.every(
-			(c) => c.status === "completed" || c.status === "cancelled",
-		);
+		const allDone = children.every((c) => c.status === "completed" || c.status === "cancelled");
 		if (allDone && parent.status !== "completed") {
 			parent.status = "completed";
 			parent.updatedAt = new Date().toISOString();
@@ -1153,40 +1147,40 @@ export class TeamManager implements TeamManagerLike {
 	}
 
 	directMember(
-			name: MemberName,
-			kind: "directive" | "context" | "redirect",
-			payload: string,
-		): void {
-			const state = this.members.get(name);
-			if (!state) throw new Error(`member "${name}" not found`);
-			if (state.status !== "active" && state.status !== "idle")
-				throw new Error(`member "${name}" is ${state.status}, cannot receive directives`);
+		name: MemberName,
+		kind: "directive" | "context" | "redirect",
+		payload: string,
+	): void {
+		const state = this.members.get(name);
+		if (!state) throw new Error(`member "${name}" not found`);
+		if (state.status !== "active" && state.status !== "idle")
+			throw new Error(`member "${name}" is ${state.status}, cannot receive directives`);
 
-			const prefix =
-				kind === "directive"
-					? "[⚡ LEADER DIRECTIVE]"
-					: kind === "context"
-						? "[⚡ LEADER CONTEXT]"
-						: "[⚡ LEADER REDIRECT]";
-			const message = `${prefix} ${payload}`;
+		const prefix =
+			kind === "directive"
+				? "[⚡ LEADER DIRECTIVE]"
+				: kind === "context"
+					? "[⚡ LEADER CONTEXT]"
+					: "[⚡ LEADER REDIRECT]";
+		const message = `${prefix} ${payload}`;
 
-			if (state.status === "idle") {
-				state.status = "active";
-				const teamMd = this.files.readTeamMd();
-				const memberRow = teamMd.members.find((m) => m.name === name);
-				if (memberRow) memberRow.status = "active";
-				this.files.writeTeamMd(teamMd);
-				this.emit({ type: "member_resumed", memberName: name });
-			}
-
-			if (state.session.isStreaming) {
-				state.session.steer(message);
-			} else {
-				void state.session.prompt(message);
-			}
-
-			logTeamEvent("member_direct", { memberName: name, kind, payload: payload.slice(0, 80) });
+		if (state.status === "idle") {
+			state.status = "active";
+			const teamMd = this.files.readTeamMd();
+			const memberRow = teamMd.members.find((m) => m.name === name);
+			if (memberRow) memberRow.status = "active";
+			this.files.writeTeamMd(teamMd);
+			this.emit({ type: "member_resumed", memberName: name });
 		}
+
+		if (state.session.isStreaming) {
+			state.session.steer(message);
+		} else {
+			void state.session.prompt(message);
+		}
+
+		logTeamEvent("member_direct", { memberName: name, kind, payload: payload.slice(0, 80) });
+	}
 
 	// ─── Member-to-Member Messaging ────────────────────────
 
@@ -1338,9 +1332,15 @@ export class TeamManager implements TeamManagerLike {
 
 		// cancelled/done members cannot receive at all; idle/paused/error get persist-only.
 		if (recipient.status === "cancelled" || recipient.status === "done") {
-			throw new Error(`recipient "${recipient.name}" is ${recipient.status} and cannot receive messages`);
+			throw new Error(
+				`recipient "${recipient.name}" is ${recipient.status} and cannot receive messages`,
+			);
 		}
-		if (recipient.status === "idle" || recipient.status === "paused" || recipient.status === "error") {
+		if (
+			recipient.status === "idle" ||
+			recipient.status === "paused" ||
+			recipient.status === "error"
+		) {
 			logTeamEvent("member_message_delivered", {
 				to: recipient.name,
 				messageId: message.id,

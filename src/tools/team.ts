@@ -263,7 +263,7 @@ export function createTeamTool(opts: TeamToolOptions): ToolDefinition {
 			'  Example: team(action="goal-list", goalStatus="in_progress") — only in-progress\n' +
 			"- goal-update: Update a goal's status, priority, assignee, or other fields.\n" +
 			'  Example: team(action="goal-update", goalId="G1", goalStatus="completed")\n' +
-			"  Example: team(action=\"goal-update\", goalId=\"G2\", goalStatus=\"blocked\", blockers=\"Waiting for API spec\")\n" +
+			'  Example: team(action="goal-update", goalId="G2", goalStatus="blocked", blockers="Waiting for API spec")\n' +
 			"- goal-decompose: Break a goal into sub-goals. Automatically sets parent to in_progress.\n" +
 			'  Example: team(action="goal-decompose", goalId="G1", subGoals=[{title="Design API",description="REST endpoints"},{title="Implement",description="Backend logic"}])\n' +
 			"- request-task: (For members) Request a task from the Leader's goal backlog. Returns a task or 'no tasks available'.\n" +
@@ -311,64 +311,64 @@ export function createTeamTool(opts: TeamToolOptions): ToolDefinition {
 					kind: "directive" | "context" | "redirect";
 					payload: string;
 				}>;
-			section?: string;
-			content?: string;
-			tools?: string[];
-			skills?: string[];
-			mcps?: string[];
-			duration?: number;
-			goalId?: string;
-			parentGoalId?: string;
-			successCriteria?: string;
-			blockers?: string;
-			goalStatus?: "pending" | "in_progress" | "completed" | "blocked" | "cancelled";
-			subGoals?: Array<{
-				title: string;
-				description: string;
+				section?: string;
+				content?: string;
+				tools?: string[];
+				skills?: string[];
+				mcps?: string[];
+				duration?: number;
+				goalId?: string;
+				parentGoalId?: string;
 				successCriteria?: string;
-				priority?: "high" | "medium" | "low";
-			}>;
-			capabilities?: string[];
-		};
-		try {
-			switch (args.action) {
-				case "read":
-					return handleRead(manager);
-				case "create":
-					return await handleCreate(manager, args);
-				case "create-batch":
-					return await handleCreateBatch(manager, args);
-				case "assign":
-					return handleAssign(manager, args);
-				case "assign-batch":
-					return handleAssignBatch(manager, args);
-				case "start-discussion":
-					return handleStartDiscussion(manager, args);
-				case "direct":
-					return handleDirect(manager, args);
-				case "direct-batch":
-					return handleDirectBatch(manager, args);
-				case "edit-member":
-					return handleEditMember(manager, args);
-				case "complete":
-					return handleComplete(manager, args);
-				case "remove":
-					return await handleRemove(manager, args);
-				case "wait":
-					return handleWait(args, manager);
-				case "goal-create":
-					return handleGoalCreate(manager, args);
-				case "goal-list":
-					return handleGoalList(manager, args);
-				case "goal-update":
-					return handleGoalUpdate(manager, args);
-				case "goal-decompose":
-					return handleGoalDecompose(manager, args);
-				case "request-task":
-					return handleRequestTask(manager, args);
-				default:
-					return err(`Unknown action: ${args.action}`);
-			}
+				blockers?: string;
+				goalStatus?: "pending" | "in_progress" | "completed" | "blocked" | "cancelled";
+				subGoals?: Array<{
+					title: string;
+					description: string;
+					successCriteria?: string;
+					priority?: "high" | "medium" | "low";
+				}>;
+				capabilities?: string[];
+			};
+			try {
+				switch (args.action) {
+					case "read":
+						return handleRead(manager);
+					case "create":
+						return await handleCreate(manager, args);
+					case "create-batch":
+						return await handleCreateBatch(manager, args);
+					case "assign":
+						return handleAssign(manager, args);
+					case "assign-batch":
+						return handleAssignBatch(manager, args);
+					case "start-discussion":
+						return handleStartDiscussion(manager, args);
+					case "direct":
+						return handleDirect(manager, args);
+					case "direct-batch":
+						return handleDirectBatch(manager, args);
+					case "edit-member":
+						return handleEditMember(manager, args);
+					case "complete":
+						return handleComplete(manager, args);
+					case "remove":
+						return await handleRemove(manager, args);
+					case "wait":
+						return handleWait(args, manager);
+					case "goal-create":
+						return handleGoalCreate(manager, args);
+					case "goal-list":
+						return handleGoalList(manager, args);
+					case "goal-update":
+						return handleGoalUpdate(manager, args);
+					case "goal-decompose":
+						return handleGoalDecompose(manager, args);
+					case "request-task":
+						return handleRequestTask(manager, args);
+					default:
+						return err(`Unknown action: ${args.action}`);
+				}
 			} catch (e) {
 				return err(e instanceof Error ? e.message : String(e));
 			}
@@ -376,118 +376,114 @@ export function createTeamTool(opts: TeamToolOptions): ToolDefinition {
 	};
 }
 
-	function handleRead(manager: TeamManagerLike) {
-		const teamMd = manager.readTeamMd();
-		const lines: string[] = [];
-		if (teamMd.mission?.trim()) lines.push(`Mission: ${teamMd.mission.trim()}`);
+function handleRead(manager: TeamManagerLike) {
+	const teamMd = manager.readTeamMd();
+	const lines: string[] = [];
+	if (teamMd.mission?.trim()) lines.push(`Mission: ${teamMd.mission.trim()}`);
 
-		if (manager.isWaiting()) {
-			const remaining = manager.getWaitRemaining();
-			lines.push(`⏳ Waiting: ${remaining}s remaining`);
+	if (manager.isWaiting()) {
+		const remaining = manager.getWaitRemaining();
+		lines.push(`⏳ Waiting: ${remaining}s remaining`);
+	}
+
+	if (teamMd.goals.length > 0) {
+		lines.push("Goals:");
+		const byParent = new Map<string | null, typeof teamMd.goals>();
+		for (const g of teamMd.goals) {
+			const k = g.parentGoalId;
+			if (!byParent.has(k)) byParent.set(k, []);
+			byParent.get(k)!.push(g);
 		}
-
-		if (teamMd.goals.length > 0) {
-			lines.push("Goals:");
-			const byParent = new Map<string | null, typeof teamMd.goals>();
-			for (const g of teamMd.goals) {
-				const k = g.parentGoalId;
-				if (!byParent.has(k)) byParent.set(k, []);
-				byParent.get(k)!.push(g);
-			}
-			function renderGoals(parentId: string | null, depth: number): void {
-				const children = byParent.get(parentId) ?? [];
-				for (const g of children) {
-					const indent = "  ".repeat(depth + 1);
-					const statusIcon =
-						g.status === "completed"
-							? "✓"
-							: g.status === "in_progress"
-								? "→"
-								: g.status === "blocked"
-									? "⊘"
-									: g.status === "cancelled"
-										? "✗"
-										: "○";
-					const assignee = g.assignee ? ` @${g.assignee}` : "";
-					const tasks =
-						g.taskIds.length > 0 ? ` → ${g.taskIds.join(",")}` : "";
-					lines.push(
-						`${indent}${statusIcon} ${g.id} [${g.priority}] ${g.title}${assignee}${tasks}`,
-					);
-					renderGoals(g.id, depth + 1);
-				}
-			}
-			renderGoals(null, 0);
-		}
-
-		if (teamMd.members.length > 0) {
-			lines.push("Members:");
-			for (const m of teamMd.members) {
-				const parts = [`${m.name} (${m.role})`, m.status];
-				if (m.currentTask) parts.push(m.currentTask);
-				lines.push(`  ${parts.join(" · ")}`);
+		function renderGoals(parentId: string | null, depth: number): void {
+			const children = byParent.get(parentId) ?? [];
+			for (const g of children) {
+				const indent = "  ".repeat(depth + 1);
+				const statusIcon =
+					g.status === "completed"
+						? "✓"
+						: g.status === "in_progress"
+							? "→"
+							: g.status === "blocked"
+								? "⊘"
+								: g.status === "cancelled"
+									? "✗"
+									: "○";
+				const assignee = g.assignee ? ` @${g.assignee}` : "";
+				const tasks = g.taskIds.length > 0 ? ` → ${g.taskIds.join(",")}` : "";
+				lines.push(`${indent}${statusIcon} ${g.id} [${g.priority}] ${g.title}${assignee}${tasks}`);
+				renderGoals(g.id, depth + 1);
 			}
 		}
-		if (teamMd.activeTasks.length > 0) {
-			lines.push("Active Tasks:");
-			for (const t of teamMd.activeTasks) {
-				const check = t.done ? "✓" : "○";
-				const assignee = t.memberName ? `@${t.memberName}` : "unassigned";
-				lines.push(`  ${check} ${t.id}: ${t.title} → ${assignee}`);
-			}
-		}
+		renderGoals(null, 0);
+	}
 
-		const recentMsgs: Array<{
-			from: string;
-			to: string;
-			content: string;
-			timestamp: number;
-		}> = [];
+	if (teamMd.members.length > 0) {
+		lines.push("Members:");
 		for (const m of teamMd.members) {
-			try {
-				for (const msg of manager.readInbox(m.name, { limit: 5 })) {
-					recentMsgs.push(msg);
-				}
-			} catch {}
+			const parts = [`${m.name} (${m.role})`, m.status];
+			if (m.currentTask) parts.push(m.currentTask);
+			lines.push(`  ${parts.join(" · ")}`);
 		}
+	}
+	if (teamMd.activeTasks.length > 0) {
+		lines.push("Active Tasks:");
+		for (const t of teamMd.activeTasks) {
+			const check = t.done ? "✓" : "○";
+			const assignee = t.memberName ? `@${t.memberName}` : "unassigned";
+			lines.push(`  ${check} ${t.id}: ${t.title} → ${assignee}`);
+		}
+	}
+
+	const recentMsgs: Array<{
+		from: string;
+		to: string;
+		content: string;
+		timestamp: number;
+	}> = [];
+	for (const m of teamMd.members) {
 		try {
-			for (const msg of manager.readInbox("leader", { limit: 5 })) {
+			for (const msg of manager.readInbox(m.name, { limit: 5 })) {
 				recentMsgs.push(msg);
 			}
 		} catch {}
-		const seenIds = new Set<string>();
-		const uniqueMsgs = recentMsgs
-			.filter((m) => {
-				const k = `${m.from}-${m.to}-${m.timestamp}`;
-				if (seenIds.has(k)) return false;
-				seenIds.add(k);
-				return true;
-			})
-			.sort((a, b) => a.timestamp - b.timestamp)
-			.slice(-10);
-		if (uniqueMsgs.length > 0) {
-			lines.push("Recent Messages:");
-			for (const msg of uniqueMsgs) {
-				const fromTag = msg.from === "leader" ? "Leader" : `@${msg.from}`;
-				const toTag = msg.to === "broadcast" ? "all" : `@${msg.to}`;
-				const snippet =
-					msg.content.length > 100 ? `${msg.content.slice(0, 100)}...` : msg.content;
-				const time = new Date(msg.timestamp).toISOString().slice(11, 19);
-				lines.push(`  [${time}] ${fromTag} → ${toTag}: ${snippet}`);
-			}
-		}
-
-		if (teamMd.importantNotes?.trim()) {
-			lines.push(`Important: ${teamMd.importantNotes.trim()}`);
-		}
-		if (teamMd.sharedMemoryIndex.length > 0) {
-			lines.push("Shared Memory:");
-			for (const s of teamMd.sharedMemoryIndex) {
-				lines.push(`  ${s.path} — ${s.description}`);
-			}
-		}
-		return ok(lines.join("\n") || "Team is empty — no members or tasks yet.");
 	}
+	try {
+		for (const msg of manager.readInbox("leader", { limit: 5 })) {
+			recentMsgs.push(msg);
+		}
+	} catch {}
+	const seenIds = new Set<string>();
+	const uniqueMsgs = recentMsgs
+		.filter((m) => {
+			const k = `${m.from}-${m.to}-${m.timestamp}`;
+			if (seenIds.has(k)) return false;
+			seenIds.add(k);
+			return true;
+		})
+		.sort((a, b) => a.timestamp - b.timestamp)
+		.slice(-10);
+	if (uniqueMsgs.length > 0) {
+		lines.push("Recent Messages:");
+		for (const msg of uniqueMsgs) {
+			const fromTag = msg.from === "leader" ? "Leader" : `@${msg.from}`;
+			const toTag = msg.to === "broadcast" ? "all" : `@${msg.to}`;
+			const snippet = msg.content.length > 100 ? `${msg.content.slice(0, 100)}...` : msg.content;
+			const time = new Date(msg.timestamp).toISOString().slice(11, 19);
+			lines.push(`  [${time}] ${fromTag} → ${toTag}: ${snippet}`);
+		}
+	}
+
+	if (teamMd.importantNotes?.trim()) {
+		lines.push(`Important: ${teamMd.importantNotes.trim()}`);
+	}
+	if (teamMd.sharedMemoryIndex.length > 0) {
+		lines.push("Shared Memory:");
+		for (const s of teamMd.sharedMemoryIndex) {
+			lines.push(`  ${s.path} — ${s.description}`);
+		}
+	}
+	return ok(lines.join("\n") || "Team is empty — no members or tasks yet.");
+}
 
 async function handleCreate(manager: TeamManagerLike, args: Record<string, unknown>) {
 	const name = args.name as string | undefined;

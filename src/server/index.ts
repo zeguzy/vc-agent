@@ -1,3 +1,5 @@
+import { existsSync, readdirSync, readFileSync } from "node:fs";
+import { join } from "node:path";
 import type { AgentSession, AgentSessionEvent, AgentSessionRuntime } from "../agent/session.js";
 import { activeToolsFor } from "../agent/session.js";
 import type {
@@ -12,6 +14,7 @@ import type {
 	NewSessionResult,
 	SkillDirectories,
 	SkillListResult,
+	TeamSummary,
 	Unsubscribe,
 	UserMessageSummary,
 } from "../client/types.js";
@@ -25,16 +28,19 @@ import { NotificationRouter, setGlobalRouter } from "../notifications/notifier.j
 import { listSessions } from "../session/list.js";
 import { mapSdkMessagesToTui } from "../session/render.js";
 import type { SkillManager } from "../skills/manager.js";
+import { parseTeamMd } from "../teams/files.js";
 import { TeamManager } from "../teams/manager-v2.js";
 import type {
+	GoalStatus,
 	MemberName,
 	MemberState,
 	TaskState,
 	TaskType,
 	TeamEvent,
 	TeamManagerRef,
+	TeamMdStructure,
 } from "../teams/types-v2.js";
-import { parseSessionIdFromUri, teamDirForSession } from "../utils/paths.js";
+import { parseSessionIdFromUri, teamDir, teamDirForSession } from "../utils/paths.js";
 
 export interface AgentServerOptions {
 	runtime: AgentSessionRuntime;
@@ -550,6 +556,47 @@ export class AgentServer {
 
 	handleMarkInboxRead(name: MemberName, ids?: string[]): number {
 		return this.teamManager.markInboxRead(name, ids);
+	}
+
+	handleListGoals(filter?: { status?: GoalStatus }): import("../teams/types-v2.js").Goal[] {
+		return this.teamManager.listGoals(filter);
+	}
+
+	handleReadTeamMd(): TeamMdStructure {
+		return this.teamManager.readTeamMd();
+	}
+
+	handleListTeamSummaries(): TeamSummary[] {
+		const teamRoot = teamDir();
+		if (!existsSync(teamRoot)) return [];
+		const entries = readdirSync(teamRoot, { withFileTypes: true });
+		const summaries: TeamSummary[] = [];
+		for (const entry of entries) {
+			if (!entry.isDirectory()) continue;
+			const sessionId = entry.name;
+			const teamMdPath = join(teamRoot, sessionId, "TEAM.md");
+			if (!existsSync(teamMdPath)) continue;
+			try {
+				const raw = readFileSync(teamMdPath, "utf-8");
+				const parsed = parseTeamMd(raw);
+				const memberCount = parsed.members.length;
+				const activeCount = parsed.members.filter((m) => m.status === "active").length;
+				if (memberCount === 0 && parsed.goals.length === 0 && parsed.activeTasks.length === 0)
+					continue;
+				summaries.push({
+					sessionId,
+					sessionName: null,
+					mission: parsed.mission,
+					memberCount,
+					activeCount,
+					goalCount: parsed.goals.length,
+					taskCount: parsed.activeTasks.length,
+				});
+			} catch {
+				// Skip unreadable TEAM.md
+			}
+		}
+		return summaries;
 	}
 }
 

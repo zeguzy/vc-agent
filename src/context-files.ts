@@ -189,7 +189,7 @@ export const TEAM_ORCHESTRATOR_PROMPT = [
 	"",
 	"- **When a member completes a task**, you'll get a notification with their summary. Decide: assign the next task, inform the user, or mark the goal complete.",
 	'- **When a member sends results to your inbox**, route them: does another member need this information? Use message(action="send") or team(action="direct") to pass context to the right person.',
-	"- **When you notice a pattern worth discussing** — two members have conflicting approaches, or a design decision needs multiple perspectives — trigger a discussion with team(action=\"start-discussion\", ...).",
+	'- **When you notice a pattern worth discussing** — two members have conflicting approaches, or a design decision needs multiple perspectives — trigger a discussion with team(action="start-discussion", ...).',
 	"- **When a member goes idle and requests a task**, check your goal backlog. If there's pending work that matches their skills, assign it or let request-task auto-assign.",
 	"",
 	"### Triggering Discussions",

@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { AgentSessionEvent } from "../agent/session.js";
 import { buildAgentModeCycle, getBaseMode } from "../agent/session.js";
 import type { AgentClient, AgentMode } from "../client/index.js";
+import type { TeamSummary } from "../client/types.js";
 import { commandRegistry } from "../commands/registry.js";
 import type { Config } from "../config.js";
 import { readConfig } from "../config.js";
@@ -14,7 +15,7 @@ import { getGlobalRouter } from "../notifications/notifier.js";
 import { PollManager } from "../poll/manager.js";
 import { mapSdkMessagesToTui } from "../session/render.js";
 import type { SettingContext } from "../settings/types.js";
-import type { MemberState } from "../teams/types-v2.js";
+import type { Goal, MemberState, TeamMdStructure } from "../teams/types-v2.js";
 import type { QuestionBridge, QuestionData } from "../tools/question-bridge.js";
 import { formatError } from "../utils/formatError.js";
 import { registerBuiltinCommands } from "./commands.js";
@@ -24,6 +25,7 @@ import { QuestionBox } from "./components/QuestionBox.js";
 import { SessionPicker } from "./components/SessionPicker.js";
 import { SettingsPanel } from "./components/SettingsPanel.js";
 import { StatusBar } from "./components/StatusBar.js";
+import { TeamDashboard } from "./components/TeamDashboard.js";
 import { Toast } from "./components/Toast.js";
 import { WelcomeBanner } from "./components/WelcomeBanner.js";
 import { WorkersView } from "./components/WorkersView.js";
@@ -92,6 +94,18 @@ export function App({
 	const [members, setMembers] = useState<MemberState[]>(() => client.listMembers());
 	const membersRef = useRef<MemberState[]>(members);
 	membersRef.current = members;
+	const [goals, setGoals] = useState<Goal[]>(() => client.listGoals());
+	const [teamMd, setTeamMd] = useState<TeamMdStructure>(() => client.readTeamMd());
+	const [teamSummaries, setTeamSummaries] = useState<TeamSummary[]>(() =>
+		client.listTeamSummaries(),
+	);
+	const [showDashboard, setShowDashboard] = useState(false);
+	const showDashboardRef = useRef(false);
+	showDashboardRef.current = showDashboard;
+	const [dashboardSection, setDashboardSection] = useState<"goals" | "members" | "tasks" | "teams">(
+		"members",
+	);
+	const [dashboardCursor, setDashboardCursor] = useState(0);
 	const scrollRef = useRef<ScrollBoxRenderable>(null);
 	const vimOverlayRef = useRef<VimOverlay | null>(null);
 	const pollManagerRef = useRef(new PollManager());
@@ -212,9 +226,23 @@ export function App({
 	useEffect(() => {
 		const unsub = client.subscribeTeam(() => {
 			setMembers(client.listMembers());
+			setGoals(client.listGoals());
+			setTeamMd(client.readTeamMd());
 		});
 		return unsub;
 	}, [client]);
+
+	// Auto-show dashboard on splash when team exists
+	useEffect(() => {
+		const welcome =
+			messagesRef.current.length === 1 && messagesRef.current[0].id === WELCOME_MESSAGE.id;
+		if (welcome && members.length > 0 && !showDashboardRef.current) {
+			setShowDashboard(true);
+		}
+		if (!welcome && showDashboardRef.current) {
+			setShowDashboard(false);
+		}
+	}, [members.length]);
 
 	// Derive display messages based on active member
 	const displayMessages = useMemo(() => {
@@ -350,6 +378,9 @@ export function App({
 			setContextUsage({ tokens: null, window: null, percent: null });
 			setMembers(client.listMembers());
 			setActiveMemberName(null);
+			setGoals(client.listGoals());
+			setTeamMd(client.readTeamMd());
+			setTeamSummaries(client.listTeamSummaries());
 			const cu = client.getContextUsage();
 			if (cu) {
 				setContextUsage({
@@ -403,19 +434,16 @@ export function App({
 		client.executeCommand("sessions", "", buildCommandCtx()).catch(() => {});
 	}, [initialResumeList, buildCommandCtx, client]);
 
-	const handleMemberNav = useCallback(
-		(direction: "prev" | "next") => {
-			if (agentModeRef.current !== "team") return;
-			const list = [null, ...membersRef.current.map((m) => m.name)];
-			const currentIdx = list.indexOf(activeMemberNameRef.current);
-			const nextIdx =
-				direction === "next"
-					? (currentIdx + 1) % list.length
-					: (currentIdx - 1 + list.length) % list.length;
-			setActiveMemberName(list[nextIdx]);
-		},
-		[],
-	);
+	const handleMemberNav = useCallback((direction: "prev" | "next") => {
+		if (agentModeRef.current !== "team") return;
+		const list = [null, ...membersRef.current.map((m) => m.name)];
+		const currentIdx = list.indexOf(activeMemberNameRef.current);
+		const nextIdx =
+			direction === "next"
+				? (currentIdx + 1) % list.length
+				: (currentIdx - 1 + list.length) % list.length;
+		setActiveMemberName(list[nextIdx]);
+	}, []);
 
 	const handlePrompt = useCallback(
 		(text: string) => {
@@ -454,24 +482,21 @@ export function App({
 				});
 				return;
 			}
-		if (isRunningRef.current) {
-			const msg = createUserMessage(text);
-			msg.queued = true;
-			setMessages((prev) => [...prev, msg]);
-			setCommandHistory((prev) => [...prev, text]);
-			saveHistory(text);
-			const sendMsg = () => {
-				client.prompt(text).catch((err) => {
-					setMessages((prev) => [
-						...prev,
-						createAssistantMessage(`Error: ${formatError(err)}`),
-					]);
-					setIsRunning(false);
-				});
-			};
-			client.abort().then(sendMsg, sendMsg);
-			return;
-		}
+			if (isRunningRef.current) {
+				const msg = createUserMessage(text);
+				msg.queued = true;
+				setMessages((prev) => [...prev, msg]);
+				setCommandHistory((prev) => [...prev, text]);
+				saveHistory(text);
+				const sendMsg = () => {
+					client.prompt(text).catch((err) => {
+						setMessages((prev) => [...prev, createAssistantMessage(`Error: ${formatError(err)}`)]);
+						setIsRunning(false);
+					});
+				};
+				client.abort().then(sendMsg, sendMsg);
+				return;
+			}
 			setMessages((prev) => [...prev, createUserMessage(text)]);
 			setCommandHistory((prev) => [...prev, text]);
 			saveHistory(text);
@@ -520,6 +545,87 @@ export function App({
 			}
 			return;
 		}
+		if (showDashboardRef.current) {
+			if (action === "toggleDashboard") {
+				setShowDashboard(false);
+				return;
+			}
+			if (action === "ctrlC") {
+				const now = Date.now();
+				if (now - lastCtrlCRef.current < 1000) process.exit(0);
+				lastCtrlCRef.current = now;
+				if (isRunningRef.current) client.abort().catch(() => {});
+				else process.exit(0);
+				return;
+			}
+			if (action === "toNormal") return;
+			if (key.name === "j" || key.name === "k") {
+				const currentMembers = membersRef.current;
+				const currentGoals = goals;
+				const currentTasks = client.listTasks();
+				const otherTeamsCount = isWelcome
+					? teamSummaries.filter((s) => s.sessionId !== client.getSessionId()).length
+					: 0;
+				const sectionSizes: Record<string, number> = {
+					goals: currentGoals.length,
+					members: currentMembers.length,
+					tasks: currentTasks.length,
+					teams: otherTeamsCount,
+				};
+				const size = sectionSizes[dashboardSection] ?? 0;
+				if (size > 0) {
+					setDashboardCursor((i) => (key.name === "j" ? (i + 1) % size : (i - 1 + size) % size));
+				}
+				return;
+			}
+			if (key.name === "tab") {
+				const sectionKeys = ["goals", "members", "tasks", "teams"] as const;
+				const available = sectionKeys.filter((k) => {
+					if (k === "goals") return goals.length > 0;
+					if (k === "members") return membersRef.current.length > 0;
+					if (k === "tasks") return client.listTasks().length > 0;
+					if (k === "teams")
+						return (
+							isWelcome &&
+							teamSummaries.filter((s) => s.sessionId !== client.getSessionId()).length > 0
+						);
+					return false;
+				});
+				if (available.length > 0) {
+					const idx = available.indexOf(dashboardSection);
+					const next = available[(idx + 1) % available.length];
+					setDashboardSection(next as "goals" | "members" | "tasks" | "teams");
+					setDashboardCursor(0);
+				}
+				return;
+			}
+			if (key.name === "return") {
+				const currentMembers = membersRef.current;
+				const otherTeams = isWelcome
+					? teamSummaries.filter((s) => s.sessionId !== client.getSessionId())
+					: [];
+				if (dashboardSection === "members" && currentMembers[dashboardCursor]) {
+					setActiveMemberName(currentMembers[dashboardCursor].name);
+					setShowDashboard(false);
+				} else if (dashboardSection === "teams" && otherTeams[dashboardCursor]) {
+					client.switchSession(`sqlite://${otherTeams[dashboardCursor].sessionId}`).catch(() => {});
+				}
+				return;
+			}
+			if (key.name === "d") {
+				const currentMembers = membersRef.current;
+				if (dashboardSection === "members" && currentMembers[dashboardCursor]) {
+					setActiveMemberName(currentMembers[dashboardCursor].name);
+					setShowDashboard(false);
+				}
+				return;
+			}
+			if (key.name === "escape" || key.name === "i") {
+				setShowDashboard(false);
+				return;
+			}
+			return;
+		}
 		if (!action) return;
 		switch (action) {
 			case "toNormal":
@@ -558,6 +664,9 @@ export function App({
 			case "nextMember":
 				handleMemberNav("next");
 				return;
+			case "toggleDashboard":
+				setShowDashboard((v) => !v);
+				return;
 			case "ctrlC": {
 				const now = Date.now();
 				if (now - lastCtrlCRef.current < 1000) process.exit(0);
@@ -580,7 +689,27 @@ export function App({
 	return (
 		<box flexDirection="column" height={"100%"} backgroundColor={colors.background}>
 			<Toast toast={toast} />
-			{isWelcome ? (
+			{showDashboard ? (
+				<scrollbox flexGrow={1} scrollY stickyScroll stickyStart="bottom" focused={false}>
+					<TeamDashboard
+						members={members}
+						tasks={client.listTasks()}
+						goals={goals}
+						teamMd={teamMd}
+						teamSummaries={teamSummaries}
+						activeMemberName={activeMemberName}
+						isWelcome={isWelcome}
+						currentSessionId={client.getSessionId()}
+						cursorSection={dashboardSection}
+						cursorIndex={dashboardCursor}
+						onSelectMember={(name) => setActiveMemberName(name)}
+						onSelectTeam={(sessionId) => {
+							client.switchSession(`sqlite://${sessionId}`).catch(() => {});
+						}}
+						onClose={() => setShowDashboard(false)}
+					/>
+				</scrollbox>
+			) : isWelcome ? (
 				<scrollbox flexGrow={1} scrollY stickyScroll stickyStart="bottom" focused={false}>
 					<WelcomeBanner cwd={cwd} model={modelDisplay} />
 				</scrollbox>
@@ -657,7 +786,6 @@ export function App({
 						sentMessages={commandHistory}
 						pendingInput={pendingInput}
 						members={members}
-						tasks={client.listTasks()}
 						activeMemberName={activeMemberName}
 					/>
 				)}

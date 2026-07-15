@@ -4,6 +4,8 @@ import type { Message } from "../message.js";
 import type { SessionInfo } from "../session/list.js";
 import type {
 	DeliveryMode,
+	Goal,
+	GoalStatus,
 	MemberMessage,
 	MemberName,
 	MemberState,
@@ -11,6 +13,7 @@ import type {
 	TaskState,
 	TaskType,
 	TeamEvent,
+	TeamMdStructure,
 } from "../teams/types-v2.js";
 
 export type AgentMode = "standard" | "planner" | "orchestrator" | "team";
@@ -81,6 +84,16 @@ export interface ExtendedModelInfo extends ModelInfo {
 	provider: string;
 	reasoning?: boolean;
 	input?: string[];
+}
+
+export interface TeamSummary {
+	sessionId: string;
+	sessionName: string | null;
+	mission: string;
+	memberCount: number;
+	activeCount: number;
+	goalCount: number;
+	taskCount: number;
 }
 
 export interface AgentClient {
@@ -183,4 +196,8 @@ export interface AgentClient {
 	}): Promise<Array<{ message: MemberMessage; delivery: DeliveryMode }>>;
 	readInbox(name: MemberName, opts?: ReadInboxOptions): MemberMessage[];
 	markInboxRead(name: MemberName, ids?: string[]): number;
+
+	listGoals(filter?: { status?: GoalStatus }): Goal[];
+	readTeamMd(): TeamMdStructure;
+	listTeamSummaries(): TeamSummary[];
 }

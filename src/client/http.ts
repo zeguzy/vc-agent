@@ -4,12 +4,15 @@ import type { Message } from "../message.js";
 import type { SessionInfo } from "../session/list.js";
 import type {
 	DeliveryMode,
+	Goal,
+	GoalStatus,
 	MemberMessage,
 	MemberName,
 	MemberState,
 	ReadInboxOptions,
 	TaskState,
 	TeamEvent,
+	TeamMdStructure,
 } from "../teams/types-v2.js";
 import type {
 	AgentClient,
@@ -24,6 +27,7 @@ import type {
 	NewSessionResult,
 	SkillDirectories,
 	SkillListResult,
+	TeamSummary,
 	Unsubscribe,
 	UserMessageSummary,
 } from "./types.js";
@@ -453,6 +457,34 @@ export class HttpClient implements AgentClient {
 			count: number;
 		};
 		return res.count ?? 0;
+	}
+
+	listGoals(_filter?: { status?: GoalStatus }): Goal[] {
+		throw new NotSupportedError("listGoals (sync) — use fetchGoals() instead");
+	}
+
+	async fetchGoals(filter?: { status?: GoalStatus }): Promise<Goal[]> {
+		const params = new URLSearchParams();
+		if (filter?.status) params.set("status", filter.status);
+		const data = await this.getJson<{ goals: Goal[] }>(`/team/goals?${params}`);
+		return data.goals ?? [];
+	}
+
+	readTeamMd(): TeamMdStructure {
+		throw new NotSupportedError("readTeamMd (sync) — use fetchTeamMd() instead");
+	}
+
+	async fetchTeamMd(): Promise<TeamMdStructure> {
+		return this.getJson<TeamMdStructure>("/team/md");
+	}
+
+	listTeamSummaries(): TeamSummary[] {
+		throw new NotSupportedError("listTeamSummaries (sync) — use fetchTeamSummaries() instead");
+	}
+
+	async fetchTeamSummaries(): Promise<TeamSummary[]> {
+		const data = await this.getJson<{ summaries: TeamSummary[] }>("/team/summaries");
+		return data.summaries ?? [];
 	}
 }
 

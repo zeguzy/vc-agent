@@ -370,6 +370,18 @@ async function handleRequest(server: AgentServer, req: IncomingMessage, res: Ser
 		}
 	}
 
+	if (method === "GET" && path === "/team/goals") {
+		return sendJson(res, { goals: server.handleListGoals() });
+	}
+
+	if (method === "GET" && path === "/team/md") {
+		return sendJson(res, server.handleReadTeamMd());
+	}
+
+	if (method === "GET" && path === "/team/summaries") {
+		return sendJson(res, { summaries: server.handleListTeamSummaries() });
+	}
+
 	if (method === "GET" && path === "/events") {
 		const streaming = url.searchParams.get("streaming") === "true";
 		return createSSEResponse(server, req, res, streaming);

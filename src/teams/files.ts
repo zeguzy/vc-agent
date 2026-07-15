@@ -271,7 +271,7 @@ export class TeamFiles {
 
 // ─── TEAM.md Parsing ────────────────────────────────────────
 
-function parseTeamMd(raw: string): TeamMdStructure {
+export function parseTeamMd(raw: string): TeamMdStructure {
 	const sections = splitSections(raw);
 	return {
 		mission: sections.get("Mission") ?? "",
@@ -440,7 +440,6 @@ export function parseGoals(raw: string): Goal[] {
 		const blockedMatch = line.match(/^\s+Blocked: (.+)$/);
 		if (blockedMatch && lastGoal) {
 			lastGoal.blockers = blockedMatch[1].trim();
-			continue;
 		}
 	}
 
@@ -465,7 +464,9 @@ export function serializeGoals(goals: Goal[]): string {
 			const priority = `[${g.priority}]`;
 			const assignee = g.assignee ? ` @${g.assignee}` : "";
 			const taskLinks = g.taskIds.length > 0 ? ` → ${g.taskIds.join(",")}` : "";
-			lines.push(`${indent}- [${g.status}] ${g.id}: ${g.title} ${priority}${assignee}${taskLinks}`.trimEnd());
+			lines.push(
+				`${indent}- [${g.status}] ${g.id}: ${g.title} ${priority}${assignee}${taskLinks}`.trimEnd(),
+			);
 			if (g.description) {
 				lines.push(`${indent}  Description: ${g.description}`);
 			}

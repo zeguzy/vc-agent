@@ -4,11 +4,11 @@ import type { AgentMode } from "../../agent/session.js";
 import type { SkillListEntry } from "../../client/types.js";
 import type { PollManager } from "../../poll/manager.js";
 import { usePollState } from "../../poll/usePollState.js";
-import type { MemberState, TaskState } from "../../teams/types-v2.js";
+import type { MemberState } from "../../teams/types-v2.js";
 import { matchSuggestions, type SuggestionItem } from "../commands.js";
 import type { Mode } from "../keymap.js";
 import { colors, icons } from "../utils/theme.js";
-import { TeamTopology } from "./TeamTopology.js";
+import { TeamStatusBar } from "./TeamStatusBar.js";
 
 interface InputBoxProps {
 	disabled: boolean;
@@ -22,7 +22,6 @@ interface InputBoxProps {
 	sentMessages: string[];
 	pendingInput?: { text: string; nonce: number } | null;
 	members?: MemberState[];
-	tasks?: TaskState[];
 	activeMemberName?: string | null;
 }
 
@@ -38,7 +37,6 @@ export function InputBox({
 	sentMessages,
 	pendingInput,
 	members = [],
-	tasks = [],
 	activeMemberName = null,
 }: InputBoxProps) {
 	const [inputHeight, setInputHeight] = useState(2);
@@ -282,7 +280,7 @@ export function InputBox({
 					</>
 				)}
 			</box>
-			<TeamTopology members={members} tasks={tasks} activeMemberName={activeMemberName} />
+			<TeamStatusBar members={members} activeMemberName={activeMemberName} />
 			<box height={1} flexDirection="row" paddingLeft={2} paddingRight={2}>
 				<text fg={modeColor}>{modeLabel}</text>
 				<text fg={colors.textSubtle}>{" · "}</text>
@@ -338,13 +336,7 @@ export function InputBox({
 						focusedTextColor={colors.text}
 						cursorColor={colors.primary}
 						placeholderColor={colors.textSubtle}
-						placeholder={
-							disabled
-								? "Queue a message…"
-								: mode === "insert"
-									? "Message openagent…  / for commands"
-									: "Press i to type"
-						}
+						placeholder={disabled ? "Queue a message…" : mode === "insert" ? "" : "Press i to type"}
 						keyBindings={keyBindings}
 						onKeyDown={handleKeyDown}
 						onContentChange={handleContentChange}

@@ -309,9 +309,7 @@ export function buildDiscussionPrompt(
 	);
 	lines.push("");
 	lines.push("How the discussion works:");
-	lines.push(
-		"1. Send your contribution via `message(action=\"broadcast\", content=\"...\")`.",
-	);
+	lines.push('1. Send your contribution via `message(action="broadcast", content="...")`.');
 	lines.push("2. Stop — end your turn. Do NOT try to wait or poll for replies.");
 	lines.push(
 		"3. A supervisor will read what everyone said and direct the next speaker. You will be prompted again when it's your turn.",

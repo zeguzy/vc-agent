@@ -2,6 +2,7 @@ import type { CommandContext } from "../commands/registry.js";
 import type { AgentServer } from "../server/index.js";
 import type {
 	DeliveryMode,
+	GoalStatus,
 	MemberMessage,
 	MemberName,
 	MemberState,
@@ -9,6 +10,7 @@ import type {
 	TaskState,
 	TaskType,
 	TeamEvent,
+	TeamMdStructure,
 } from "../teams/types-v2.js";
 import type {
 	AgentClient,
@@ -22,6 +24,7 @@ import type {
 	NewSessionResult,
 	SkillDirectories,
 	SkillListResult,
+	TeamSummary,
 	Unsubscribe,
 	UserMessageSummary,
 } from "./types.js";
@@ -267,6 +270,18 @@ export class InProcessClient implements AgentClient {
 
 	markInboxRead(name: MemberName, ids?: string[]): number {
 		return this.server.handleMarkInboxRead(name, ids);
+	}
+
+	listGoals(filter?: { status?: GoalStatus }): import("../teams/types-v2.js").Goal[] {
+		return this.server.handleListGoals(filter);
+	}
+
+	readTeamMd(): TeamMdStructure {
+		return this.server.handleReadTeamMd();
+	}
+
+	listTeamSummaries(): TeamSummary[] {
+		return this.server.handleListTeamSummaries();
 	}
 }
 

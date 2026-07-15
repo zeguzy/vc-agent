@@ -439,9 +439,7 @@ const ToolMessageView = memo(function ToolMessageView({ message }: { message: Me
 				(message.toolArgs as Record<string, unknown>)?.action === "wait" && (
 					<box paddingLeft={2} paddingTop={1}>
 						<WaitTimer
-							duration={Number(
-								(message.toolArgs as Record<string, unknown>)?.duration ?? 30,
-							)}
+							duration={Number((message.toolArgs as Record<string, unknown>)?.duration ?? 30)}
 						/>
 					</box>
 				)}
@@ -464,11 +462,7 @@ const ToolMessageView = memo(function ToolMessageView({ message }: { message: Me
 				</box>
 			)}
 			{subagentText && (
-				<scrollbox
-					maxHeight={RESULT_BLOCK_MAX_HEIGHT}
-					scrollY
-					focused={false}
-				>
+				<scrollbox maxHeight={RESULT_BLOCK_MAX_HEIGHT} scrollY focused={false}>
 					<markdown
 						id={`md-subagent-${message.id}`}
 						syntaxStyle={syntaxStyle}
@@ -679,13 +673,13 @@ const WorkerMessageView = memo(function WorkerMessageView({ message }: { message
 				</>
 			) : (
 				message.content && (
-						<scrollbox
-							maxHeight={RESULT_BLOCK_MAX_HEIGHT}
-							scrollY
-							stickyScroll
-							stickyStart="bottom"
-							focused={false}
-						>
+					<scrollbox
+						maxHeight={RESULT_BLOCK_MAX_HEIGHT}
+						scrollY
+						stickyScroll
+						stickyStart="bottom"
+						focused={false}
+					>
 						<markdown
 							id={`md-${message.id}`}
 							syntaxStyle={syntaxStyle}

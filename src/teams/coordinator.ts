@@ -406,7 +406,8 @@ export function parseSupervisorDecision(raw: string): SupervisorDecision {
 			return {
 				action: "complete",
 				reason: parsed.reason ?? "discussion complete",
-				conclusion: parsed.conclusion ?? `(no conclusion provided; reason: ${parsed.reason ?? "unknown"})`,
+				conclusion:
+					parsed.conclusion ?? `(no conclusion provided; reason: ${parsed.reason ?? "unknown"})`,
 				agendaUpdates,
 			};
 		}
@@ -416,7 +417,11 @@ export function parseSupervisorDecision(raw: string): SupervisorDecision {
 			conclusion: `(supervisor returned unexpected action: ${parsed.action})`,
 		};
 	} catch {
-		return { action: "complete", reason: "supervisor JSON parse failed", conclusion: "(supervisor output could not be parsed)" };
+		return {
+			action: "complete",
+			reason: "supervisor JSON parse failed",
+			conclusion: "(supervisor output could not be parsed)",
+		};
 	}
 }
 
