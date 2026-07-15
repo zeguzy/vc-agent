@@ -22,7 +22,8 @@
       "models": [
         {
           "id": "astron-code-latest",
-          "name": "Astron ∞"
+          "name": "Astron ∞",
+          "contextWindow": 256000
         }
       ]
     },
@@ -33,7 +34,8 @@
       "models": [
         {
           "id": "astron-code-latest",
-          "name": "Astron"
+          "name": "Astron",
+          "contextWindow": 500000
         }
       ]
     }
