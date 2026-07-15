@@ -17,6 +17,8 @@ import type {
 import type {
 	AgentClient,
 	AgentMode,
+	BtwEnterResult,
+	BtwStatusResult,
 	ContextUsage,
 	CycleModelResult,
 	EventHandler,
@@ -251,6 +253,22 @@ export class HttpClient implements AgentClient {
 
 	async navigateTree(parentId: string): Promise<NavigateResult> {
 		return this.postJson("/session/navigate", { parentId }) as Promise<NavigateResult>;
+	}
+
+	async btwEnter(): Promise<BtwEnterResult> {
+		return this.postJson("/btw/enter") as Promise<BtwEnterResult>;
+	}
+
+	async btwBack(): Promise<void> {
+		await this.postJson("/btw/back");
+	}
+
+	btwStatus(): BtwStatusResult {
+		throw new NotSupportedError("btwStatus (sync) — use fetchBtwStatus() instead");
+	}
+
+	async fetchBtwStatus(): Promise<BtwStatusResult> {
+		return this.getJson<BtwStatusResult>("/btw/status");
 	}
 
 	listSkills(): SkillListResult {

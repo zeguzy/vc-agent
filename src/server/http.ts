@@ -123,6 +123,28 @@ async function handleRequest(server: AgentServer, req: IncomingMessage, res: Ser
 		return sendJson(res, result);
 	}
 
+	if (method === "POST" && path === "/btw/enter") {
+		try {
+			const result = await server.handleBtwEnter();
+			return sendJson(res, result);
+		} catch (err) {
+			return sendJson(res, { error: String(err) }, 400);
+		}
+	}
+
+	if (method === "POST" && path === "/btw/back") {
+		try {
+			await server.handleBtwBack();
+			return sendJson(res, { ok: true });
+		} catch (err) {
+			return sendJson(res, { error: String(err) }, 400);
+		}
+	}
+
+	if (method === "GET" && path === "/btw/status") {
+		return sendJson(res, server.handleBtwStatus());
+	}
+
 	if (method === "GET" && path === "/skills") {
 		return sendJson(res, server.handleListSkills());
 	}

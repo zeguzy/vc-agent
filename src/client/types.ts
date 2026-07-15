@@ -53,6 +53,17 @@ export interface NavigateResult {
 	lastUserText?: string;
 }
 
+export interface BtwEnterResult {
+	backgroundSessionId: string;
+	cancelled: boolean;
+}
+
+export interface BtwStatusResult {
+	active: boolean;
+	backgroundSessionId?: string;
+	taskSummary?: string;
+}
+
 export interface SkillListEntry {
 	name: string;
 	description: string;
@@ -130,6 +141,10 @@ export interface AgentClient {
 	getUserMessagesForForking(): UserMessageSummary[];
 	getEntryParentId(entryId: string): string | undefined;
 	navigateTree(parentId: string): Promise<NavigateResult>;
+
+	btwEnter(): Promise<BtwEnterResult>;
+	btwBack(): Promise<void>;
+	btwStatus(): BtwStatusResult;
 
 	listSkills(): SkillListResult;
 	getSkillDirectories(): SkillDirectories;

@@ -25,8 +25,16 @@ import { ORCHESTRATOR_SYSTEM_PROMPT, TEAM_ORCHESTRATOR_PROMPT } from "../context
 import { getDcpConfig, isDcpEnabled } from "../dcp/config.js";
 import type { McpManager } from "../mcp/manager.js";
 import { NotificationRouter, setGlobalRouter } from "../notifications/notifier.js";
+import {
+	type BtwEnterResult,
+	type BtwState,
+	buildBtwAwarenessNote,
+	createBackgroundMonitor,
+	injectNotification,
+} from "../session/btw.js";
 import { listSessions } from "../session/list.js";
 import { mapSdkMessagesToTui } from "../session/render.js";
+import { getSdkInternals } from "../session/sdk-internals.js";
 import type { SkillManager } from "../skills/manager.js";
 import { parseTeamMd } from "../teams/files.js";
 import { TeamManager } from "../teams/manager-v2.js";
@@ -64,6 +72,9 @@ export class AgentServer {
 	readonly teamRef: TeamManagerRef;
 	private readonly teamConfig: ReturnType<typeof resolveConfigTeams>;
 	private teamUnsub: (() => void) | null = null;
+	private btwState: BtwState | null = null;
+	/** When true, setRebindSession skips team disposal (btw session switch). */
+	private preserveBackground = false;
 
 	constructor(opts: AgentServerOptions) {
 		this.runtime = opts.runtime;
@@ -94,7 +105,8 @@ export class AgentServer {
 		this.teamRef = opts.teamRef ?? { current: this.teamManager };
 
 		this.runtime.setRebindSession(async (newSession) => {
-			if (this.teamConfig.cancelOrphansOnSessionChange) {
+			const shouldPreserveTeam = this.preserveBackground;
+			if (this.teamConfig.cancelOrphansOnSessionChange && !shouldPreserveTeam) {
 				await this.disposeTeam();
 				this.teamManager = new TeamManager(
 					this.teamConfig,
@@ -109,7 +121,7 @@ export class AgentServer {
 				this.teamRef.current = this.teamManager;
 			}
 			this.resubscribe();
-			if (this.teamConfig.cancelOrphansOnSessionChange) {
+			if (this.teamConfig.cancelOrphansOnSessionChange && !shouldPreserveTeam) {
 				await this.teamManager.restoreMembers({
 					services: this.runtime.services,
 					parentModel: this.session.model,
@@ -197,42 +209,27 @@ export class AgentServer {
 							: undefined;
 						const taskTitle = task?.title ? ` — ${task.title}` : "";
 						const body = `[Team Member ${event.memberName}${taskTitle} ${state.status}${costStr}]\n${event.summary}`;
-						if (this.session.isStreaming) {
-							const note = `[SYSTEM NOTIFICATION — DO NOT ACT unless there's a problem]\n${body}\n[END NOTIFICATION — continue waiting for user or next event]`;
-							this.session.steer(note);
-						}
-						// When not streaming: do NOT actively prompt Leader.
-						// Leader will see the update via team(action="read") when user triggers next interaction.
+						injectNotification(this.session, body);
 					}
 				}
 
 				if (event.type === "member_error") {
-					// Errors always actively inject — Leader must handle them immediately
 					const note = `[Team Member ${event.memberName} error]\n${event.error}`;
-					if (this.session.isStreaming) {
-						this.session.steer(note);
-					} else {
-						void this.session.prompt(note);
-					}
+					injectNotification(this.session, note);
 				}
 
 				if (event.type === "task_completed" && event.conclusion) {
 					const task = this.teamManager.listTasks().find((t) => t.id === event.taskId);
 					const title = task?.title ?? event.taskId;
 					const body = `[Discussion "${title}" completed]\nConclusion: ${event.conclusion}`;
-					if (this.session.isStreaming) {
-						const note = `[SYSTEM NOTIFICATION — DO NOT ACT unless there's a problem]\n${body}\n[END NOTIFICATION — continue waiting for user or next event]`;
-						this.session.steer(note);
-					} else {
-						void this.session.prompt(body);
-					}
+					injectNotification(this.session, body);
 				}
 
 				if (event.type === "wait_completed") {
-					if (this.session.isStreaming) {
-						const note = `[SYSTEM NOTIFICATION — Wait timer expired]\nUse team(action="read") to check the latest team status.\n[END NOTIFICATION — continue waiting for user or next event]`;
-						this.session.steer(note);
-					}
+					injectNotification(
+						this.session,
+						`[Wait timer expired]\nUse team(action="read") to check the latest team status.`,
+					);
 				}
 			});
 		}
@@ -370,6 +367,79 @@ export class AgentServer {
 		return {
 			cancelled: result.cancelled,
 			...(result.editorText ? { lastUserText: result.editorText } : {}),
+		};
+	}
+
+	async handleBtwEnter(): Promise<BtwEnterResult> {
+		if (this.btwState) {
+			throw new Error("Already in a side conversation. Use /btw back to return first.");
+		}
+
+		const bgSession = this.session;
+		const returnPath = bgSession.sessionFile;
+		if (!returnPath) {
+			throw new Error("Cannot start side conversation: current session has no file path.");
+		}
+
+		const bgSessionId = bgSession.sessionId;
+		const bgIsStreaming = bgSession.isStreaming;
+
+		const userMsgs = bgSession.getUserMessagesForForking();
+		const lastUserText = userMsgs.length > 0 ? userMsgs[userMsgs.length - 1]?.text : "(no task)";
+		const bgTaskSummary = lastUserText;
+
+		const leafId = getSdkInternals(bgSession.sessionManager).leafId;
+		if (!leafId) {
+			throw new Error("Cannot fork: no current leaf entry in session.");
+		}
+
+		const bgUnsub = createBackgroundMonitor(bgSession, bgSession, () => {});
+
+		try {
+			this.preserveBackground = true;
+			const branchedUri = bgSession.sessionManager.createBranchedSession(leafId);
+			if (!branchedUri) {
+				throw new Error("createBranchedSession returned undefined.");
+			}
+			const { cancelled } = await this.runtime.switchSession(branchedUri);
+
+			this.btwState = { returnPath, bgSession, bgUnsub, bgTaskSummary };
+
+			if (bgIsStreaming) {
+				injectNotification(this.session, buildBtwAwarenessNote(bgTaskSummary));
+			}
+
+			return { backgroundSessionId: bgSessionId, cancelled };
+		} catch (err) {
+			this.preserveBackground = false;
+			bgUnsub();
+			throw err;
+		}
+	}
+
+	async handleBtwBack(): Promise<void> {
+		if (!this.btwState) {
+			throw new Error("Not in a side conversation. Use /btw to start one.");
+		}
+
+		const { returnPath, bgUnsub } = this.btwState;
+		bgUnsub();
+		this.btwState = null;
+
+		this.preserveBackground = true;
+		try {
+			await this.runtime.switchSession(returnPath);
+		} finally {
+			this.preserveBackground = false;
+		}
+	}
+
+	handleBtwStatus(): { active: boolean; backgroundSessionId?: string; taskSummary?: string } {
+		if (!this.btwState) return { active: false };
+		return {
+			active: true,
+			backgroundSessionId: this.btwState.bgSession.sessionId,
+			taskSummary: this.btwState.bgTaskSummary,
 		};
 	}
 
