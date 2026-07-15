@@ -792,6 +792,51 @@ export function registerBuiltinCommands(): void {
 	});
 
 	commandRegistry.register({
+		name: "btw",
+		description: "Side conversation: fork session while task runs in background",
+		usage: "/btw [back]",
+		handler: async (args: string, ctx: CommandContext) => {
+			const sub = args.trim().toLowerCase();
+
+			if (sub === "back") {
+				try {
+					await ctx.client.btwBack();
+					ctx.setMessages(ctx.client.getMappedMessages());
+				} catch (err) {
+					ctx.setMessages((prev) => [
+						...prev,
+						createAssistantMessage(`返回原会话失败: ${formatError(err)}`),
+					]);
+				}
+				return;
+			}
+
+			const status = ctx.client.btwStatus();
+			if (status.active) {
+				ctx.setMessages((prev) => [
+					...prev,
+					createAssistantMessage("已在侧边对话中。输入 /btw back 返回原会话。"),
+				]);
+				return;
+			}
+
+			try {
+				const result = await ctx.client.btwEnter();
+				if (result.cancelled) {
+					ctx.setMessages((prev) => [...prev, createAssistantMessage("已取消侧边对话。")]);
+				} else {
+					ctx.setMessages(ctx.client.getMappedMessages());
+				}
+			} catch (err) {
+				ctx.setMessages((prev) => [
+					...prev,
+					createAssistantMessage(`启动侧边对话失败: ${formatError(err)}`),
+				]);
+			}
+		},
+	});
+
+	commandRegistry.register({
 		name: "workers",
 		description: "Show team members panel",
 		usage: "/workers",

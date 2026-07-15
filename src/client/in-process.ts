@@ -14,6 +14,8 @@ import type {
 } from "../teams/types-v2.js";
 import type {
 	AgentClient,
+	BtwEnterResult,
+	BtwStatusResult,
 	ContextUsage,
 	CycleModelResult,
 	EventHandler,
@@ -130,6 +132,18 @@ export class InProcessClient implements AgentClient {
 
 	async navigateTree(parentId: string): Promise<NavigateResult> {
 		return this.server.handleNavigateTree(parentId);
+	}
+
+	async btwEnter(): Promise<BtwEnterResult> {
+		return this.server.handleBtwEnter();
+	}
+
+	async btwBack(): Promise<void> {
+		return this.server.handleBtwBack();
+	}
+
+	btwStatus(): BtwStatusResult {
+		return this.server.handleBtwStatus();
 	}
 
 	listSkills(): SkillListResult {
