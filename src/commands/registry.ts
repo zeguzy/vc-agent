@@ -28,7 +28,12 @@ export interface CommandContext {
 	setInputText: (text: string) => void;
 	isRunning: boolean;
 	mcpManager?: McpManager;
-	setBtwBackgroundTask: (task: BtwBackgroundTaskInfo | null) => void;
+	setBtwBackgroundTask: (
+		updater:
+			| BtwBackgroundTaskInfo
+			| null
+			| ((prev: BtwBackgroundTaskInfo | null) => BtwBackgroundTaskInfo | null),
+	) => void;
 }
 
 /**

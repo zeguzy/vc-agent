@@ -2,16 +2,10 @@ import { useEffect, useState } from "react";
 import type { MemberState, TaskState } from "../../teams/types-v2.js";
 import { colors, teamStatusColor, teamStatusIcon } from "../utils/theme.js";
 
-export interface BtwBgTaskRow {
-	status: "active" | "done" | "error";
-	taskSummary: string;
-}
-
 export interface TeamTopologyProps {
 	members: MemberState[];
 	tasks: TaskState[];
 	activeMemberName: string | null;
-	btwBackgroundTask?: BtwBgTaskRow | null;
 }
 
 const PADDING_LEFT = 2;
@@ -40,12 +34,7 @@ export function truncateToWidth(text: string, maxWidth: number): string {
 	return `${chars.slice(0, maxWidth - 1).join("")}…`;
 }
 
-export function TeamTopology({
-	members,
-	tasks,
-	activeMemberName,
-	btwBackgroundTask,
-}: TeamTopologyProps) {
+export function TeamTopology({ members, tasks, activeMemberName }: TeamTopologyProps) {
 	const [resizeCounter, setResizeCounter] = useState(0);
 	const [spinnerFrame, setSpinnerFrame] = useState(0);
 
@@ -57,8 +46,7 @@ export function TeamTopology({
 		};
 	}, []);
 
-	const hasBusy =
-		members.some((m) => m.status === "active") || btwBackgroundTask?.status === "active";
+	const hasBusy = members.some((m) => m.status === "active");
 	useEffect(() => {
 		if (!hasBusy) {
 			setSpinnerFrame(0);
@@ -68,7 +56,7 @@ export function TeamTopology({
 		return () => clearInterval(interval);
 	}, [hasBusy]);
 
-	if (members.length === 0 && !btwBackgroundTask) return null;
+	if (members.length === 0) return null;
 	void resizeCounter;
 
 	const maxWidth = computeMaxWidth(process.stdout.columns);
@@ -119,25 +107,7 @@ export function TeamTopology({
 		};
 	});
 
-	const listHeight = Math.min(members.length + 1 + (btwBackgroundTask ? 1 : 0), MAX_LIST_HEIGHT);
-
-	const bgIcon = btwBackgroundTask
-		? btwBackgroundTask.status === "active"
-			? `${SPINNER_FRAMES[spinnerFrame % SPINNER_FRAMES.length]} `
-			: btwBackgroundTask.status === "done"
-				? "✓ "
-				: "✗ "
-		: "";
-	const bgIconColor =
-		btwBackgroundTask?.status === "active"
-			? colors.warning
-			: btwBackgroundTask?.status === "done"
-				? colors.success
-				: colors.error;
-	const bgRestMaxWidth = Math.max(0, maxWidth - MEMBER_PREFIX_LEN - 2);
-	const bgRest = btwBackgroundTask
-		? truncateToWidth(`bg-task · ${btwBackgroundTask.taskSummary}`, bgRestMaxWidth)
-		: "";
+	const listHeight = Math.min(members.length + 1, MAX_LIST_HEIGHT);
 
 	return (
 		<box flexShrink={0} paddingLeft={PADDING_LEFT} paddingRight={PADDING_RIGHT}>
@@ -156,13 +126,6 @@ export function TeamTopology({
 							{row.ctxSeg && <text fg={row.ctxColor}>{row.ctxSeg}</text>}
 						</box>
 					))}
-					{btwBackgroundTask && (
-						<box flexDirection="row" height={1}>
-							<text fg={colors.textSubtle}>└─ </text>
-							<text fg={bgIconColor}>{bgIcon}</text>
-							<text fg={colors.textMuted}>{bgRest}</text>
-						</box>
-					)}
 				</box>
 			</scrollbox>
 		</box>

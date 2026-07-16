@@ -44,6 +44,17 @@ import { createVimOverlay, type VimOverlay } from "./vim/index.js";
 
 const WELCOME_MESSAGE = createAssistantMessage("");
 
+function buildBtwCardMessage(task: BtwBackgroundTaskInfo): Message {
+	const statusIcon = task.status === "active" ? "⠋" : task.status === "done" ? "✓" : "✗";
+	const statusLabel =
+		task.status === "active" ? "运行中" : task.status === "done" ? "已完成" : "出错";
+	let content = `${statusIcon} 后台任务 · ${statusLabel}\n${task.taskSummary}`;
+	if (task.resultSummary) {
+		content += `\n\n结果: ${task.resultSummary}`;
+	}
+	return createAssistantMessage(content);
+}
+
 interface AppProps {
 	client: AgentClient;
 	model: string;
@@ -280,7 +291,11 @@ export function App({
 				return;
 			}
 			if (status.status && status.status !== btwTask.status) {
-				setBtwTask({ ...btwTask, status: status.status });
+				setBtwTask({
+					...btwTask,
+					status: status.status,
+					resultSummary: status.resultSummary ?? null,
+				});
 			}
 		}, 2000);
 		return () => clearInterval(interval);
@@ -309,16 +324,21 @@ export function App({
 	}, [members.length]);
 
 	// Derive display messages: btw side session > member > main
+	// biome-ignore lint/correctness/useExhaustiveDependencies: _btwTick forces re-render when the side session emits new messages (the SDK mutates sideSession.messages in place, so without this dep the view never updates)
 	const displayMessages = useMemo(() => {
 		const sideSession = btwTask?.sideSession;
-		if (sideSession) {
+		if (btwTask && sideSession) {
 			const sideMsgs = mapSdkMessagesToTui(sideSession.messages);
+			const bgCard = buildBtwCardMessage(btwTask);
 			if (sideMsgs.length === 0) {
-				return [createAssistantMessage("Side conversation started. Background task is running...")];
+				return [...btwTask.contextMessages, bgCard];
 			}
-			return sideMsgs;
+			return [...btwTask.contextMessages, bgCard, ...sideMsgs];
 		}
 		if (!activeMemberName) {
+			if (btwTask) {
+				return [...messages, buildBtwCardMessage(btwTask)];
+			}
 			return messages;
 		}
 		const member = client.getMember(activeMemberName);
@@ -331,8 +351,7 @@ export function App({
 			return [createAssistantMessage(`No messages yet. ${activeMemberName} is working...`)];
 		}
 		return memberMsgs;
-		// eslint-disable-next-line react-hooks/exhaustive-deps
-	}, [btwTask, activeMemberName, messages, client]);
+	}, [btwTask, _btwTick, activeMemberName, messages, client]);
 
 	useEffect(() => {
 		const router = getGlobalRouter();
@@ -802,14 +821,11 @@ export function App({
 					thinkingCollapsed={thinkingCollapsed}
 				/>
 			)}
-			{(members.length > 0 || btwTask) && (
+			{members.length > 0 && (
 				<TeamTopology
 					members={members}
 					tasks={client.listTasks()}
 					activeMemberName={activeMemberName}
-					btwBackgroundTask={
-						btwTask ? { status: btwTask.status, taskSummary: btwTask.taskSummary } : null
-					}
 				/>
 			)}
 			{queuedMsgs.length > 0 && (

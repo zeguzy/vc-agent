@@ -801,7 +801,7 @@ export function registerBuiltinCommands(): void {
 			if (sub === "back") {
 				try {
 					await ctx.client.btwBack();
-					ctx.setBtwBackgroundTask(null);
+					ctx.setBtwBackgroundTask((prev) => (prev ? { ...prev, sideSession: null } : prev));
 				} catch (err) {
 					ctx.setMessages((prev) => [
 						...prev,
@@ -821,22 +821,20 @@ export function registerBuiltinCommands(): void {
 			}
 
 			try {
-				const result = await ctx.client.btwEnter();
+				const contextSnapshot = [...ctx.messages];
+				await ctx.client.btwEnter();
 				const sideSession = ctx.client.getBtwSideSession();
 				if (!sideSession) {
 					throw new Error("No side session returned");
 				}
+				const postStatus = ctx.client.btwStatus();
 				ctx.setBtwBackgroundTask({
 					sideSession,
-					taskSummary: status.taskSummary ?? "(background task)",
+					taskSummary: postStatus.taskSummary ?? "(background task)",
 					status: "active",
+					contextMessages: contextSnapshot,
+					resultSummary: null,
 				});
-				ctx.setMessages((prev) => [
-					...prev,
-					createAssistantMessage(
-						`📋 侧边对话已启动\n后台任务: ${result.backgroundSessionId}\n输入 /btw back 返回主会话`,
-					),
-				]);
 			} catch (err) {
 				ctx.setMessages((prev) => [
 					...prev,

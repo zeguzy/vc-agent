@@ -68,6 +68,8 @@ export interface BtwStatusResult {
 	backgroundSessionId?: string;
 	/** True while the TUI is showing the side session (false after `/btw back`). */
 	inSideSession?: boolean;
+	/** Result summary when status is "done" or "error". Null while active. */
+	resultSummary?: string | null;
 }
 
 /**
@@ -75,12 +77,19 @@ export interface BtwStatusResult {
  *
  * `sideSession` is the live AgentSession returned by `getBtwSideSession()`
  * (InProcessClient only) so the TUI can subscribe and read its messages
- * directly. When null (after `/btw back`), the TUI view returns to main.
+ * directly. When null (after `/btw back`), the TUI view returns to main but
+ * the card keeps tracking the background task until the server drops it.
+ *
+ * `contextMessages` is a snapshot of the main session's message list taken
+ * at `/btw enter` time; the side view prepends it so the user has context.
  */
 export interface BtwBackgroundTaskInfo {
 	sideSession: AgentSession | null;
 	taskSummary: string;
 	status: BtwStatus;
+	contextMessages: Message[];
+	/** Result summary once status flips to "done" / "error"; null while active. */
+	resultSummary: string | null;
 }
 
 export interface SkillListEntry {

@@ -467,14 +467,22 @@ export class AgentServer {
 		taskSummary?: string;
 		backgroundSessionId?: string;
 		inSideSession?: boolean;
+		resultSummary?: string | null;
 	} {
 		if (!this.btwTask) return { active: false };
+		const resultSummary =
+			this.btwTask.status === "done"
+				? summarizeSessionResult(this.btwTask.bgSession)
+				: this.btwTask.status === "error"
+					? "(background task encountered errors)"
+					: null;
 		return {
 			active: true,
 			status: this.btwTask.status,
 			taskSummary: this.btwTask.taskSummary,
 			backgroundSessionId: this.btwTask.bgSession.sessionId,
 			inSideSession: this.btwTask.sideSession !== null,
+			resultSummary,
 		};
 	}
 
