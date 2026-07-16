@@ -28,7 +28,6 @@ import { NotificationRouter, setGlobalRouter } from "../notifications/notifier.j
 import {
 	type BtwEnterResult,
 	type BtwState,
-	buildBtwAwarenessNote,
 	createBackgroundMonitor,
 	injectNotification,
 } from "../session/btw.js";
@@ -383,7 +382,6 @@ export class AgentServer {
 		const bgSession = this.session;
 		const bgSessionId = bgSession.sessionId;
 		const returnPath = bgSession.sessionFile ?? buildSqliteUri(bgSessionId);
-		const bgIsStreaming = bgSession.isStreaming;
 
 		const userMsgs = bgSession.getUserMessagesForForking();
 		const lastUserText = userMsgs.length > 0 ? userMsgs[userMsgs.length - 1]?.text : "(no task)";
