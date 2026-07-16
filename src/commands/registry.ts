@@ -1,5 +1,6 @@
 import type { AgentMode } from "../agent/session.js";
 import type { AgentClient } from "../client/index.js";
+import type { BtwBackgroundTaskInfo } from "../client/types.js";
 import type { Config } from "../config.js";
 import type { McpManager } from "../mcp/manager.js";
 import type { Message } from "../message.js";
@@ -27,6 +28,7 @@ export interface CommandContext {
 	setInputText: (text: string) => void;
 	isRunning: boolean;
 	mcpManager?: McpManager;
+	setBtwBackgroundTask: (task: BtwBackgroundTaskInfo | null) => void;
 }
 
 /**

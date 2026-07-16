@@ -793,7 +793,7 @@ export function registerBuiltinCommands(): void {
 
 	commandRegistry.register({
 		name: "btw",
-		description: "Side conversation: fork session while task runs in background",
+		description: "Side conversation: start a clean side session while task runs in background",
 		usage: "/btw [back]",
 		handler: async (args: string, ctx: CommandContext) => {
 			const sub = args.trim().toLowerCase();
@@ -801,43 +801,42 @@ export function registerBuiltinCommands(): void {
 			if (sub === "back") {
 				try {
 					await ctx.client.btwBack();
-					const mapped = ctx.client.getMappedMessages();
-					ctx.setMessages([...mapped, createSeparator(), createAssistantMessage("已返回原会话")]);
+					ctx.setBtwBackgroundTask(null);
 				} catch (err) {
 					ctx.setMessages((prev) => [
 						...prev,
-						createAssistantMessage(`返回原会话失败: ${formatError(err)}`),
+						createAssistantMessage(`返回失败: ${formatError(err)}`),
 					]);
 				}
 				return;
 			}
 
 			const status = ctx.client.btwStatus();
-			if (status.active) {
+			if (status.active && status.inSideSession) {
 				ctx.setMessages((prev) => [
 					...prev,
-					createAssistantMessage("已在侧边对话中。输入 /btw back 返回原会话。"),
+					createAssistantMessage("已在侧边对话中。输入 /btw back 返回。"),
 				]);
 				return;
 			}
 
 			try {
 				const result = await ctx.client.btwEnter();
-				if (result.cancelled) {
-					ctx.setMessages((prev) => [...prev, createAssistantMessage("已取消侧边对话。")]);
-				} else {
-					const mapped = ctx.client.getMappedMessages();
-					const taskInfo = ctx.isRunning
-						? `后台任务正在运行: ${result.backgroundSessionId}`
-						: "（无后台任务）";
-					ctx.setMessages([
-						...mapped,
-						createSeparator(),
-						createAssistantMessage(
-							`📋 侧边对话已启动（fork 自当前会话）\n${taskInfo}\n输入 /btw back 返回原会话`,
-						),
-					]);
+				const sideSession = ctx.client.getBtwSideSession();
+				if (!sideSession) {
+					throw new Error("No side session returned");
 				}
+				ctx.setBtwBackgroundTask({
+					sideSession,
+					taskSummary: status.taskSummary ?? "(background task)",
+					status: "active",
+				});
+				ctx.setMessages((prev) => [
+					...prev,
+					createAssistantMessage(
+						`📋 侧边对话已启动\n后台任务: ${result.backgroundSessionId}\n输入 /btw back 返回主会话`,
+					),
+				]);
 			} catch (err) {
 				ctx.setMessages((prev) => [
 					...prev,
