@@ -406,10 +406,6 @@ export class AgentServer {
 
 			this.btwState = { returnPath, bgSession, bgUnsub, bgTaskSummary };
 
-			if (bgIsStreaming) {
-				injectNotification(this.session, buildBtwAwarenessNote(bgTaskSummary));
-			}
-
 			return { backgroundSessionId: bgSessionId, cancelled };
 		} catch (err) {
 			this.preserveBackground = false;

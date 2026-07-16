@@ -801,7 +801,8 @@ export function registerBuiltinCommands(): void {
 			if (sub === "back") {
 				try {
 					await ctx.client.btwBack();
-					ctx.setMessages(ctx.client.getMappedMessages());
+					const mapped = ctx.client.getMappedMessages();
+					ctx.setMessages([...mapped, createSeparator(), createAssistantMessage("已返回原会话")]);
 				} catch (err) {
 					ctx.setMessages((prev) => [
 						...prev,
@@ -825,7 +826,17 @@ export function registerBuiltinCommands(): void {
 				if (result.cancelled) {
 					ctx.setMessages((prev) => [...prev, createAssistantMessage("已取消侧边对话。")]);
 				} else {
-					ctx.setMessages(ctx.client.getMappedMessages());
+					const mapped = ctx.client.getMappedMessages();
+					const taskInfo = ctx.isRunning
+						? `后台任务正在运行: ${result.backgroundSessionId}`
+						: "（无后台任务）";
+					ctx.setMessages([
+						...mapped,
+						createSeparator(),
+						createAssistantMessage(
+							`📋 侧边对话已启动（fork 自当前会话）\n${taskInfo}\n输入 /btw back 返回原会话`,
+						),
+					]);
 				}
 			} catch (err) {
 				ctx.setMessages((prev) => [
