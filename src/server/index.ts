@@ -9,6 +9,9 @@ import {
 	SessionManager,
 } from "@earendil-works/pi-coding-agent";
 import { activeToolsFor } from "../agent/session.js";
+import type { BackgroundJobRef } from "../background/service.js";
+import { BackgroundJobService } from "../background/service.js";
+import type { ActiveJob } from "../background/types.js";
 import type {
 	AgentMode,
 	ContextUsage,
@@ -66,6 +69,7 @@ export interface AgentServerOptions {
 	mcpManager: McpManager;
 	cwd: string;
 	teamRef?: TeamManagerRef;
+	backgroundJobRef?: BackgroundJobRef;
 }
 
 export class AgentServer {
@@ -83,6 +87,7 @@ export class AgentServer {
 	private readonly teamConfig: ReturnType<typeof resolveConfigTeams>;
 	private teamUnsub: (() => void) | null = null;
 	private btwTask: BtwBackgroundTask | null = null;
+	private readonly backgroundJobSvc = new BackgroundJobService();
 
 	constructor(opts: AgentServerOptions) {
 		this.runtime = opts.runtime;
@@ -112,7 +117,12 @@ export class AgentServer {
 		}
 		this.teamRef = opts.teamRef ?? { current: this.teamManager };
 
+		if (opts.backgroundJobRef) {
+			opts.backgroundJobRef.current = this.backgroundJobSvc;
+		}
+
 		this.runtime.setRebindSession(async (newSession) => {
+			await this.backgroundJobSvc.dispose();
 			if (this.teamConfig.cancelOrphansOnSessionChange) {
 				await this.disposeTeam();
 				this.teamManager = new TeamManager(
@@ -142,6 +152,7 @@ export class AgentServer {
 		this.ensureSubscribed();
 
 		const dispose = () => {
+			void this.backgroundJobSvc.dispose();
 			void this.disposeTeam();
 			void this.mcpManager.dispose();
 		};
@@ -494,6 +505,22 @@ export class AgentServer {
 		const side = this.btwTask?.sideSession;
 		if (!side) throw new Error("No active side session");
 		void side.prompt(text);
+	}
+
+	handleListBackgroundJobs(): ActiveJob[] {
+		return this.backgroundJobSvc.list();
+	}
+
+	handleGetBackgroundJob(id: string): ActiveJob | undefined {
+		return this.backgroundJobSvc.get(id);
+	}
+
+	async handleCancelBackgroundJob(id: string): Promise<ActiveJob | undefined> {
+		return this.backgroundJobSvc.cancel(id);
+	}
+
+	handlePromoteBackgroundJob(id: string): ActiveJob | undefined {
+		return this.backgroundJobSvc.promote(id);
 	}
 
 	handleListSkills(): SkillListResult {

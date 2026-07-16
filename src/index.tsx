@@ -5,6 +5,7 @@ import { join, resolve } from "node:path";
 import { createCliRenderer } from "@opentui/core";
 import { createRoot } from "@opentui/react";
 import { type AgentMode, createRuntime, getBaseMode, type SessionMode } from "./agent/session.js";
+import type { BackgroundJobRef } from "./background/service.js";
 import { createHttpClient } from "./client/http.js";
 import { createClient } from "./client/index.js";
 import { readConfig } from "./config.js";
@@ -187,6 +188,7 @@ async function runServe(argv: string[]): Promise<void> {
 	const cwd = pathArg ? resolve(pathArg) : process.cwd();
 	const config = readConfig(cwd);
 	const teamRef: TeamManagerRef = { current: null };
+	const backgroundJobRef: BackgroundJobRef = { current: null };
 	const { runtime, skillManager, mcpManager } = await createRuntime({
 		cwd,
 		model: config.model,
@@ -194,8 +196,16 @@ async function runServe(argv: string[]): Promise<void> {
 		mode: "new",
 		agentMode: getBaseMode(config),
 		teamRef,
+		backgroundJobRef,
 	});
-	const server = createServer({ runtime, skillManager, mcpManager, cwd, teamRef });
+	const server = createServer({
+		runtime,
+		skillManager,
+		mcpManager,
+		cwd,
+		teamRef,
+		backgroundJobRef,
+	});
 	createHttpServer({ server, port });
 
 	console.log(`openagent server: http://localhost:${port}`);
@@ -233,6 +243,7 @@ async function runTui(argv: string[]): Promise<void> {
 
 		const questionBridge = createQuestionBridge();
 		const teamRef: TeamManagerRef = { current: null };
+		const backgroundJobRef: BackgroundJobRef = { current: null };
 
 		let result: Awaited<ReturnType<typeof createRuntime>>;
 		try {
@@ -244,6 +255,7 @@ async function runTui(argv: string[]): Promise<void> {
 				agentMode,
 				bridge: questionBridge,
 				teamRef,
+				backgroundJobRef,
 				...(args.sessionRef ? { sessionRef: args.sessionRef } : {}),
 				...(args.name ? { name: args.name } : {}),
 			});
@@ -254,7 +266,14 @@ async function runTui(argv: string[]): Promise<void> {
 		}
 
 		const { runtime, skillManager, mcpManager } = result;
-		const server = createServer({ runtime, skillManager, mcpManager, cwd, teamRef });
+		const server = createServer({
+			runtime,
+			skillManager,
+			mcpManager,
+			cwd,
+			teamRef,
+			backgroundJobRef,
+		});
 		const client = createClient(server);
 
 		const renderer = await createCliRenderer({ exitOnCtrlC: false });

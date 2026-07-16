@@ -19,6 +19,8 @@ import {
 	buildAvailableSkillsPrompt,
 	discoverAgents,
 } from "../agents/discover.js";
+import type { BackgroundJobRef } from "../background/service.js";
+import type { SessionRef } from "../background/types.js";
 import type { Config, ProviderConfig } from "../config.js";
 import { ORCHESTRATOR_SYSTEM_PROMPT, TEAM_ORCHESTRATOR_PROMPT } from "../context-files.js";
 import { activateDcpExtension, prepareDcpExtension } from "../dcp/init.js";
@@ -180,6 +182,8 @@ export interface RuntimeOptions {
 	/** QuestionBridge for interactive question tool. Omit in non-interactive modes. */
 	bridge?: QuestionBridge;
 	teamRef?: TeamManagerRef;
+	/** Process-wide background job service ref. Enables `background: true` in subagent. */
+	backgroundJobRef?: BackgroundJobRef;
 }
 
 export interface RuntimeResult {
@@ -356,6 +360,7 @@ export async function createRuntime(options: RuntimeOptions): Promise<RuntimeRes
 			isTeamMode && options.teamRef && options.config?.teams?.enabled !== false
 				? buildTeamTools(options.teamRef)
 				: [];
+		const parentSessionRef: SessionRef = { current: null };
 		const customTools: import("@earendil-works/pi-coding-agent").ToolDefinition[] = [
 			...createLspToolDefinitions({ client: svc.lspClient }),
 			createTodoTool(),
@@ -373,6 +378,8 @@ export async function createRuntime(options: RuntimeOptions): Promise<RuntimeRes
 				cwd: fCwd,
 				services: svc,
 				parentModel: svc.model,
+				backgroundJobRef: options.backgroundJobRef,
+				parentSessionRef,
 			}),
 		);
 		customTools.push(...teamTools);
@@ -396,6 +403,7 @@ export async function createRuntime(options: RuntimeOptions): Promise<RuntimeRes
 			customTools: [...customTools, ...mcpToolDefs],
 			sessionManager: fSessionManager,
 		});
+		parentSessionRef.current = result.session;
 		if (dcpTool) {
 			activateDcpExtension(result.session);
 		}

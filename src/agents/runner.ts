@@ -1,15 +1,44 @@
 import { homedir } from "node:os";
 import { join } from "node:path";
-import { createAgentSession, DefaultResourceLoader } from "@earendil-works/pi-coding-agent";
+import {
+	type AgentSession,
+	createAgentSession,
+	DefaultResourceLoader,
+} from "@earendil-works/pi-coding-agent";
 import { BUILTIN_TOOLS } from "../agent/session.js";
 import { extractAssistantText } from "../utils/content.js";
 import { buildNoModelError, resolveSubagentModel } from "./model-resolver.js";
-import type { RunSubagentOptions, SubagentResult, SubagentUsage } from "./types.js";
+import type {
+	AgentConfig,
+	RunSubagentOptions,
+	SubagentResult,
+	SubagentServices,
+	SubagentUsage,
+} from "./types.js";
 
 const AGENT_DIR = join(homedir(), ".config", "openagent");
 
-export async function runSubagent(options: RunSubagentOptions): Promise<SubagentResult> {
-	const { agent, task, cwd, services, parentModel, signal, onUpdate } = options;
+type ResolvedModel = NonNullable<ReturnType<typeof resolveSubagentModel>>;
+
+export interface CreateSubagentSessionOpts {
+	agent: AgentConfig;
+	cwd: string;
+	services: SubagentServices;
+	parentModel?: ResolvedModel;
+}
+
+/**
+ * Create a child AgentSession for a subagent run.
+ *
+ * Shared between {@link runSubagent} (synchronous path) and the background
+ * subagent path in `src/tools/subagent.ts`. Resolves the model and builds the
+ * resource loader + tool list, then returns the live session handle. The
+ * caller owns the session lifecycle (subscribe, prompt, dispose).
+ */
+export async function createSubagentSession(
+	opts: CreateSubagentSessionOpts,
+): Promise<AgentSession> {
+	const { agent, cwd, services, parentModel } = opts;
 
 	const model = resolveSubagentModel({
 		agent,
@@ -31,10 +60,6 @@ export async function runSubagent(options: RunSubagentOptions): Promise<Subagent
 
 	const tools = agent.tools ?? BUILTIN_TOOLS;
 
-	let turns = 0;
-	const acc = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, cost: 0 };
-	let lastText = "";
-
 	const { session } = await createAgentSession({
 		cwd,
 		agentDir: AGENT_DIR,
@@ -45,6 +70,18 @@ export async function runSubagent(options: RunSubagentOptions): Promise<Subagent
 		tools,
 		resourceLoader,
 	});
+
+	return session;
+}
+
+export async function runSubagent(options: RunSubagentOptions): Promise<SubagentResult> {
+	const { agent, task, cwd, services, parentModel, signal, onUpdate } = options;
+
+	const session = await createSubagentSession({ agent, cwd, services, parentModel });
+
+	let turns = 0;
+	const acc = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, cost: 0 };
+	let lastText = "";
 
 	const unsub = session.subscribe((event) => {
 		if (event.type === "message_end" && event.message.role === "assistant") {

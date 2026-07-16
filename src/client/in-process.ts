@@ -1,3 +1,4 @@
+import type { ActiveJob } from "../background/types.js";
 import type { CommandContext } from "../commands/registry.js";
 import type { AgentServer } from "../server/index.js";
 import type {
@@ -304,6 +305,22 @@ export class InProcessClient implements AgentClient {
 
 	listTeamSummaries(): TeamSummary[] {
 		return this.server.handleListTeamSummaries();
+	}
+
+	listBackgroundJobs(): ActiveJob[] {
+		return this.server.handleListBackgroundJobs();
+	}
+
+	getBackgroundJob(id: string): ActiveJob | undefined {
+		return this.server.handleGetBackgroundJob(id);
+	}
+
+	async cancelBackgroundJob(id: string): Promise<ActiveJob | undefined> {
+		return this.server.handleCancelBackgroundJob(id);
+	}
+
+	async promoteBackgroundJob(id: string): Promise<ActiveJob | undefined> {
+		return this.server.handlePromoteBackgroundJob(id);
 	}
 }
 

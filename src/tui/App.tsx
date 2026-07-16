@@ -3,6 +3,7 @@ import { useKeyboard, useRenderer } from "@opentui/react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { AgentSessionEvent } from "../agent/session.js";
 import { buildAgentModeCycle, getBaseMode } from "../agent/session.js";
+import type { ActiveJob } from "../background/types.js";
 import type { AgentClient, AgentMode } from "../client/index.js";
 import type { BtwBackgroundTaskInfo, TeamSummary } from "../client/types.js";
 import { commandRegistry } from "../commands/registry.js";
@@ -55,6 +56,34 @@ function buildBtwCardMessage(task: BtwBackgroundTaskInfo): Message {
 	return createAssistantMessage(content);
 }
 
+function buildBackgroundJobCard(job: ActiveJob): Message {
+	const icon =
+		job.status === "running"
+			? "⠋"
+			: job.status === "completed"
+				? "✓"
+				: job.status === "error"
+					? "✗"
+					: "⊘";
+	const label =
+		job.status === "running"
+			? "运行中"
+			: job.status === "completed"
+				? "已完成"
+				: job.status === "error"
+					? "出错"
+					: "已取消";
+	let content = `${icon} 后台任务 · ${label}\n${job.title}`;
+	if (job.output && job.status === "completed") {
+		const preview = job.output.length > 500 ? `${job.output.slice(0, 497)}...` : job.output;
+		content += `\n\n结果: ${preview}`;
+	}
+	if (job.error) {
+		content += `\n\n错误: ${job.error}`;
+	}
+	return createAssistantMessage(content);
+}
+
 interface AppProps {
 	client: AgentClient;
 	model: string;
@@ -103,6 +132,8 @@ export function App({
 	const [activeMemberName, setActiveMemberName] = useState<string | null>(null);
 	const [_memberTick, setMemberTick] = useState(0);
 	const activeMemberMsgMapRef = useRef<Map<string, Message>>(new Map());
+	const [backgroundJobs, setBackgroundJobs] = useState<ActiveJob[]>([]);
+	const prevJobsRef = useRef<Map<string, ActiveJob>>(new Map());
 	const [btwTask, setBtwTask] = useState<BtwBackgroundTaskInfo | null>(null);
 	const [_btwTick, setBtwTick] = useState(0);
 	const [members, setMembers] = useState<MemberState[]>(() => client.listMembers());
@@ -339,6 +370,10 @@ export function App({
 			if (btwTask) {
 				return [...messages, buildBtwCardMessage(btwTask)];
 			}
+			const runningJobs = backgroundJobs.filter((j) => j.status === "running");
+			if (runningJobs.length > 0) {
+				return [...messages, ...runningJobs.map(buildBackgroundJobCard)];
+			}
 			return messages;
 		}
 		const member = client.getMember(activeMemberName);
@@ -351,7 +386,7 @@ export function App({
 			return [createAssistantMessage(`No messages yet. ${activeMemberName} is working...`)];
 		}
 		return memberMsgs;
-	}, [btwTask, _btwTick, activeMemberName, messages, client]);
+	}, [btwTask, _btwTick, activeMemberName, messages, client, backgroundJobs]);
 
 	useEffect(() => {
 		const router = getGlobalRouter();
@@ -461,6 +496,49 @@ export function App({
 	}, [cwd, mcpManager]);
 
 	useEffect(() => {
+		let supported = true;
+		try {
+			client.listBackgroundJobs();
+		} catch {
+			supported = false;
+		}
+		if (!supported) return;
+
+		pollManagerRef.current.register(
+			"bg-jobs",
+			() => {
+				try {
+					return client.listBackgroundJobs();
+				} catch {
+					return [];
+				}
+			},
+			2000,
+		);
+		const unsub = pollManagerRef.current.subscribe<ActiveJob[]>("bg-jobs", (jobs) => {
+			setBackgroundJobs(jobs);
+		});
+		return () => {
+			pollManagerRef.current.unregister("bg-jobs");
+			unsub();
+		};
+	}, [client]);
+
+	useEffect(() => {
+		const prev = prevJobsRef.current;
+		for (const job of backgroundJobs) {
+			const prevJob = prev.get(job.id);
+			if (prevJob?.status === "running" && job.status !== "running") {
+				setMessages((msgs) => [...msgs, buildBackgroundJobCard(job)]);
+			}
+		}
+		prev.clear();
+		for (const job of backgroundJobs) {
+			prev.set(job.id, job);
+		}
+	}, [backgroundJobs]);
+
+	useEffect(() => {
 		client.onSessionChange(async () => {
 			const mapped = client.getMappedMessages();
 			setMessages(mapped.length > 0 ? mapped : [WELCOME_MESSAGE]);
@@ -470,6 +548,8 @@ export function App({
 			setMembers(client.listMembers());
 			setActiveMemberName(null);
 			setBtwTask(null);
+			setBackgroundJobs([]);
+			prevJobsRef.current.clear();
 			setGoals(client.listGoals());
 			setTeamMd(client.readTeamMd());
 			setTeamSummaries(client.listTeamSummaries());
