@@ -48,7 +48,12 @@ import type {
 	TeamManagerRef,
 	TeamMdStructure,
 } from "../teams/types-v2.js";
-import { parseSessionIdFromUri, teamDir, teamDirForSession } from "../utils/paths.js";
+import {
+	buildSqliteUri,
+	parseSessionIdFromUri,
+	teamDir,
+	teamDirForSession,
+} from "../utils/paths.js";
 
 export interface AgentServerOptions {
 	runtime: AgentSessionRuntime;
@@ -376,12 +381,8 @@ export class AgentServer {
 		}
 
 		const bgSession = this.session;
-		const returnPath = bgSession.sessionFile;
-		if (!returnPath) {
-			throw new Error("Cannot start side conversation: current session has no file path.");
-		}
-
 		const bgSessionId = bgSession.sessionId;
+		const returnPath = bgSession.sessionFile ?? buildSqliteUri(bgSessionId);
 		const bgIsStreaming = bgSession.isStreaming;
 
 		const userMsgs = bgSession.getUserMessagesForForking();
