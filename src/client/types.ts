@@ -1,5 +1,6 @@
 import type { AgentSession } from "@earendil-works/pi-coding-agent";
 import type { AgentSessionEvent } from "../agent/session.js";
+import type { ActiveJob } from "../background/types.js";
 import type { CommandContext } from "../commands/registry.js";
 import type { Message } from "../message.js";
 import type { SessionInfo } from "../session/list.js";
@@ -247,4 +248,9 @@ export interface AgentClient {
 	listGoals(filter?: { status?: GoalStatus }): Goal[];
 	readTeamMd(): TeamMdStructure;
 	listTeamSummaries(): TeamSummary[];
+
+	listBackgroundJobs(): ActiveJob[];
+	getBackgroundJob(id: string): ActiveJob | undefined;
+	cancelBackgroundJob(id: string): Promise<ActiveJob | undefined>;
+	promoteBackgroundJob(id: string): Promise<ActiveJob | undefined>;
 }

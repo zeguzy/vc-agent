@@ -1,4 +1,5 @@
 import type { AgentSessionEvent } from "../agent/session.js";
+import type { ActiveJob } from "../background/types.js";
 import type { CommandContext } from "../commands/registry.js";
 import type { Message } from "../message.js";
 import type { SessionInfo } from "../session/list.js";
@@ -511,6 +512,42 @@ export class HttpClient implements AgentClient {
 	async fetchTeamSummaries(): Promise<TeamSummary[]> {
 		const data = await this.getJson<{ summaries: TeamSummary[] }>("/team/summaries");
 		return data.summaries ?? [];
+	}
+
+	async fetchBackgroundJobs(): Promise<ActiveJob[]> {
+		const data = await this.getJson<{ jobs: ActiveJob[] }>("/background/jobs");
+		return data.jobs ?? [];
+	}
+
+	async fetchBackgroundJob(id: string): Promise<ActiveJob | undefined> {
+		const res = await fetch(`${this.baseUrl}/background/jobs/${encodeURIComponent(id)}`);
+		if (res.status === 404) return undefined;
+		const data = (await res.json()) as { job?: ActiveJob };
+		return data.job;
+	}
+
+	async cancelBackgroundJob(id: string): Promise<ActiveJob | undefined> {
+		const res = await fetch(`${this.baseUrl}/background/jobs/${encodeURIComponent(id)}`, {
+			method: "DELETE",
+		});
+		if (res.status === 404) return undefined;
+		const data = (await res.json()) as { job?: ActiveJob };
+		return data.job;
+	}
+
+	async promoteBackgroundJob(id: string): Promise<ActiveJob | undefined> {
+		const data = (await this.postJson(`/background/jobs/${encodeURIComponent(id)}/promote`)) as {
+			job?: ActiveJob;
+		};
+		return data.job;
+	}
+
+	listBackgroundJobs(): ActiveJob[] {
+		throw new NotSupportedError("listBackgroundJobs (sync) — use fetchBackgroundJobs() instead");
+	}
+
+	getBackgroundJob(_id: string): ActiveJob | undefined {
+		throw new NotSupportedError("getBackgroundJob (sync) — use fetchBackgroundJob() instead");
 	}
 }
 

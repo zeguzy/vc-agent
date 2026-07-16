@@ -55,7 +55,7 @@ export interface SubagentResult {
  * - chain: sequential tasks, `{previous}` in description is replaced with prior output
  */
 export type SubagentToolParams =
-	| { mode: "single"; agent: string; description: string }
+	| { mode: "single"; agent: string; description: string; background?: boolean }
 	| { mode: "parallel"; tasks: SubagentTask[] }
 	| { mode: "chain"; tasks: SubagentTask[] };
 

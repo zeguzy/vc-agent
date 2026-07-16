@@ -1,7 +1,7 @@
-import type { ToolDefinition } from "@earendil-works/pi-coding-agent";
+import type { AgentSession, ToolDefinition } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 import { discoverAgents } from "../agents/discover.js";
-import { runSubagent } from "../agents/runner.js";
+import { createSubagentSession, runSubagent } from "../agents/runner.js";
 import type {
 	AgentConfig,
 	SubagentResult,
@@ -10,6 +10,10 @@ import type {
 	SubagentToolParams,
 } from "../agents/types.js";
 import { MAX_OUTPUT_CHARS, MAX_PARALLEL_TASKS, PARALLEL_CONCURRENCY } from "../agents/types.js";
+import type { BackgroundJobRef } from "../background/service.js";
+import type { SessionRef } from "../background/types.js";
+import { injectNotification } from "../session/btw.js";
+import { extractAssistantText } from "../utils/content.js";
 
 const PREVIEW_MAX_CHARS = 5000;
 
@@ -19,6 +23,10 @@ interface SubagentToolOptions {
 	cwd: string;
 	services: SubagentServices;
 	parentModel?: ResolvedModel;
+	/** Process-wide background job service. Required for `background: true`. */
+	backgroundJobRef?: BackgroundJobRef;
+	/** Parent session, populated after createAgentSession returns. */
+	parentSessionRef?: SessionRef;
 }
 
 const SubagentParamsSchema = Type.Object({
@@ -38,6 +46,12 @@ const SubagentParamsSchema = Type.Object({
 			}),
 			{ description: "Tasks for parallel/chain mode" },
 		),
+	),
+	background: Type.Optional(
+		Type.Boolean({
+			description:
+				"Run in background (single mode only). Returns immediately with a task ID; result is injected into the parent session on completion. Do NOT poll or sleep.",
+		}),
 	),
 });
 
@@ -75,8 +89,94 @@ function formatAgentNames(agents: AgentConfig[]): string {
 	return agents.length > 0 ? agents.map((a) => a.name).join(", ") : "(none defined yet)";
 }
 
+interface StartBackgroundOpts {
+	agentConfig: AgentConfig;
+	task: string;
+	cwd: string;
+	services: SubagentServices;
+	parentModel?: ResolvedModel;
+	backgroundJobRef?: BackgroundJobRef;
+	parentSessionRef?: SessionRef;
+}
+
+async function startBackgroundSubagent(
+	opts: StartBackgroundOpts,
+): ReturnType<NonNullable<ToolDefinition["execute"]>> {
+	const { agentConfig, task, cwd, services, parentModel, backgroundJobRef, parentSessionRef } =
+		opts;
+
+	const bgSvc = backgroundJobRef?.current;
+	const parentSession = parentSessionRef?.current;
+	const emptyDetails = (): SubagentToolDetails => ({
+		mode: "single",
+		results: [],
+		totalCost: 0,
+		totalTurns: 0,
+	});
+	if (!bgSvc) {
+		return {
+			content: [
+				{
+					type: "text",
+					text: '<subagent-result status="failed" mode="single">\n<error>background mode unavailable: BackgroundJobService not wired</error>\n</subagent-result>',
+				},
+			],
+			details: emptyDetails(),
+		};
+	}
+
+	const childSession: AgentSession = await createSubagentSession({
+		agent: agentConfig,
+		cwd,
+		services,
+		parentModel,
+	});
+
+	bgSvc.start({
+		id: childSession.sessionId,
+		type: "subagent",
+		title: task,
+		session: childSession,
+		run: async () => {
+			let lastText = "";
+			const unsub = childSession.subscribe((event) => {
+				if (event.type === "message_end" && event.message.role === "assistant") {
+					const text = extractAssistantText(event.message.content);
+					if (text) lastText = text;
+				}
+			});
+			try {
+				await childSession.prompt(task);
+				return lastText || "(subagent produced no text output)";
+			} finally {
+				unsub();
+			}
+		},
+		onComplete: (job) => {
+			if (!parentSession) return;
+			const body =
+				job.status === "completed"
+					? `[BACKGROUND SUBAGENT COMPLETED: ${job.title}]\n${job.output ?? "(no output)"}\n[END BACKGROUND SUBAGENT]`
+					: job.status === "error"
+						? `[BACKGROUND SUBAGENT ERROR: ${job.title}]\n${job.error ?? "unknown error"}\n[END BACKGROUND SUBAGENT]`
+						: `[BACKGROUND SUBAGENT CANCELLED: ${job.title}]\n[END BACKGROUND SUBAGENT]`;
+			injectNotification(parentSession, body);
+		},
+	});
+
+	return {
+		content: [
+			{
+				type: "text",
+				text: `Background task started: ${task}\nTask ID: ${childSession.sessionId}\nYou will be notified when it completes.`,
+			},
+		],
+		details: emptyDetails(),
+	};
+}
+
 export function createSubagentTool(options: SubagentToolOptions): ToolDefinition {
-	const { cwd, services, parentModel } = options;
+	const { cwd, services, parentModel, backgroundJobRef, parentSessionRef } = options;
 
 	const initialAgents = discoverAgents(cwd).agents;
 	const agentList = formatAgentNames(initialAgents);
@@ -134,6 +234,18 @@ export function createSubagentTool(options: SubagentToolOptions): ToolDefinition
 						`agent "${p.agent}" not found. Available: ${formatAgentNames(agents)}`,
 						"single",
 					);
+				}
+
+				if (p.background === true) {
+					return await startBackgroundSubagent({
+						agentConfig,
+						task: p.description,
+						cwd,
+						services,
+						parentModel,
+						backgroundJobRef,
+						parentSessionRef,
+					});
 				}
 
 				const result = await runSubagent({

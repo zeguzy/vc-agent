@@ -404,6 +404,31 @@ async function handleRequest(server: AgentServer, req: IncomingMessage, res: Ser
 		return sendJson(res, { summaries: server.handleListTeamSummaries() });
 	}
 
+	if (method === "GET" && path === "/background/jobs") {
+		return sendJson(res, { jobs: server.handleListBackgroundJobs() });
+	}
+
+	if (method === "GET" && path.startsWith("/background/jobs/")) {
+		const id = decodeURIComponent(path.slice("/background/jobs/".length));
+		const job = server.handleGetBackgroundJob(id);
+		if (!job) return sendJson(res, { error: "job not found" }, 404);
+		return sendJson(res, { job });
+	}
+
+	if (method === "DELETE" && path.startsWith("/background/jobs/")) {
+		const id = decodeURIComponent(path.slice("/background/jobs/".length));
+		const job = await server.handleCancelBackgroundJob(id);
+		if (!job) return sendJson(res, { error: "job not found" }, 404);
+		return sendJson(res, { job });
+	}
+
+	if (method === "POST" && path.startsWith("/background/jobs/") && path.endsWith("/promote")) {
+		const id = decodeURIComponent(path.slice("/background/jobs/".length, -"/promote".length));
+		const job = server.handlePromoteBackgroundJob(id);
+		if (!job) return sendJson(res, { error: "job not found" }, 404);
+		return sendJson(res, { job });
+	}
+
 	if (method === "GET" && path === "/events") {
 		const streaming = url.searchParams.get("streaming") === "true";
 		return createSSEResponse(server, req, res, streaming);
