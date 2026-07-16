@@ -86,8 +86,8 @@ export function activeToolsFor(agentMode: AgentMode): string[] {
 /** Agent runtime mode — controls tool availability and system prompt. */
 export type AgentMode = "standard" | "planner" | "orchestrator" | "team";
 
-export function getBaseMode(config?: Config): AgentMode {
-	return config?.teams?.enabled !== false ? "team" : "standard";
+export function getBaseMode(_config?: Config): AgentMode {
+	return "standard";
 }
 
 /**
@@ -95,18 +95,13 @@ export function getBaseMode(config?: Config): AgentMode {
  *
  * The cycle maps each mode to the next in a circular list. When
  * `config.teams.agentModes` is set, it uses the user-defined order;
- * otherwise the default depends on `teams.enabled`:
- *   enabled=false → standard → planner → orchestrator → standard
- *   enabled=true  → standard → team → planner → orchestrator → standard
+ * otherwise all four modes are available as peers:
+ *   standard → team → planner → orchestrator → standard
  */
 export function buildAgentModeCycle(config?: Config): Record<string, AgentMode> {
 	const userModes = config?.teams?.agentModes;
 	const modes: AgentMode[] =
-		userModes && userModes.length > 0
-			? userModes
-			: config?.teams?.enabled !== false
-				? ["standard", "team", "planner", "orchestrator"]
-				: ["standard", "planner", "orchestrator"];
+		userModes && userModes.length > 0 ? userModes : ["standard", "team", "planner", "orchestrator"];
 	const cycle: Record<string, AgentMode> = {};
 	for (let i = 0; i < modes.length; i++) {
 		cycle[modes[i]] = modes[(i + 1) % modes.length];

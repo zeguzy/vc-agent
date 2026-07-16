@@ -54,11 +54,18 @@ interface ParsedArgs {
 	sessionRef?: string;
 	name?: string;
 	plan: boolean;
+	teamOn: boolean;
 	path?: string;
 }
 
 function parseArgs(argv: string[]): ParsedArgs {
-	const args: ParsedArgs = { help: false, continueSession: false, resumeList: false, plan: false };
+	const args: ParsedArgs = {
+		help: false,
+		continueSession: false,
+		resumeList: false,
+		plan: false,
+		teamOn: false,
+	};
 	for (let i = 2; i < argv.length; i++) {
 		const arg = argv[i];
 		if (arg === "--help" || arg === "-h") {
@@ -81,6 +88,8 @@ function parseArgs(argv: string[]): ParsedArgs {
 			args.name = arg.slice("--name=".length);
 		} else if (arg === "--plan") {
 			args.plan = true;
+		} else if (arg === "--team=on") {
+			args.teamOn = true;
 		} else if (arg === "--path" || arg === "-p") {
 			args.path = argv[++i];
 		} else if (arg.startsWith("--path=")) {
@@ -113,6 +122,7 @@ openagent — your terminal coding assistant
   --session <path|id>     恢复指定会话
   -n, --name <name>       命名当前会话
   --plan                  planner 模式（只读）
+  --team=on               team 模式（多成员协作）
   --port <port>           serve 模式端口（默认 4096）
   --path, -p <dir>        指定工作目录
   --help, -h              显示帮助
@@ -145,7 +155,7 @@ async function runHeadless(promptText: string, argv: string[]): Promise<void> {
 	const cwd = args.path ? resolve(args.path) : process.cwd();
 	const mode = resolveMode(args);
 	const config = readConfig(cwd);
-	const agentMode: AgentMode = args.plan ? "planner" : getBaseMode(config);
+	const agentMode: AgentMode = args.plan ? "planner" : args.teamOn ? "team" : getBaseMode(config);
 
 	const runner = new HeadlessRunner({
 		cwd,
@@ -219,7 +229,7 @@ async function runTui(argv: string[]): Promise<void> {
 		const config = readConfig(cwd);
 		const model = args.model ?? config.model;
 		const mode = resolveMode(args);
-		const agentMode: AgentMode = args.plan ? "planner" : getBaseMode(config);
+		const agentMode: AgentMode = args.plan ? "planner" : args.teamOn ? "team" : getBaseMode(config);
 
 		const questionBridge = createQuestionBridge();
 		const teamRef: TeamManagerRef = { current: null };
