@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { AgentSessionEvent } from "../agent/session.js";
 import { buildAgentModeCycle, getBaseMode } from "../agent/session.js";
 import type { AgentClient, AgentMode } from "../client/index.js";
-import type { TeamSummary } from "../client/types.js";
+import type { BtwBackgroundTaskInfo, TeamSummary } from "../client/types.js";
 import { commandRegistry } from "../commands/registry.js";
 import type { Config } from "../config.js";
 import { readConfig } from "../config.js";
@@ -26,6 +26,7 @@ import { SessionPicker } from "./components/SessionPicker.js";
 import { SettingsPanel } from "./components/SettingsPanel.js";
 import { StatusBar } from "./components/StatusBar.js";
 import { TeamDashboard } from "./components/TeamDashboard.js";
+import { TeamTopology } from "./components/TeamTopology.js";
 import { Toast } from "./components/Toast.js";
 import { WelcomeBanner } from "./components/WelcomeBanner.js";
 import { WorkersView } from "./components/WorkersView.js";
@@ -91,6 +92,8 @@ export function App({
 	const [activeMemberName, setActiveMemberName] = useState<string | null>(null);
 	const [_memberTick, setMemberTick] = useState(0);
 	const activeMemberMsgMapRef = useRef<Map<string, Message>>(new Map());
+	const [btwTask, setBtwTask] = useState<BtwBackgroundTaskInfo | null>(null);
+	const [_btwTick, setBtwTick] = useState(0);
 	const [members, setMembers] = useState<MemberState[]>(() => client.listMembers());
 	const membersRef = useRef<MemberState[]>(members);
 	membersRef.current = members;
@@ -150,6 +153,8 @@ export function App({
 	configRef.current = configState;
 	const activeMemberNameRef = useRef<string | null>(null);
 	activeMemberNameRef.current = activeMemberName;
+	const btwTaskRef = useRef<BtwBackgroundTaskInfo | null>(null);
+	btwTaskRef.current = btwTask;
 	const lastCtrlCRef = useRef<number>(0);
 	const resumeListDoneRef = useRef(false);
 
@@ -222,6 +227,65 @@ export function App({
 		};
 	}, [activeMemberName, client]);
 
+	// Real-time: subscribe to btw side session and stream messages into view
+	useEffect(() => {
+		const sideSession = btwTask?.sideSession;
+		if (!sideSession) return;
+
+		setBtwTick(Date.now());
+
+		let throttled: ReturnType<typeof setTimeout> | null = null;
+		const flushToView = () => setBtwTick(Date.now());
+
+		const unsub = sideSession.subscribe((event: AgentSessionEvent) => {
+			switch (event.type) {
+				case "agent_end":
+				case "message_end": {
+					if (throttled) {
+						clearTimeout(throttled);
+						throttled = null;
+					}
+					flushToView();
+					break;
+				}
+				default: {
+					if (!throttled) {
+						throttled = setTimeout(() => {
+							throttled = null;
+							flushToView();
+						}, 120);
+					}
+					break;
+				}
+			}
+		});
+
+		return () => {
+			unsub();
+			if (throttled) {
+				clearTimeout(throttled);
+				throttled = null;
+			}
+		};
+	}, [btwTask]);
+
+	// Poll btwStatus to sync bg-task completion into TUI state (server-side
+	// status flips when the monitor fires; the TUI has no direct subscription).
+	useEffect(() => {
+		if (!btwTask) return;
+		const interval = setInterval(() => {
+			const status = client.btwStatus();
+			if (!status.active) {
+				setBtwTask(null);
+				return;
+			}
+			if (status.status && status.status !== btwTask.status) {
+				setBtwTask({ ...btwTask, status: status.status });
+			}
+		}, 2000);
+		return () => clearInterval(interval);
+	}, [btwTask, client]);
+
 	// Keep members list in sync with team events
 	useEffect(() => {
 		const unsub = client.subscribeTeam(() => {
@@ -244,8 +308,16 @@ export function App({
 		}
 	}, [members.length]);
 
-	// Derive display messages based on active member
+	// Derive display messages: btw side session > member > main
 	const displayMessages = useMemo(() => {
+		const sideSession = btwTask?.sideSession;
+		if (sideSession) {
+			const sideMsgs = mapSdkMessagesToTui(sideSession.messages);
+			if (sideMsgs.length === 0) {
+				return [createAssistantMessage("Side conversation started. Background task is running...")];
+			}
+			return sideMsgs;
+		}
 		if (!activeMemberName) {
 			return messages;
 		}
@@ -260,7 +332,7 @@ export function App({
 		}
 		return memberMsgs;
 		// eslint-disable-next-line react-hooks/exhaustive-deps
-	}, [activeMemberName, messages, client]);
+	}, [btwTask, activeMemberName, messages, client]);
 
 	useEffect(() => {
 		const router = getGlobalRouter();
@@ -378,6 +450,7 @@ export function App({
 			setContextUsage({ tokens: null, window: null, percent: null });
 			setMembers(client.listMembers());
 			setActiveMemberName(null);
+			setBtwTask(null);
 			setGoals(client.listGoals());
 			setTeamMd(client.readTeamMd());
 			setTeamSummaries(client.listTeamSummaries());
@@ -424,6 +497,7 @@ export function App({
 			setInputText: (text: string) => setPendingInput({ text, nonce: Date.now() }),
 			isRunning: isRunningRef.current,
 			mcpManager,
+			setBtwBackgroundTask: setBtwTask,
 		};
 	}, [client, cwd, picker.openSessionPicker, mcpManager]);
 
@@ -447,6 +521,14 @@ export function App({
 
 	const handlePrompt = useCallback(
 		(text: string) => {
+			// Route to btw side session when in side view
+			const btwSide = btwTaskRef.current?.sideSession;
+			if (btwSide) {
+				client.btwSidePrompt(text);
+				setCommandHistory((prev) => [...prev, text]);
+				saveHistory(text);
+				return;
+			}
 			// Route to member when in member sub-session view
 			if (activeMemberNameRef.current) {
 				client.directMember(activeMemberNameRef.current, "directive", text);
@@ -718,6 +800,16 @@ export function App({
 					messages={displayMessages.filter((m) => !m.queued)}
 					scrollRef={scrollRef}
 					thinkingCollapsed={thinkingCollapsed}
+				/>
+			)}
+			{(members.length > 0 || btwTask) && (
+				<TeamTopology
+					members={members}
+					tasks={client.listTasks()}
+					activeMemberName={activeMemberName}
+					btwBackgroundTask={
+						btwTask ? { status: btwTask.status, taskSummary: btwTask.taskSummary } : null
+					}
 				/>
 			)}
 			{queuedMsgs.length > 0 && (

@@ -146,6 +146,14 @@ export class InProcessClient implements AgentClient {
 		return this.server.handleBtwStatus();
 	}
 
+	btwSidePrompt(text: string): void {
+		this.server.handleBtwSidePrompt(text);
+	}
+
+	getBtwSideSession(): import("@earendil-works/pi-coding-agent").AgentSession | null {
+		return this.server.handleGetBtwSideSession();
+	}
+
 	listSkills(): SkillListResult {
 		return this.server.handleListSkills();
 	}

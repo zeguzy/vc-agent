@@ -267,6 +267,14 @@ export class HttpClient implements AgentClient {
 		throw new NotSupportedError("btwStatus (sync) — use fetchBtwStatus() instead");
 	}
 
+	btwSidePrompt(_text: string): void {
+		throw new NotSupportedError("btwSidePrompt — InProcessClient only");
+	}
+
+	getBtwSideSession(): import("@earendil-works/pi-coding-agent").AgentSession | null {
+		throw new NotSupportedError("getBtwSideSession — InProcessClient only");
+	}
+
 	async fetchBtwStatus(): Promise<BtwStatusResult> {
 		return this.getJson<BtwStatusResult>("/btw/status");
 	}

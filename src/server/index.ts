@@ -1,6 +1,13 @@
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
-import type { AgentSession, AgentSessionEvent, AgentSessionRuntime } from "../agent/session.js";
+import {
+	type AgentSession,
+	type AgentSessionEvent,
+	type AgentSessionRuntime,
+	createAgentSession,
+	DefaultResourceLoader,
+	SessionManager,
+} from "@earendil-works/pi-coding-agent";
 import { activeToolsFor } from "../agent/session.js";
 import type {
 	AgentMode,
@@ -26,14 +33,18 @@ import { getDcpConfig, isDcpEnabled } from "../dcp/config.js";
 import type { McpManager } from "../mcp/manager.js";
 import { NotificationRouter, setGlobalRouter } from "../notifications/notifier.js";
 import {
+	type BtwBackgroundTask,
 	type BtwEnterResult,
-	type BtwState,
+	type BtwStatus,
+	buildBtwCompletionNote,
+	buildBtwSideSessionAwarenessNote,
 	createBackgroundMonitor,
 	injectNotification,
+	summarizeSessionResult,
 } from "../session/btw.js";
 import { listSessions } from "../session/list.js";
 import { mapSdkMessagesToTui } from "../session/render.js";
-import { getSdkInternals } from "../session/sdk-internals.js";
+import { resolveSessionDir } from "../session/storage.js";
 import type { SkillManager } from "../skills/manager.js";
 import { parseTeamMd } from "../teams/files.js";
 import { TeamManager } from "../teams/manager-v2.js";
@@ -47,12 +58,7 @@ import type {
 	TeamManagerRef,
 	TeamMdStructure,
 } from "../teams/types-v2.js";
-import {
-	buildSqliteUri,
-	parseSessionIdFromUri,
-	teamDir,
-	teamDirForSession,
-} from "../utils/paths.js";
+import { parseSessionIdFromUri, teamDir, teamDirForSession } from "../utils/paths.js";
 
 export interface AgentServerOptions {
 	runtime: AgentSessionRuntime;
@@ -76,9 +82,7 @@ export class AgentServer {
 	readonly teamRef: TeamManagerRef;
 	private readonly teamConfig: ReturnType<typeof resolveConfigTeams>;
 	private teamUnsub: (() => void) | null = null;
-	private btwState: BtwState | null = null;
-	/** When true, setRebindSession skips team disposal (btw session switch). */
-	private preserveBackground = false;
+	private btwTask: BtwBackgroundTask | null = null;
 
 	constructor(opts: AgentServerOptions) {
 		this.runtime = opts.runtime;
@@ -109,8 +113,7 @@ export class AgentServer {
 		this.teamRef = opts.teamRef ?? { current: this.teamManager };
 
 		this.runtime.setRebindSession(async (newSession) => {
-			const shouldPreserveTeam = this.preserveBackground;
-			if (this.teamConfig.cancelOrphansOnSessionChange && !shouldPreserveTeam) {
+			if (this.teamConfig.cancelOrphansOnSessionChange) {
 				await this.disposeTeam();
 				this.teamManager = new TeamManager(
 					this.teamConfig,
@@ -125,7 +128,7 @@ export class AgentServer {
 				this.teamRef.current = this.teamManager;
 			}
 			this.resubscribe();
-			if (this.teamConfig.cancelOrphansOnSessionChange && !shouldPreserveTeam) {
+			if (this.teamConfig.cancelOrphansOnSessionChange) {
 				await this.teamManager.restoreMembers({
 					services: this.runtime.services,
 					parentModel: this.session.model,
@@ -375,67 +378,114 @@ export class AgentServer {
 	}
 
 	async handleBtwEnter(): Promise<BtwEnterResult> {
-		if (this.btwState) {
+		if (this.btwTask) {
 			throw new Error("Already in a side conversation. Use /btw back to return first.");
 		}
 
 		const bgSession = this.session;
+		const mainSession = this.session;
 		const bgSessionId = bgSession.sessionId;
-		const returnPath = bgSession.sessionFile ?? buildSqliteUri(bgSessionId);
 
 		const userMsgs = bgSession.getUserMessagesForForking();
 		const lastUserText = userMsgs.length > 0 ? userMsgs[userMsgs.length - 1]?.text : "(no task)";
-		const bgTaskSummary = lastUserText;
+		const taskSummary = lastUserText ?? "(no task)";
 
-		const leafId = getSdkInternals(bgSession.sessionManager).leafId;
-		if (!leafId) {
-			throw new Error("Cannot fork: no current leaf entry in session.");
-		}
+		const sideSession = await this.createSideSession(taskSummary);
 
-		const bgUnsub = createBackgroundMonitor(bgSession, bgSession, () => {});
-
-		try {
-			this.preserveBackground = true;
-			const branchedUri = bgSession.sessionManager.createBranchedSession(leafId);
-			if (!branchedUri) {
-				throw new Error("createBranchedSession returned undefined.");
+		const onComplete = (status: BtwStatus) => {
+			if (this.btwTask) {
+				this.btwTask.status = status;
+				this.btwTask.bgUnsub();
 			}
-			const { cancelled } = await this.runtime.switchSession(branchedUri);
+		};
 
-			this.btwState = { returnPath, bgSession, bgUnsub, bgTaskSummary };
-
-			return { backgroundSessionId: bgSessionId, cancelled };
-		} catch (err) {
-			this.preserveBackground = false;
-			bgUnsub();
-			throw err;
+		let bgUnsub: () => void;
+		if (!bgSession.isStreaming) {
+			// Race guard: task already finished before we could subscribe.
+			injectNotification(mainSession, buildBtwCompletionNote(summarizeSessionResult(bgSession)));
+			bgUnsub = () => {};
+			queueMicrotask(() => onComplete("done"));
+		} else {
+			bgUnsub = createBackgroundMonitor(bgSession, mainSession, onComplete);
 		}
+
+		this.btwTask = {
+			bgSession,
+			bgUnsub,
+			sideSession,
+			status: "active",
+			taskSummary,
+		};
+
+		return { backgroundSessionId: bgSessionId, sideSessionId: sideSession.sessionId };
+	}
+
+	private async createSideSession(taskSummary: string): Promise<AgentSession> {
+		const services = this.runtime.services;
+		const sessionDir = resolveSessionDir();
+		const sessionManager = await SessionManager.create(this.cwd, sessionDir);
+		const awarenessNote = buildBtwSideSessionAwarenessNote(taskSummary);
+		const resourceLoader = new DefaultResourceLoader({
+			cwd: this.cwd,
+			agentDir: services.agentDir,
+			settingsManager: services.settingsManager,
+			appendSystemPrompt: [awarenessNote],
+			noExtensions: true,
+			noSkills: true,
+			noContextFiles: true,
+		});
+		const mainModel = this.session.model;
+		const { session } = await createAgentSession({
+			cwd: this.cwd,
+			agentDir: services.agentDir,
+			authStorage: services.authStorage,
+			modelRegistry: services.modelRegistry,
+			...(mainModel ? { model: mainModel } : {}),
+			settingsManager: services.settingsManager,
+			resourceLoader,
+			sessionManager,
+		});
+		return session;
 	}
 
 	async handleBtwBack(): Promise<void> {
-		if (!this.btwState) {
+		if (!this.btwTask) {
 			throw new Error("Not in a side conversation. Use /btw to start one.");
 		}
-
-		const { returnPath, bgUnsub } = this.btwState;
-		bgUnsub();
-		this.btwState = null;
-
-		this.preserveBackground = true;
-		try {
-			await this.runtime.switchSession(returnPath);
-		} finally {
-			this.preserveBackground = false;
+		// Dispose the side session; the bg monitor stays alive (bgUnsub is NOT
+		// called here — it persists until the background task completes).
+		const side = this.btwTask.sideSession;
+		if (side) {
+			side.dispose();
+			this.btwTask.sideSession = null;
 		}
 	}
 
-	handleBtwStatus(): { active: boolean; backgroundSessionId?: string; taskSummary?: string } {
-		if (!this.btwState) return { active: false };
+	handleBtwStatus(): {
+		active: boolean;
+		status?: BtwStatus;
+		taskSummary?: string;
+		backgroundSessionId?: string;
+		inSideSession?: boolean;
+	} {
+		if (!this.btwTask) return { active: false };
 		return {
 			active: true,
-			backgroundSessionId: this.btwState.bgSession.sessionId,
-			taskSummary: this.btwState.bgTaskSummary,
+			status: this.btwTask.status,
+			taskSummary: this.btwTask.taskSummary,
+			backgroundSessionId: this.btwTask.bgSession.sessionId,
+			inSideSession: this.btwTask.sideSession !== null,
 		};
+	}
+
+	handleGetBtwSideSession(): AgentSession | null {
+		return this.btwTask?.sideSession ?? null;
+	}
+
+	handleBtwSidePrompt(text: string): void {
+		const side = this.btwTask?.sideSession;
+		if (!side) throw new Error("No active side session");
+		void side.prompt(text);
 	}
 
 	handleListSkills(): SkillListResult {

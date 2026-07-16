@@ -1,3 +1,4 @@
+import type { AgentSession } from "@earendil-works/pi-coding-agent";
 import type { AgentSessionEvent } from "../agent/session.js";
 import type { CommandContext } from "../commands/registry.js";
 import type { Message } from "../message.js";
@@ -53,15 +54,33 @@ export interface NavigateResult {
 	lastUserText?: string;
 }
 
+export type BtwStatus = "active" | "done" | "error";
+
 export interface BtwEnterResult {
 	backgroundSessionId: string;
-	cancelled: boolean;
+	sideSessionId: string;
 }
 
 export interface BtwStatusResult {
 	active: boolean;
-	backgroundSessionId?: string;
+	status?: BtwStatus;
 	taskSummary?: string;
+	backgroundSessionId?: string;
+	/** True while the TUI is showing the side session (false after `/btw back`). */
+	inSideSession?: boolean;
+}
+
+/**
+ * Lightweight TUI-side view of a /btw background task.
+ *
+ * `sideSession` is the live AgentSession returned by `getBtwSideSession()`
+ * (InProcessClient only) so the TUI can subscribe and read its messages
+ * directly. When null (after `/btw back`), the TUI view returns to main.
+ */
+export interface BtwBackgroundTaskInfo {
+	sideSession: AgentSession | null;
+	taskSummary: string;
+	status: BtwStatus;
 }
 
 export interface SkillListEntry {
@@ -145,6 +164,10 @@ export interface AgentClient {
 	btwEnter(): Promise<BtwEnterResult>;
 	btwBack(): Promise<void>;
 	btwStatus(): BtwStatusResult;
+	/** Send a prompt to the active side session (InProcessClient only). */
+	btwSidePrompt(text: string): void;
+	/** Returns the active side AgentSession for direct TUI subscription (InProcessClient only). */
+	getBtwSideSession(): AgentSession | null;
 
 	listSkills(): SkillListResult;
 	getSkillDirectories(): SkillDirectories;
