@@ -319,7 +319,7 @@ export class AgentServer {
 		if (mode === "orchestrator") {
 			this.session.steer(ORCHESTRATOR_SYSTEM_PROMPT);
 		}
-		if ((mode === "orchestrator" || mode === "team") && this.teamConfig.enabled) {
+		if (mode === "team" && this.teamConfig.enabled) {
 			this.session.steer(TEAM_ORCHESTRATOR_PROMPT);
 		}
 	}

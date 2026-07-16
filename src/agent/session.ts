@@ -119,7 +119,7 @@ export function buildAgentModeCycle(config?: Config): Record<string, AgentMode> 
 // CACHE-DYNAMIC and must be appended after these static segments.
 export function appendSystemPromptFor(
 	agentMode: AgentMode,
-	config?: Config,
+	_config?: Config,
 	cwd?: string,
 ): string[] | undefined {
 	const injectAgentList = (prompts: string[]): string[] => {
@@ -139,9 +139,7 @@ export function appendSystemPromptFor(
 
 	if (agentMode === "team") return injectAgentList([TEAM_ORCHESTRATOR_PROMPT]);
 	if (agentMode === "orchestrator") {
-		const prompts = [ORCHESTRATOR_SYSTEM_PROMPT];
-		if (config?.teams?.enabled !== false) prompts.push(TEAM_ORCHESTRATOR_PROMPT);
-		return injectAgentList(prompts);
+		return injectAgentList([ORCHESTRATOR_SYSTEM_PROMPT]);
 	}
 	if (agentMode === "standard") {
 		const injected = injectAgentList([]);
