@@ -181,6 +181,20 @@ export function writeConfig(
 	writeFileSync(path, `${JSON.stringify(config, null, 2)}\n`, "utf-8");
 }
 
+/**
+ * Patch only specific keys into the project config file.
+ * Reads the existing project config (or starts empty), merges the patch,
+ * and writes it back — without ever writing global-only fields (providers,
+ * apiKey, etc.) into the project file.
+ */
+export function patchProjectConfig(cwd: string, patch: Partial<Config>): void {
+	const projectPath = join(cwd, ".openagent", "config.json");
+	const existing = readJsonFile(projectPath) ?? {};
+	const merged = { ...existing, ...patch };
+	mkdirSync(join(projectPath, ".."), { recursive: true });
+	writeFileSync(projectPath, `${JSON.stringify(merged, null, 2)}\n`, "utf-8");
+}
+
 export function getDefaultConfigTemplate(): Config {
 	return {
 		thinking: { level: "medium", collapsed: false },

@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { activeToolsFor, buildAgentModeCycle, getBaseMode } from "../agent/session.js";
 import type { SkillListEntry } from "../client/types.js";
 import { type CommandContext, commandRegistry } from "../commands/registry.js";
-import { getDefaultConfigTemplate, writeConfig } from "../config.js";
+import { getDefaultConfigTemplate, patchProjectConfig, writeConfig } from "../config.js";
 import {
 	type CompressNotificationSummary,
 	getDcpConfig,
@@ -90,7 +90,9 @@ export function registerBuiltinCommands(): void {
 				};
 				ctx.setConfig(newConfig);
 				try {
-					writeConfig(ctx.cwd, newConfig, "project");
+					patchProjectConfig(ctx.cwd, {
+						contextPruning: { ...prev.contextPruning, enabled: value },
+					});
 				} catch (err) {
 					ctx.setMessages((prev) => [
 						...prev,
@@ -160,7 +162,7 @@ export function registerBuiltinCommands(): void {
 						const newConfig = modelSetting.persist(ctx.getConfig(), result.model.id);
 						ctx.setConfig(newConfig);
 						try {
-							writeConfig(ctx.cwd, newConfig, "project");
+							patchProjectConfig(ctx.cwd, { model: result.model.id });
 						} catch (err) {
 							ctx.setMessages((prev) => [
 								...prev,
