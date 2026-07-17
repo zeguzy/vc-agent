@@ -192,7 +192,7 @@ export function createSubagentTool(options: SubagentToolOptions): ToolDefinition
 		"Each delegation prompt MUST include: specific GOAL, relevant file CONTEXT, and clear SCOPE boundaries.",
 		"Vague prompts produce poor results — be exhaustive in your task description.",
 		"The result returned by the subagent is not visible to the user. To show the user the result, send a text message summarizing it.",
-		"Background mode: set background=true (single mode only) to run the subagent asynchronously. The tool returns immediately with a task ID and you continue working. When the task completes, its result is injected into your session automatically — do NOT poll, sleep, or check its status. Use background mode when the task is self-contained and you have other work to do in the meantime.",
+		"Background mode: set background=true (single mode only) to run the subagent asynchronously. You get a task ID immediately and can continue other work. When the task finishes, its result is injected into your session automatically — no need to wait. Use task_status to check progress if needed, and task_cancel to abort a background task.",
 	].join(" ");
 
 	const emptyDetails = (mode: string): SubagentToolDetails => ({
