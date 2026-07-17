@@ -1,6 +1,6 @@
 {
   "thinking": {
-    "level": "medium",
+    "level": "off",
     "collapsed": false
   },
   "compaction": {
@@ -16,25 +16,27 @@
   "instructions": [],
   "providers": {
     "Astron∞": {
-      "apiKey": "ENV.ASTRON_INFINITY_API_KEY",
+      "apiKey": "fc8dccb6293678000aaa226bebf16090:MDM3ZjJlZWZmZjFlYThmOTJhMjNiMDlm",
       "baseUrl": "https://maas-coding-api.cn-huabei-1.xf-yun.com/v2",
       "api": "openai-completions",
       "models": [
         {
           "id": "astron-code-latest",
           "name": "Astron ∞",
+          "reasoning":true,
           "contextWindow": 256000
         }
       ]
     },
     "Astron": {
-      "apiKey": "ENV.ASTRON_API_KEY",
+      "apiKey": "826c86828e27232ceeb497151c865615:NjEzZDk5MjgyNDdkZGZlOWQ4YzY3NDRk",
       "baseUrl": "https://maas-coding-api.cn-huabei-1.xf-yun.com/v2",
       "api": "openai-completions",
       "models": [
         {
           "id": "astron-code-latest",
           "name": "Astron",
+          "reasoning":true,
           "contextWindow": 500000
         }
       ]

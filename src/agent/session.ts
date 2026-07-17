@@ -39,6 +39,7 @@ import { createNotifyTool } from "../tools/notify.js";
 import { createQuestionTool } from "../tools/question.js";
 import { clearBridge, type QuestionBridge } from "../tools/question-bridge.js";
 import { createSubagentTool } from "../tools/subagent.js";
+import { createTaskCancelTool, createTaskStatusTool } from "../tools/task.js";
 import { createTeamTool } from "../tools/team.js";
 import { createTeamGuardedBashTool, createTeamGuardedWriteTool } from "../tools/team-guard.js";
 import { createTodoTool } from "../tools/todo.js";
@@ -63,6 +64,8 @@ export const STANDARD_ACTIVE_TOOLS = [
 	"todo",
 	"question",
 	"subagent",
+	"task_status",
+	"task_cancel",
 	"webfetch",
 ];
 export const PLANNER_ACTIVE_TOOLS = [...PLANNER_TOOLS, "glob", "todo", "question", "webfetch"];
@@ -77,6 +80,8 @@ export const TEAM_ACTIVE_TOOLS = [
 	"memory",
 	"message",
 	"subagent",
+	"task_status",
+	"task_cancel",
 ];
 
 export function activeToolsFor(agentMode: AgentMode): string[] {
@@ -382,6 +387,12 @@ export async function createRuntime(options: RuntimeOptions): Promise<RuntimeRes
 				parentSessionRef,
 			}),
 		);
+		if (options.backgroundJobRef) {
+			customTools.push(
+				createTaskStatusTool({ backgroundJobRef: options.backgroundJobRef }),
+				createTaskCancelTool({ backgroundJobRef: options.backgroundJobRef }),
+			);
+		}
 		customTools.push(...teamTools);
 		const dcpTool = prepareDcpExtension(options.config?.contextPruning);
 		if (dcpTool) {
@@ -479,7 +490,8 @@ function registerCustomProvider(registry: ModelRegistry, name: string, config: P
 						name: m.name,
 						api: (config.api ?? "openai") as any,
 						...(config.baseUrl ? { baseUrl: config.baseUrl } : {}),
-						reasoning: false,
+						reasoning: m.reasoning ?? false,
+						...(m.thinkingLevelMap ? { thinkingLevelMap: m.thinkingLevelMap } : {}),
 						input: ["text" as const],
 						cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
 						contextWindow: m.contextWindow ?? 128000,

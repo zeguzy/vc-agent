@@ -13,6 +13,10 @@ export interface CustomModel {
 	name: string;
 	contextWindow?: number;
 	maxTokens?: number;
+	/** Whether the model supports reasoning/thinking. Default: false. */
+	reasoning?: boolean;
+	/** Custom mapping from Pi thinking levels to provider-specific values. */
+	thinkingLevelMap?: Record<string, string>;
 }
 
 export type ModelTier = "fast" | "standard" | "powerful";
