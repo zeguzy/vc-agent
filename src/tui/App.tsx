@@ -166,15 +166,6 @@ export function App({
 		bridge ? setPendingQuestion : undefined,
 	);
 
-	useEffect(() => {
-		const teamsEnabled = configState.teams?.enabled !== false;
-		const expected: AgentMode = teamsEnabled ? "team" : "standard";
-		if (agentMode !== expected && (agentMode === "standard" || agentMode === "team")) {
-			setAgentMode(expected);
-			client.setAgentMode(expected);
-		}
-	}, [configState.teams?.enabled, client, agentMode]);
-
 	const modeRef = useRef<Mode>("insert");
 	modeRef.current = mode;
 	const agentModeRef = useRef<AgentMode>(initialAgentMode ?? "standard");
