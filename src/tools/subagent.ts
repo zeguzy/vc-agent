@@ -12,7 +12,7 @@ import type {
 import { MAX_OUTPUT_CHARS, MAX_PARALLEL_TASKS, PARALLEL_CONCURRENCY } from "../agents/types.js";
 import type { BackgroundJobRef } from "../background/service.js";
 import type { SessionRef } from "../background/types.js";
-import { injectNotification } from "../session/btw.js";
+import { wrapNotification } from "../session/btw.js";
 import { extractAssistantText } from "../utils/content.js";
 
 const PREVIEW_MAX_CHARS = 5000;
@@ -160,7 +160,12 @@ async function startBackgroundSubagent(
 					: job.status === "error"
 						? `[BACKGROUND SUBAGENT ERROR: ${job.title}]\n${job.error ?? "unknown error"}\n[END BACKGROUND SUBAGENT]`
 						: `[BACKGROUND SUBAGENT CANCELLED: ${job.title}]\n[END BACKGROUND SUBAGENT]`;
-			injectNotification(parentSession, body);
+			const note = wrapNotification(body);
+			if (parentSession.isStreaming) {
+				parentSession.steer(note);
+			} else {
+				void parentSession.prompt(note);
+			}
 		},
 	});
 

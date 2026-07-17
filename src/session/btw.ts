@@ -49,6 +49,10 @@ export interface BtwEnterResult {
 const NOTIFICATION_PREFIX = "[SYSTEM NOTIFICATION — DO NOT ACT unless there's a problem]\n";
 const NOTIFICATION_SUFFIX = "\n[END NOTIFICATION — continue waiting for user or next event]";
 
+export function wrapNotification(body: string): string {
+	return `${NOTIFICATION_PREFIX}${body}${NOTIFICATION_SUFFIX}`;
+}
+
 /**
  * Inject a notification into a session.
  * When streaming: steer (mid-turn injection, model sees it but doesn't start a new turn).
@@ -57,8 +61,7 @@ const NOTIFICATION_SUFFIX = "\n[END NOTIFICATION — continue waiting for user o
  */
 export function injectNotification(session: AgentSession, body: string): void {
 	if (session.isStreaming) {
-		const note = `${NOTIFICATION_PREFIX}${body}${NOTIFICATION_SUFFIX}`;
-		void session.steer(note);
+		void session.steer(wrapNotification(body));
 	}
 	// When not streaming: silent — user sees it on next interaction,
 	// consistent with team member_done behavior.
